@@ -21,3 +21,9 @@ config.json
 *.ogg
 *.mp4
 /models/
+
+# 额外屏蔽Obsidian的文件
+.obsidian/
+Obsidian Files/
+
+
