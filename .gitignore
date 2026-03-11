@@ -1,0 +1,23 @@
+# Python 垃圾文件
+__pycache__/
+*.py[cod]
+.venv/
+env/
+
+# Java 编译文件
+target/
+*.class
+
+# 编辑器配置文件
+.idea/
+.vscode/
+
+# 敏感信息（重点！）
+.env
+api_key.txt
+config.json
+
+# 毕设数据大文件
+*.ogg
+*.mp4
+/models/
