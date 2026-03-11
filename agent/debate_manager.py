@@ -16,7 +16,7 @@ config_list = [
 # 统一的大模型配置字典
 llm_config = {
     "config_list": config_list,
-    "temperature": 0.7,  # 稍微调高一点温度，让辩论更加丰富多样
+    "temperature": 0.7,
 }
 
 # 2. 定义角色：正方、反方、裁决 Agent
@@ -35,7 +35,6 @@ opponent = autogen.AssistantAgent(
     llm_config=llm_config,
 )
 
-# 裁决 Agent：合并规则与共识达成
 # 裁决 Agent：合并规则与共识达成
 judge = autogen.AssistantAgent(
     name="Judge_Agent",
@@ -66,11 +65,10 @@ judge = autogen.AssistantAgent(
 )
 
 
-# ==========================================
-# 3. 构建群聊系统与发言模式
-# ==========================================
 
-# 将三个 Agent 放入一个聊天室，并设定固定轮次的对话限制（例如 4 轮）
+# 3. 构建群聊系统与发言模式
+
+# 将三个 Agent 放入一个聊天室，并设定固定10轮次的对话限制
 groupchat = autogen.GroupChat(
     agents=[proponent, opponent, judge],
     messages=[],
@@ -81,15 +79,15 @@ groupchat = autogen.GroupChat(
 # 创建群聊管理员
 manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
 
-# ==========================================
+
 # 4. 模拟启动测试
-# ==========================================
+
 if __name__ == "__main__":
     # 创建一个代表我们人类（开发者）的 UserProxy
     user_proxy = autogen.UserProxyAgent(
         name="Human_Admin",
-        human_input_mode="NEVER",  # 纯自动辩论，不需要人类中途打字插嘴
-        code_execution_config=False  # 我们不需要它写代码执行，只需要文本推理
+        human_input_mode="NEVER",  # 纯自动辩论
+        code_execution_config=False  # 不需要写代码执行，只需要文本推理
     )
 
     # 模拟一条来自 ATMR 测试系统抓取到的复杂作答数据
