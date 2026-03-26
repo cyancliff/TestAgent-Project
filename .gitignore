@@ -26,4 +26,5 @@ config.json
 .obsidian/
 Obsidian Files/
 
-
+# 前端依赖包
+frontend/node_modules/
