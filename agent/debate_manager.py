@@ -58,7 +58,7 @@ opponent = autogen.AssistantAgent(
     llm_config=llm_config_qwen,
 )
 
-# 裁决 Agent (智谱 GLM-5 驱动)：合并规则与共识达成
+# 裁决 Agent (智谱 GLM-4.7-flash 驱动)：合并规则与共识达成
 judge = autogen.AssistantAgent(
     name="Judge_Agent",
     system_message=(
@@ -69,7 +69,7 @@ judge = autogen.AssistantAgent(
             【你的工作流程分为两个阶段】
 
             阶段一：引导与深化 (Facilitation Phase)
-            iF你之前没有发言，在这一阶段，你必须：
+            IF你之前没有发言，在这一阶段，你必须：
             1.  简要总结当前的共识和核心分歧点。
             2.  提出一个或多个【启发性问题】，要求正反方针对你提出的问题进行更深入的补充或反驳。
             3.  你的发言必须简短精悍，结尾可以这样说：“请双方针对以上问题继续补充。”
