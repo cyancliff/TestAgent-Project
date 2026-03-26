@@ -122,3 +122,22 @@ async def submit_explanation(payload: ExplanationSubmitRequest, db: Session = De
         return {"status": "success", "message": "解释已入库"}
 
     raise HTTPException(status_code=404, detail="找不到对应的异常记录")
+
+
+@router.post("/finish")
+async def finish_assessment(
+        user_id: str,
+        background_tasks: BackgroundTasks,  # 注入 FastAPI 的后台任务对象
+        db: Session = Depends(get_db)
+):
+    """
+    前端答完10题后调用此接口。
+    快速返回成功响应，同时在后台异步唤醒多智能体群聊。
+    """
+    # 将打包和辩论的重任务扔进后台线程池
+    background_tasks.add_task(generate_final_report_task, user_id, db)
+
+    return {
+        "status": "success",
+        "message": "测评已完成！专家评审团已在后台开始为您生成深度分析报告（预计需要3-5分钟），您可以稍后在报告页查看。"
+    }

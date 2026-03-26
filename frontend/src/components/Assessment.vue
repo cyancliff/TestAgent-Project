@@ -1,301 +1,288 @@
 <template>
   <div class="assessment-container">
-
-    <div class="card finish-card" v-if="isFinished">
-      <h2>🎉 测试完成！</h2>
-      <p>恭喜你，极速体验版的题目已全部答完。</p>
-      <p class="sub-text">你所有的作答时间、分数、以及针对 AI 追问的解释，都已经安全保存在了本地的数据库中！</p>
-      <p class="sub-text">接下来，系统将在后台静默唤醒多智能体，根据你的这些数据展开深度的性格辩论...</p>
-    </div>
-
-    <div class="card" v-else-if="currentQuestion">
-
-      <div class="progress-bar">
-        第 {{ currentIndex + 1 }} 题 / 共 {{ currentQuestion.total }} 题
+    <div v-if="!isFinished" class="question-card">
+      <div class="header">
+        <span class="progress">题目 {{ currentIndex + 1 }} / {{ maxQuestions }}</span>
       </div>
 
-      <div v-if="!aiFollowUp">
-        <span class="exam-no">题目编号: {{ currentQuestion.examNo }}</span>
-        <h2 class="question-title">{{ currentQuestion.exam }}</h2>
-
-        <div class="options-container">
-          <button
-            v-for="(opt, idx) in currentQuestion.options"
-            :key="idx"
-            class="option-btn"
-            @click="handleOptionSelect(opt)"
-            :disabled="isSubmitting"
-          >
-            {{ opt }}
-          </button>
-        </div>
+      <div class="question-content">
+        <h2 style="color: #000;">{{ currentQuestion.content }}</h2>
       </div>
 
-      <div v-else class="ai-box">
-        <div class="ai-header">🤖 智能检测提示</div>
-        <p class="ai-text">{{ aiFollowUp }}</p>
-        <textarea
-          v-model="explanation"
-          placeholder="检测到您的作答时间较短，请简单补充您的真实想法..."
-          :disabled="isSubmittingExplanation"
-        ></textarea>
-        <button class="next-btn" @click="confirmFollowUp" :disabled="isSubmittingExplanation">
-          {{ isSubmittingExplanation ? '正在保存...' : '提交并继续' }}
+      <div v-if="!anomalyTriggered" class="options-container">
+        <button
+          v-for="(option, index) in currentQuestion.options"
+          :key="index"
+          class="option-btn"
+          @click="selectOption(option)"
+        >
+          {{ option }}
         </button>
       </div>
 
+      <div v-else class="anomaly-container">
+        <div class="warning-box">
+          ⚠️ 系统检测到您的作答时间极短，请问您是如何快速得出这个选择的？
+        </div>
+        <textarea
+          v-model="userExplanation"
+          placeholder="请输入您的思考过程..."
+          rows="4"
+        ></textarea>
+        <button class="submit-explanation-btn" @click="submitExplanation">提交解释并继续</button>
+      </div>
     </div>
 
-    <div v-else class="loading">正在连接数据库，加载题库中...</div>
+    <div v-else-if="isGenerating" class="generating-screen">
+      <h2>🎉 完结撒花！答题结束</h2>
+      <div class="loader-spinner"></div>
+      <p>专家 AI 评审团（DeepSeek, Qwen, GLM-4）正在后台为您进行深度心理画像辩论...</p>
+      <p style="font-size: 14px; color: #666;">这通常需要 1-2 分钟，请耐心等待。</p>
+    </div>
+
+    <div v-else class="report-screen">
+      <h2>📊 您的深度心理测评报告</h2>
+      <div class="report-content" v-html="formattedReport"></div>
+      <button class="restart-btn" @click="restartTest">重新测评</button>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import { ref, onMounted, computed } from 'vue';
+import axios from 'axios';
 
-const API_BASE = "http://127.0.0.1:8000/api/v1/assessment"
-const currentQuestion = ref(null)
-const currentIndex = ref(0)
-const startTime = ref(0)
-const isSubmitting = ref(false)
-const isSubmittingExplanation = ref(false)
-const aiFollowUp = ref(null)
-const explanation = ref("")
+// --- 状态定义 ---
+const maxQuestions = 10;
+const currentIndex = ref(0);
+const currentQuestion = ref({ content: "加载中...", options: [] });
+const startTime = ref(0);
 
-// 【新增】标记测试是否彻底结束
-const isFinished = ref(false)
+// 异常拦截状态
+const anomalyTriggered = ref(false);
+const userExplanation = ref("");
+const tempSelectedOption = ref(null);
 
-const fetchQuestion = async (index) => {
+// 流程状态
+const isFinished = ref(false);
+const isGenerating = ref(false);
+const finalReport = ref("");
+
+// --- 核心方法 ---
+
+// 1. 获取当前题目
+const fetchQuestion = async () => {
   try {
-    const res = await axios.get(`${API_BASE}/question/${index}`)
-    currentQuestion.value = res.data
-    // 题目渲染出来的瞬间，重置计时器
-    startTime.value = Date.now()
-  } catch (e) {
-    // 后端返回 404 (说明题做完了或者触发了10题限制)，进入完成界面
-    isFinished.value = true
+    const res = await axios.get(`/api/question/${currentIndex.value}`);
+    currentQuestion.value = res.data;
+    startTime.value = Date.now(); // 开始计时
+  } catch (error) {
+    console.error("获取题目失败:", error);
   }
-}
+};
 
-const handleOptionSelect = async (opt) => {
-  const duration = (Date.now() - startTime.value) / 1000
-  isSubmitting.value = true
+// 2. 用户点击选项
+const selectOption = async (option) => {
+  const timeSpent = Date.now() - startTime.value;
+  tempSelectedOption.value = option;
 
   try {
-    const res = await axios.post(`${API_BASE}/submit`, {
-      user_id: 1,
-      exam_no: currentQuestion.value.examNo,
-      selected_option: opt,
-      time_spent: duration
-    })
+    // 提交给后端“快车道”进行初步判别
+    const res = await axios.post('/api/submit', {
+      user_id: "user_test_001", // 实际应用中替换为真实用户ID
+      question_id: currentQuestion.value.id,
+      selected_choice: option,
+      time_spent: timeSpent
+    });
 
-    if (res.data.status === 'anomaly') {
-      aiFollowUp.value = res.data.follow_up_question
+    if (res.data.status === "anomaly") {
+      // 触发异常拦截，UI变黄，要求输入解释
+      anomalyTriggered.value = true;
     } else {
-      nextStep()
+      // 正常作答，直接进入下一题
+      nextQuestion();
     }
   } catch (error) {
-    console.error("提交异常", error)
-    alert("网络请求失败，请检查后端服务是否启动")
-  } finally {
-    isSubmitting.value = false
+    console.error("提交答案失败:", error);
   }
-}
+};
 
-// 提交对追问的解释
-const confirmFollowUp = async () => {
-  if (!explanation.value.trim()) {
-    alert("补充内容不能为空哦~")
-    return
-  }
-
-  isSubmittingExplanation.value = true
+// 3. 提交异常解释
+const submitExplanation = async () => {
   try {
-    await axios.post(`${API_BASE}/submit_explanation`, {
-      user_id: 1,
-      exam_no: currentQuestion.value.examNo,
-      text: explanation.value
-    })
+    await axios.post('/api/submit_explanation', {
+      user_id: "user_test_001",
+      question_id: currentQuestion.value.id,
+      explanation: userExplanation.value
+    });
 
-    aiFollowUp.value = null
-    explanation.value = ""
-    nextStep()
+    // 恢复状态并进入下一题
+    anomalyTriggered.value = false;
+    userExplanation.value = "";
+    nextQuestion();
   } catch (error) {
-    console.error("保存解释失败", error)
-    alert("保存解释失败，请重试")
-  } finally {
-    isSubmittingExplanation.value = false
+    console.error("提交解释失败:", error);
   }
-}
+};
 
-const nextStep = () => {
-  currentIndex.value++
-  fetchQuestion(currentIndex.value)
-}
+// 4. 下一题逻辑或交卷
+const nextQuestion = () => {
+  if (currentIndex.value + 1 < maxQuestions) {
+    currentIndex.value++;
+    fetchQuestion();
+  } else {
+    // 达到10题，触发交卷与后台多智能体辩论
+    finishAssessment();
+  }
+};
 
-// 首次进入页面，加载第 0 题
-onMounted(() => fetchQuestion(0))
+// 5. 交卷触发多智能体辩论 (慢车道)
+const finishAssessment = async () => {
+  isFinished.value = true;
+  isGenerating.value = true;
+
+  try {
+    // 调用后端的 finish 接口，后端在这个接口里提取数据库里的作答数据，喂给 debate_manager
+    const res = await axios.post('/api/finish', {
+      user_id: "user_test_001"
+    });
+
+    // 后端生成完毕，返回报告内容
+    finalReport.value = res.data.report;
+    isGenerating.value = false;
+  } catch (error) {
+    console.error("生成报告失败:", error);
+    finalReport.value = "报告生成超时或出错，请联系系统管理员。";
+    isGenerating.value = false;
+  }
+};
+
+// 重置测试
+const restartTest = () => {
+  currentIndex.value = 0;
+  isFinished.value = false;
+  finalReport.value = "";
+  fetchQuestion();
+};
+
+// 简单格式化报告内容换行
+const formattedReport = computed(() => {
+  return finalReport.value.replace(/\n/g, '<br>');
+});
+
+// 初始化
+onMounted(() => {
+  fetchQuestion();
+});
 </script>
 
 <style scoped>
-/* 容器背景改为浅灰色，突出白色卡片 */
+/* 高对比度企业级 UI 配色方案 */
 .assessment-container {
-  display: flex;
-  justify-content: center;
-  padding-top: 80px;
-  background: #f4f7f9;
-  min-height: 100vh;
-  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  max-width: 800px;
+  margin: 40px auto;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
 }
 
-.card {
-  background: white;
+.question-card {
+  background: #fff;
   padding: 40px;
-  border-radius: 16px;
-  width: 500px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-  border: 1px solid #eee;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
-/* 完结界面专属样式 */
-.finish-card {
-  text-align: center;
-  padding: 60px 40px;
-}
-
-.finish-card h2 {
-  color: #52c41a;
-  font-size: 28px;
+.header {
   margin-bottom: 20px;
-}
-
-.sub-text {
   color: #666;
-  font-size: 15px;
-  margin-top: 15px;
-  line-height: 1.6;
-}
-
-.progress-bar {
-  font-size: 14px;
-  color: #555;
-  margin-bottom: 20px;
-  font-weight: 600;
-  border-bottom: 2px solid #409eff;
-  display: inline-block;
-  padding-bottom: 4px;
-}
-
-.exam-no {
-  color: #888;
-  font-size: 13px;
-  display: block;
-  margin-bottom: 5px;
-}
-
-.question-title {
-  margin: 0 0 30px 0;
-  font-size: 22px;
-  line-height: 1.5;
-  color: #1a1a1a;
-  font-weight: 700;
-}
-
-.options-container {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  font-weight: bold;
 }
 
 .option-btn {
-  padding: 16px 20px;
-  border: 2px solid #e8e8e8;
-  border-radius: 10px;
-  cursor: pointer;
-  text-align: left;
-  background: #fff;
+  display: block;
+  width: 100%;
+  padding: 16px;
+  margin: 12px 0;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  background: transparent;
   color: #333;
   font-size: 16px;
-  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.option-btn:hover:not(:disabled) {
-  background: #f0f7ff;
-  border-color: #409eff;
-  color: #409eff;
-  transform: translateY(-2px);
+.option-btn:hover {
+  border-color: #0056b3;
+  background-color: #f0f7ff;
 }
 
-.option-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.ai-box {
-  background: #fffbe6;
-  border: 2px solid #ffe58f;
+.anomaly-container {
+  margin-top: 20px;
   padding: 20px;
-  border-radius: 12px;
+  background-color: #fffbe6; /* 警告黄 */
+  border: 1px solid #ffe58f;
+  border-radius: 8px;
 }
 
-.ai-header {
-  color: #856404;
+.warning-box {
+  color: #faad14;
   font-weight: bold;
-  margin-bottom: 10px;
-  font-size: 14px;
-}
-
-.ai-text {
-  color: #1a1a1a;
-  font-size: 17px;
-  line-height: 1.6;
   margin-bottom: 15px;
 }
 
 textarea {
   width: 100%;
-  margin: 10px 0;
   padding: 12px;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  font-size: 15px;
-  box-sizing: border-box;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
   resize: vertical;
-  min-height: 80px;
 }
 
-textarea:disabled {
-  background-color: #f5f5f5;
-  cursor: not-allowed;
-}
-
-.next-btn {
-  width: 100%;
-  padding: 14px;
-  background: #1890ff;
+.submit-explanation-btn, .restart-btn {
+  margin-top: 15px;
+  background-color: #52c41a; /* 交互绿 */
   color: white;
   border: none;
-  border-radius: 8px;
+  padding: 12px 24px;
+  border-radius: 6px;
+  cursor: pointer;
   font-size: 16px;
   font-weight: bold;
-  cursor: pointer;
-  transition: background 0.3s;
 }
 
-.next-btn:hover:not(:disabled) {
-  background: #40a9ff;
+.generating-screen, .report-screen {
+  text-align: center;
+  background: #fff;
+  padding: 50px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
-.next-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.report-content {
+  text-align: left;
+  margin-top: 30px;
+  line-height: 1.6;
+  color: #333;
 }
 
-.loading {
-  color: #666;
-  font-size: 18px;
-  margin-top: 100px;
+/* 简易加载动画 */
+.loader-spinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #0056b3;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 20px auto;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 </style>
