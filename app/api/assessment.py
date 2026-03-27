@@ -1,13 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException
+# app/api/assessment.py
+
+import asyncio
+import json
+import queue
+import threading
+
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional
 
 from app.models.question import SessionLocal, Question, AnswerRecord
 from app.services.ai_detector import check_anomaly_and_generate_question
+from app.services.report_service import build_debate_context, save_report_to_file
+from agent.debate_manager import run_debate_streaming
 
 router = APIRouter()
-
 
 def get_db():
     db = SessionLocal()
@@ -127,17 +136,107 @@ async def submit_explanation(payload: ExplanationSubmitRequest, db: Session = De
 @router.post("/finish")
 async def finish_assessment(
         user_id: str,
-        background_tasks: BackgroundTasks,  # 注入 FastAPI 的后台任务对象
+        background_tasks: BackgroundTasks,
         db: Session = Depends(get_db)
 ):
     """
     前端答完10题后调用此接口。
-    快速返回成功响应，同时在后台异步唤醒多智能体群聊。
+    返回成功响应，提示前端连接流式端点观看实时辩论。
+    不再启动后台辩论，避免重复。
     """
-    # 将打包和辩论的重任务扔进后台线程池
-    background_tasks.add_task(generate_final_report_task, user_id, db)
-
+    # 不再启动后台任务，辩论将通过 /finish-stream 端点进行
     return {
         "status": "success",
-        "message": "测评已完成！专家评审团已在后台开始为您生成深度分析报告（预计需要3-5分钟），您可以稍后在报告页查看。"
+        "message": "测评已完成！请连接 /finish-stream 端点观看专家评审团的实时辩论并获取最终报告。"
     }
+
+
+@router.get("/finish-stream")
+async def finish_assessment_stream(user_id: str):
+    """
+    SSE 端点：实时推送多智能体辩论过程到前端。
+    前端用 EventSource 连接此接口。
+    """
+    db = SessionLocal()
+
+    try:
+        prompt = build_debate_context(user_id, db)
+    except ValueError as e:
+        db.close()
+        raise HTTPException(status_code=404, detail=str(e))
+
+    message_queue = queue.Queue()
+
+    # 在后台线程启动辩论
+    debate_thread = threading.Thread(
+        target=run_debate_streaming,
+        args=(prompt, message_queue),
+        daemon=True
+    )
+    debate_thread.start()
+
+    async def event_generator():
+        try:
+            while True:
+                try:
+                    # 在线程池中执行阻塞的 queue.get，不阻塞事件循环
+                    msg = await asyncio.get_event_loop().run_in_executor(
+                        None, lambda: message_queue.get(block=True, timeout=2.0)
+                    )
+                except queue.Empty:
+                    # 超时但辩论还在进行，发送心跳保持连接
+                    if debate_thread.is_alive():
+                        yield ": heartbeat\n\n"
+                        continue
+                    else:
+                        # 辩论线程已结束，再尝试清空队列中剩余消息
+                        remaining_handled = False
+                        while not message_queue.empty():
+                            try:
+                                msg = message_queue.get_nowait()
+                                if msg["type"] == "message":
+                                    data = json.dumps({"agent": msg["agent"], "content": msg["content"]}, ensure_ascii=False)
+                                    yield f"event: agent_message\ndata: {data}\n\n"
+                                elif msg["type"] == "done":
+                                    save_report_to_file(user_id, msg["content"])
+                                    data = json.dumps({"report": msg["content"]}, ensure_ascii=False)
+                                    yield f"event: debate_complete\ndata: {data}\n\n"
+                                    remaining_handled = True
+                                elif msg["type"] == "error":
+                                    data = json.dumps({"message": msg["content"]}, ensure_ascii=False)
+                                    yield f"event: error\ndata: {data}\n\n"
+                                    remaining_handled = True
+                            except queue.Empty:
+                                break
+                        if not remaining_handled:
+                            # 队列真的为空且线程已死，发送兜底错误
+                            data = json.dumps({"message": "辩论服务异常终止，请检查后端日志"}, ensure_ascii=False)
+                            yield f"event: error\ndata: {data}\n\n"
+                        break
+
+                if msg["type"] == "message":
+                    data = json.dumps({"agent": msg["agent"], "content": msg["content"]}, ensure_ascii=False)
+                    yield f"event: agent_message\ndata: {data}\n\n"
+
+                elif msg["type"] == "done":
+                    # 保存报告到文件
+                    save_report_to_file(user_id, msg["content"])
+                    data = json.dumps({"report": msg["content"]}, ensure_ascii=False)
+                    yield f"event: debate_complete\ndata: {data}\n\n"
+                    break
+
+                elif msg["type"] == "error":
+                    data = json.dumps({"message": msg["content"]}, ensure_ascii=False)
+                    yield f"event: error\ndata: {data}\n\n"
+                    break
+        finally:
+            db.close()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
