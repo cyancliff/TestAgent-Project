@@ -5,7 +5,6 @@ from datetime import datetime
 import json
 from sqlalchemy.orm import Session
 from app.models.question import SessionLocal, Question, AnswerRecord
-from agent.debate_manager import run_debate
 
 
 def build_debate_context(user_id: str, db: Session) -> str:
@@ -51,19 +50,4 @@ def save_report_to_file(user_id: str, report_content: str) -> str:
     return file_path
 
 
-def generate_final_report_task(user_id: str, db: Session = None):
-    """后台任务：提取用户全量作答数据，触发多智能体辩论（兼容旧接口）"""
-    own_session = db is None
-    if own_session:
-        db = SessionLocal()
-    try:
-        prompt = build_debate_context(user_id, db)
-        print(f"开始为用户 {user_id} 进行多智能体辩论推理...")
-        final_report = run_debate(user_data_context=prompt)
-        save_report_to_file(user_id, final_report)
-    except Exception as e:
-        print(f"后台生成报告时发生错误: {str(e)}")
-    finally:
-        if own_session:
-            db.close()
 

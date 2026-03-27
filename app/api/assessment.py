@@ -13,7 +13,7 @@ from typing import Optional
 
 from app.models.question import SessionLocal, Question, AnswerRecord
 from app.services.ai_detector import check_anomaly_and_generate_question
-from app.services.report_service import generate_final_report_task, build_debate_context, save_report_to_file
+from app.services.report_service import build_debate_context, save_report_to_file
 from agent.debate_manager import run_debate_streaming
 
 router = APIRouter()
@@ -141,13 +141,13 @@ async def finish_assessment(
 ):
     """
     前端答完10题后调用此接口。
-    快速返回成功响应，同时在后台异步唤醒多智能体群聊。
+    返回成功响应，提示前端连接流式端点观看实时辩论。
+    不再启动后台辩论，避免重复。
     """
-    background_tasks.add_task(generate_final_report_task, user_id)
-
+    # 不再启动后台任务，辩论将通过 /finish-stream 端点进行
     return {
         "status": "success",
-        "message": "测评已完成！专家评审团已在后台开始为您生成深度分析报告（预计需要3-5分钟），您可以稍后在报告页查看。"
+        "message": "测评已完成！请连接 /finish-stream 端点观看专家评审团的实时辩论并获取最终报告。"
     }
 
 
