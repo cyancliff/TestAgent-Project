@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from app.models.question import SessionLocal, Question, AnswerRecord
+from app.models.question import SessionLocal, Question, AnswerRecord, AssessmentSession
 from app.services.ai_detector import check_anomaly_and_generate_question
 from app.services.report_service import build_debate_context, save_report_to_file
 from agent.debate_manager import run_debate_streaming
@@ -27,7 +27,11 @@ def get_db():
 
 
 # --- Schema 定义 ---
+class StartSessionRequest(BaseModel):
+    user_id: int
+
 class AnswerSubmitRequest(BaseModel):
+    session_id: int
     user_id: int
     exam_no: str
     selected_option: str
@@ -42,9 +46,20 @@ class AnswerSubmitResponse(BaseModel):
 
 
 class ExplanationSubmitRequest(BaseModel):
+    session_id: int
     user_id: int
     exam_no: str
     text: str
+
+
+# --- 接口 0：启动新会话 ---
+@router.post("/start-session")
+async def start_session(payload: StartSessionRequest, db: Session = Depends(get_db)):
+    new_session = AssessmentSession(user_id=payload.user_id, status='active')
+    db.add(new_session)
+    db.commit()
+    db.refresh(new_session)
+    return {"session_id": new_session.id, "status": "success"}
 
 
 # --- 接口 1：获取题目 ---
@@ -96,6 +111,7 @@ async def submit_answer(payload: AnswerSubmitRequest, db: Session = Depends(get_
     # 3. 写入数据库！
     is_anomaly_flag = 1 if detection_result["status"] == "anomaly" else 0
     new_record = AnswerRecord(
+        session_id=payload.session_id,
         user_id=payload.user_id,
         exam_no=payload.exam_no,
         selected_option=payload.selected_option,
@@ -120,6 +136,7 @@ async def submit_answer(payload: AnswerSubmitRequest, db: Session = Depends(get_
 async def submit_explanation(payload: ExplanationSubmitRequest, db: Session = Depends(get_db)):
     # 找到刚才那条被拦截的异常记录
     record = db.query(AnswerRecord).filter(
+        AnswerRecord.session_id == payload.session_id,
         AnswerRecord.user_id == payload.user_id,
         AnswerRecord.exam_no == payload.exam_no,
         AnswerRecord.is_anomaly == 1
@@ -136,15 +153,21 @@ async def submit_explanation(payload: ExplanationSubmitRequest, db: Session = De
 @router.post("/finish")
 async def finish_assessment(
         user_id: str,
+        session_id: int,
         background_tasks: BackgroundTasks,
         db: Session = Depends(get_db)
 ):
     """
     前端答完10题后调用此接口。
     返回成功响应，提示前端连接流式端点观看实时辩论。
-    不再启动后台辩论，避免重复。
     """
-    # 不再启动后台任务，辩论将通过 /finish-stream 端点进行
+    session = db.query(AssessmentSession).filter(AssessmentSession.id == session_id).first()
+    if session:
+        session.status = 'completed'
+        from datetime import datetime
+        session.finished_at = datetime.now()
+        db.commit()
+
     return {
         "status": "success",
         "message": "测评已完成！请连接 /finish-stream 端点观看专家评审团的实时辩论并获取最终报告。"
@@ -152,7 +175,7 @@ async def finish_assessment(
 
 
 @router.get("/finish-stream")
-async def finish_assessment_stream(user_id: str):
+async def finish_assessment_stream(user_id: str, session_id: int):
     """
     SSE 端点：实时推送多智能体辩论过程到前端。
     前端用 EventSource 连接此接口。
@@ -160,7 +183,7 @@ async def finish_assessment_stream(user_id: str):
     db = SessionLocal()
 
     try:
-        prompt = build_debate_context(user_id, db)
+        prompt = build_debate_context(user_id, db, session_id)
     except ValueError as e:
         db.close()
         raise HTTPException(status_code=404, detail=str(e))
@@ -198,7 +221,8 @@ async def finish_assessment_stream(user_id: str):
                                     data = json.dumps({"agent": msg["agent"], "content": msg["content"]}, ensure_ascii=False)
                                     yield f"event: agent_message\ndata: {data}\n\n"
                                 elif msg["type"] == "done":
-                                    save_report_to_file(user_id, msg["content"])
+                                    file_path = save_report_to_file(user_id, msg["content"])
+                                    save_report_to_session(db, session_id, msg["content"], file_path)
                                     data = json.dumps({"report": msg["content"]}, ensure_ascii=False)
                                     yield f"event: debate_complete\ndata: {data}\n\n"
                                     remaining_handled = True
@@ -219,8 +243,9 @@ async def finish_assessment_stream(user_id: str):
                     yield f"event: agent_message\ndata: {data}\n\n"
 
                 elif msg["type"] == "done":
-                    # 保存报告到文件
-                    save_report_to_file(user_id, msg["content"])
+                    # 保存报告到文件和数据库
+                    file_path = save_report_to_file(user_id, msg["content"])
+                    save_report_to_session(db, session_id, msg["content"], file_path)
                     data = json.dumps({"report": msg["content"]}, ensure_ascii=False)
                     yield f"event: debate_complete\ndata: {data}\n\n"
                     break
@@ -240,3 +265,74 @@ async def finish_assessment_stream(user_id: str):
             "X-Accel-Buffering": "no",
         }
     )
+
+
+def save_report_to_session(db, session_id: int, report_content: str, file_path: str):
+    """将报告内容存入会话记录"""
+    session = db.query(AssessmentSession).filter(AssessmentSession.id == session_id).first()
+    if session:
+        session.report_content = report_content
+        session.report_file_path = file_path
+        session.status = 'completed'
+        db.commit()
+
+
+# --- 接口：获取用户历史测评记录 ---
+@router.get("/history/{user_id}")
+async def get_history(user_id: int, db: Session = Depends(get_db)):
+    sessions = db.query(AssessmentSession).filter(
+        AssessmentSession.user_id == user_id
+    ).order_by(AssessmentSession.started_at.desc()).all()
+
+    result = []
+    for s in sessions:
+        # 查询该会话的答题记录统计
+        records = db.query(AnswerRecord).filter(AnswerRecord.session_id == s.id).all()
+        total_score = sum(r.score for r in records)
+        anomaly_count = sum(1 for r in records if r.is_anomaly == 1)
+
+        result.append({
+            "session_id": s.id,
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+            "finished_at": s.finished_at.isoformat() if s.finished_at else None,
+            "status": s.status,
+            "question_count": len(records),
+            "total_score": total_score,
+            "anomaly_count": anomaly_count,
+            "has_report": s.report_content is not None,
+        })
+
+    return {"user_id": user_id, "sessions": result}
+
+
+# --- 接口：获取某次测评的详细报告 ---
+@router.get("/report/{session_id}")
+async def get_report(session_id: int, db: Session = Depends(get_db)):
+    session = db.query(AssessmentSession).filter(AssessmentSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    records = db.query(AnswerRecord).filter(AnswerRecord.session_id == session_id).all()
+    answers = []
+    for r in records:
+        question = db.query(Question).filter(Question.exam_no == r.exam_no).first()
+        answers.append({
+            "exam_no": r.exam_no,
+            "question": question.content if question else "未知",
+            "selected_option": r.selected_option,
+            "score": r.score,
+            "time_spent": r.time_spent,
+            "is_anomaly": r.is_anomaly,
+            "ai_follow_up": r.ai_follow_up,
+            "user_explanation": r.user_explanation,
+        })
+
+    return {
+        "session_id": session.id,
+        "user_id": session.user_id,
+        "status": session.status,
+        "started_at": session.started_at.isoformat() if session.started_at else None,
+        "finished_at": session.finished_at.isoformat() if session.finished_at else None,
+        "report": session.report_content,
+        "answers": answers,
+    }

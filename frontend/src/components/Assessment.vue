@@ -84,7 +84,7 @@
         </div>
         <div class="report-divider"></div>
         <div class="report-content" v-html="formattedReport"></div>
-        <button class="restart-btn" @click="restartTest">重新测评</button>
+        <button class="restart-btn" @click="restartTest">返回历史记录</button>
       </div>
     </div>
   </div>
@@ -92,9 +92,15 @@
 
 <script setup>
 import { ref, onMounted, computed, watch, nextTick } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 
 const API_BASE = 'http://127.0.0.1:8000/api/v1/assessment';
+const route = useRoute();
+const router = useRouter();
+
+const userId = parseInt(localStorage.getItem('userId') || '0');
+const sessionId = ref(parseInt(route.query.sessionId) || 0);
 
 const maxQuestions = 10;
 const currentIndex = ref(0);
@@ -159,7 +165,8 @@ const selectOption = async (option) => {
 
   try {
     const res = await axios.post(`${API_BASE}/submit`, {
-      user_id: 1,
+      session_id: sessionId.value,
+      user_id: userId,
       exam_no: currentQuestion.value.id,
       selected_option: option,
       time_spent: timeSpentSeconds
@@ -180,7 +187,8 @@ const selectOption = async (option) => {
 const submitExplanation = async () => {
   try {
     await axios.post(`${API_BASE}/submit_explanation`, {
-      user_id: 1,
+      session_id: sessionId.value,
+      user_id: userId,
       exam_no: currentQuestion.value.id,
       text: userExplanation.value
     });
@@ -207,7 +215,7 @@ const finishAssessment = () => {
   debateMessages.value = [];
   debateError.value = "";
 
-  const evtSource = new EventSource(`${API_BASE}/finish-stream?user_id=1`);
+  const evtSource = new EventSource(`${API_BASE}/finish-stream?user_id=${userId}&session_id=${sessionId.value}`);
 
   evtSource.addEventListener('agent_message', (e) => {
     const data = JSON.parse(e.data);
@@ -244,14 +252,7 @@ const finishAssessment = () => {
 };
 
 const restartTest = () => {
-  currentIndex.value = 0;
-  isFinished.value = false;
-  isGenerating.value = false;
-  finalReport.value = "";
-  debateMessages.value = [];
-  debateError.value = "";
-  debateCollapsed.value = false;
-  fetchQuestion();
+  router.push('/history');
 };
 
 const formattedReport = computed(() => {
@@ -264,26 +265,24 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* ========== 全局容器 ========== */
 .assessment-container {
-  max-width: 780px;
-  margin: 48px auto;
-  padding: 0 20px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  color: #333;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 32px 24px;
 }
 
 /* ========== 答题卡片 ========== */
 .question-card {
-  background: #fff;
-  padding: 36px 40px;
-  border-radius: 16px;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 40px;
+  box-shadow: var(--shadow);
 }
 
 /* 进度条 */
 .header {
-  margin-bottom: 28px;
+  margin-bottom: 32px;
 }
 
 .progress-info {
@@ -293,34 +292,34 @@ onMounted(() => {
 }
 
 .progress-text {
-  color: #666;
-  font-size: 14px;
-  font-weight: 500;
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
 .progress-bar {
   flex: 1;
-  height: 6px;
-  background: #eee;
-  border-radius: 3px;
+  height: 8px;
+  background: var(--bg-dark);
+  border-radius: 4px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #4f8cff, #1b6ef3);
-  border-radius: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  border-radius: 4px;
   transition: width 0.4s ease;
 }
 
 /* 题目标题 */
 .question-title {
-  font-size: 20px;
+  font-size: 28px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--text-primary);
   line-height: 1.6;
-  margin: 0 0 24px 0;
+  margin: 0 0 32px 0;
 }
 
 /* 选项按钮 */
@@ -333,42 +332,42 @@ onMounted(() => {
 .option-btn {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   width: 100%;
-  padding: 16px 20px;
-  border: 1px solid #e4e7ed;
-  border-radius: 10px;
+  padding: 18px 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
   text-align: left;
   cursor: pointer;
-  background: #fafbfc;
-  font-size: 15px;
-  color: #333;
+  background: var(--bg-dark);
+  font-size: 18px;
+  color: var(--text-primary);
   transition: all 0.2s ease;
 }
 
 .option-btn:hover {
-  background: #eef4ff;
-  border-color: #4f8cff;
-  box-shadow: 0 2px 8px rgba(79, 140, 255, 0.1);
+  background: var(--bg-hover);
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
 }
 
 .option-label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: #e8edf3;
-  color: #555;
-  font-size: 13px;
-  font-weight: 600;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 700;
   flex-shrink: 0;
 }
 
 .option-btn:hover .option-label {
-  background: #4f8cff;
-  color: #fff;
+  background: var(--primary);
+  color: white;
 }
 
 .option-text {
@@ -377,75 +376,89 @@ onMounted(() => {
 
 /* ========== 异常检测 ========== */
 .anomaly-container {
-  background: #fffbe6;
-  padding: 24px;
-  border-radius: 10px;
-  border: 1px solid #ffe58f;
+  background: rgba(245, 158, 11, 0.1);
+  padding: 28px;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.3);
   margin-top: 20px;
 }
 
 .warning-box {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  font-size: 15px;
-  color: #8a6d3b;
+  gap: 12px;
+  font-size: 16px;
+  color: var(--warning);
   line-height: 1.6;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .warning-icon {
-  font-size: 20px;
-  color: #faad14;
+  font-size: 30px;
   flex-shrink: 0;
+  animation: pulse 2s ease-in-out infinite;
+  filter: drop-shadow(0 2px 4px rgba(245, 158, 11, 0.3));
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.1); }
 }
 
 textarea {
   width: 100%;
-  margin-bottom: 12px;
-  padding: 12px;
-  border: 1px solid #d9d9d9;
-  border-radius: 8px;
-  font-size: 14px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 17px;
   line-height: 1.6;
   resize: vertical;
   box-sizing: border-box;
+  background: var(--bg-dark);
+  color: var(--text-primary);
 }
 
 textarea:focus {
   outline: none;
-  border-color: #4f8cff;
-  box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.15);
+  border-color: var(--warning);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+}
+
+textarea::placeholder {
+  color: var(--text-muted);
 }
 
 .submit-explanation-btn {
-  background: #52c41a;
-  color: #fff;
+  background: var(--success);
+  color: white;
   border: none;
-  padding: 10px 24px;
-  border-radius: 8px;
+  padding: 14px 28px;
+  border-radius: 10px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: background 0.2s;
+  font-size: 16px;
+  font-weight: 600;
+  transition: all 0.2s;
 }
 
 .submit-explanation-btn:hover {
-  background: #45a815;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(34, 197, 94, 0.3);
 }
 
-/* ========== 结果页（辩论+报告） ========== */
+/* ========== 结果页 ========== */
 .result-page {
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
 
-.debate-section {
-  background: #fff;
-  padding: 28px 32px;
-  border-radius: 16px;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+.debate-section, .report-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 32px;
+  box-shadow: var(--shadow);
 }
 
 .debate-header {
@@ -453,210 +466,196 @@ textarea:focus {
   justify-content: space-between;
   align-items: flex-start;
   cursor: pointer;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   user-select: none;
 }
 
 .debate-title {
   font-size: 20px;
   font-weight: 600;
-  color: #1a1a1a;
-  margin: 0 0 4px 0;
+  color: var(--text-primary);
+  margin: 0 0 6px 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .debate-live-badge {
   font-size: 12px;
-  font-weight: 500;
-  color: #fff;
-  background: #52c41a;
-  padding: 2px 10px;
-  border-radius: 10px;
-  animation: pulse-badge 1.5s ease-in-out infinite;
+  font-weight: 600;
+  color: white;
+  background: var(--success);
+  padding: 4px 10px;
+  border-radius: 12px;
+  animation: pulse 2s ease-in-out infinite;
 }
 
-@keyframes pulse-badge {
+@keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
 }
 
 .debate-done-badge {
   font-size: 12px;
-  font-weight: 500;
-  color: #fff;
-  background: #999;
-  padding: 2px 10px;
-  border-radius: 10px;
+  font-weight: 600;
+  color: white;
+  background: var(--text-muted);
+  padding: 4px 10px;
+  border-radius: 12px;
 }
 
 .collapse-toggle {
-  font-size: 13px;
-  color: #4f8cff;
+  font-size: 14px;
+  color: var(--primary-light);
   font-weight: 500;
-  padding-top: 4px;
-  flex-shrink: 0;
 }
 
 .debate-subtitle {
-  font-size: 14px;
-  color: #888;
+  font-size: 15px;
+  color: var(--text-secondary);
   margin: 0;
 }
 
 .debate-feed {
-  max-height: 480px;
+  max-height: 400px;
   overflow-y: auto;
-  text-align: left;
-  padding: 16px;
-  background: #f7f8fa;
-  border-radius: 10px;
-  border: 1px solid #eee;
+  padding: 20px;
+  background: var(--bg-dark);
+  border-radius: 12px;
+  border: 1px solid var(--border);
 }
 
 .debate-msg {
-  margin-bottom: 14px;
-  padding: 14px 18px;
-  border-radius: 10px;
-  border-left: 4px solid #ccc;
-  background: #fff;
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  border-left: 4px solid;
+  background: var(--bg-card);
 }
 
 .debate-msg .agent-name {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 14px;
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .debate-msg .msg-content {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.7;
   white-space: pre-wrap;
-  color: #444;
+  color: var(--text-primary);
+  text-align: left;
 }
 
 .debate-msg.proponent {
-  background: #f0fff0;
-  border-left-color: #52c41a;
+  border-left-color: var(--success);
 }
-.debate-msg.proponent .agent-name { color: #389e0d; }
+.debate-msg.proponent .agent-name { color: var(--success); }
 
 .debate-msg.opponent {
-  background: #fff1f0;
-  border-left-color: #ff4d4f;
+  border-left-color: var(--error);
 }
-.debate-msg.opponent .agent-name { color: #cf1322; }
+.debate-msg.opponent .agent-name { color: var(--error); }
 
 .debate-msg.judge {
-  background: #fffbe6;
-  border-left-color: #faad14;
+  border-left-color: var(--warning);
 }
-.debate-msg.judge .agent-name { color: #d48806; }
+.debate-msg.judge .agent-name { color: var(--warning); }
 
 .debate-msg.admin {
-  background: #f0f5ff;
-  border-left-color: #1890ff;
+  border-left-color: var(--primary);
 }
-.debate-msg.admin .agent-name { color: #096dd9; }
+.debate-msg.admin .agent-name { color: var(--primary-light); }
 
 .waiting-hint {
   text-align: center;
-  color: #888;
-  padding: 32px 20px;
+  color: var(--text-secondary);
+  padding: 40px 20px;
 }
 
 .waiting-hint p {
-  margin-top: 12px;
-  font-size: 14px;
+  margin-top: 16px;
+  font-size: 15px;
 }
 
 .error-text {
-  color: #ff4d4f;
-  font-size: 14px;
+  color: var(--error);
+  font-size: 15px;
   text-align: center;
-  margin-top: 12px;
+  margin-top: 16px;
 }
 
 /* ========== 报告区 ========== */
-.report-section {
-  background: #fff;
-  padding: 36px 40px;
-  border-radius: 16px;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
-  animation: fade-in 0.4s ease;
-}
-
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 .report-header {
   text-align: center;
   margin-bottom: 8px;
 }
 
 .report-title {
-  font-size: 22px;
-  font-weight: 600;
-  color: #1a1a1a;
+  font-size: 24px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--primary-light), var(--secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   margin: 0 0 6px 0;
 }
 
 .report-subtitle {
-  font-size: 14px;
-  color: #999;
+  font-size: 15px;
+  color: var(--text-secondary);
   margin: 0;
 }
 
 .report-divider {
   height: 1px;
-  background: #eee;
-  margin: 20px 0 24px 0;
+  background: var(--border);
+  margin: 24px 0;
 }
 
 .report-content {
   text-align: left;
-  line-height: 1.8;
-  color: #444;
-  font-size: 15px;
+  line-height: 1.9;
+  color: var(--text-primary);
+  font-size: 16px;
 }
 
 .restart-btn {
   display: block;
   margin: 32px auto 0;
-  padding: 12px 32px;
-  background: #4f8cff;
-  color: #fff;
+  padding: 14px 36px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: white;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
-  font-size: 15px;
-  font-weight: 500;
-  transition: background 0.2s;
+  font-size: 16px;
+  font-weight: 600;
+  transition: all 0.2s;
 }
 
 .restart-btn:hover {
-  background: #3a78e8;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
 }
 
 /* ========== 加载动画 ========== */
 .loader-spinner {
-  border: 3px solid #e8edf3;
-  border-top: 3px solid #4f8cff;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
   border-radius: 50%;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   animation: spin 1s linear infinite;
   margin: 16px auto;
 }
 
 .loader-small {
-  width: 20px;
-  height: 20px;
-  margin: 10px auto;
+  width: 24px;
+  height: 24px;
 }
 
 @keyframes spin {

@@ -18,7 +18,7 @@ def run_debate_streaming(user_data_context: str, message_queue: queue.Queue):
             "base_url": "https://api.deepseek.com/v1"
         }]
         config_list_qwen = [{
-            "model": "qwen-plus",
+            "model": "qwen3.5-flash",
             "api_key": os.environ.get("DASHSCOPE_API_KEY"),
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
         }]

@@ -7,9 +7,12 @@ from sqlalchemy.orm import Session
 from app.models.question import SessionLocal, Question, AnswerRecord
 
 
-def build_debate_context(user_id: str, db: Session) -> str:
+def build_debate_context(user_id: str, db: Session, session_id: int = None) -> str:
     """从数据库查询用户作答记录，组装辩论 prompt"""
-    records = db.query(AnswerRecord).filter(AnswerRecord.user_id == user_id).all()
+    query = db.query(AnswerRecord).filter(AnswerRecord.user_id == user_id)
+    if session_id:
+        query = query.filter(AnswerRecord.session_id == session_id)
+    records = query.all()
     if not records:
         raise ValueError(f"用户 {user_id} 没有作答记录，无法生成报告。")
 

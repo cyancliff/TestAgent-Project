@@ -1,0 +1,75 @@
+# Claude Code 忽略文件
+
+# 首先包含 .gitignore 的所有规则
+# 以下是来自 .gitignore 的内容：
+__pycache__/
+*.py[cod]
+.venv/
+env/
+
+target/
+*.class
+
+.idea/
+.vscode/
+
+
+*.ogg
+*.mp4
+/models/
+
+
+frontend/node_modules/
+
+*.db
+.claude/
+reports/
+
+# 额外为 Claude 添加的忽略规则
+# 大型二进制文件和文档
+*.pdf
+*.docx
+*.doc
+*.xlsx
+*.xls
+*.pptx
+*.ppt
+*.zip
+*.tar.gz
+*.rar
+
+
+# 临时文件
+~$*
+*.tmp
+*.temp
+
+# 前端构建输出
+frontend/dist/
+frontend/build/
+
+# 后端生成文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 日志文件
+*.log
+logs/
+
+# 环境配置文件
+.env.*
+*.env
+
+# 备份文件
+*.bak
+*.backup
+
+# IDE 特定文件
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
