@@ -28,6 +28,8 @@ Obsidian Files/
 
 # 前端依赖包
 frontend/node_modules/
+node_modules/
+frontend/dist/
 
 # 本地数据库和生成文件
 *.db

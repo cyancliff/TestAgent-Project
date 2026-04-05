@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, JSON, Float, Boolean, create_engine, DateTime
+from sqlalchemy import Column, Integer, String, Text, JSON, Float, Boolean, create_engine, DateTime, ForeignKey
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
 from app.core.config import settings
@@ -27,11 +27,35 @@ class Question(Base):
     avg_time = Column(Float, default=8.0, comment="预估平均作答时间(秒)")
 
 
+# --- 用户表 ---
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String(50), unique=True, index=True, comment="用户名")
+    password_hash = Column(String(128), comment="密码哈希")
+    created_at = Column(DateTime, default=datetime.now, comment="注册时间")
+
+
+# --- 测评会话表 ---
+class AssessmentSession(Base):
+    __tablename__ = "assessment_sessions"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, index=True, comment="受试者ID")
+    started_at = Column(DateTime, default=datetime.now, comment="开始时间")
+    finished_at = Column(DateTime, nullable=True, comment="完成时间")
+    status = Column(String(20), default='active', comment="状态: active/completed")
+    report_content = Column(Text, nullable=True, comment="报告内容")
+    report_file_path = Column(String(255), nullable=True, comment="报告文件路径")
+
+
 # --- 作答记录表 (动态数据，本次新增！) ---
 class AnswerRecord(Base):
     __tablename__ = "answer_records"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey('assessment_sessions.id'), index=True, comment="所属会话ID")
     user_id = Column(Integer, index=True, comment="受试者唯一ID")
     exam_no = Column(String(50), index=True, comment="题目编号")
     selected_option = Column(Text, comment="选择的选项内容")
