@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
-from app.models.question import SessionLocal, AssessmentSession, AnswerRecord
+from app.models.question import SessionLocal, AssessmentSession, AnswerRecord, User
+from app.services.rag_service import retrieve_knowledge
+from app.core.security import get_current_user
 import os
 import httpx
 
@@ -31,8 +33,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     session_id: int
-    user_id: int
-    message: str
+    message: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -67,11 +68,11 @@ def get_session_context(session_id: int, db: Session) -> str:
 
 
 @router.post("/start")
-async def start_chat(payload: ChatRequest, db: Session = Depends(get_db)):
+async def start_chat(payload: ChatRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """初始化对话，挂载测评上下文"""
     session = db.query(AssessmentSession).filter(
         AssessmentSession.id == payload.session_id,
-        AssessmentSession.user_id == payload.user_id
+        AssessmentSession.user_id == current_user.id
     ).first()
 
     if not session:
@@ -111,10 +112,25 @@ async def start_chat(payload: ChatRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/send")
-async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
-    """发送消息并获取回复"""
+async def send_message(payload: ChatRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """发送消息并获取回复，自动检索 ATMR 知识库增强回答"""
     if payload.session_id not in chat_histories:
         raise HTTPException(status_code=400, detail="对话未初始化，请先调用/start")
+
+    # RAG 检索：根据用户问题从 ATMR 知识库中检索相关知识
+    rag_context = ""
+    try:
+        rag_context = await retrieve_knowledge(payload.message, max_sections=3, max_chars=2000)
+    except Exception as e:
+        print(f"[Chat] RAG 检索失败（不影响回复）: {e}")
+
+    # 如果检索到知识库内容，注入为一条临时 system 消息
+    if rag_context:
+        chat_histories[payload.session_id].append({
+            "role": "system",
+            "content": f"【ATMR 知识库参考资料】以下是与用户问题相关的 ATMR 心理学专业知识，"
+                       f"请结合这些资料回答用户问题，并在适当时引用理论依据：\n\n{rag_context}"
+        })
 
     # 添加用户消息
     chat_histories[payload.session_id].append({
@@ -122,8 +138,14 @@ async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
         "content": payload.message
     })
 
-    # 调用 Kimi API 生成回复
+    # 调用 LLM API 生成回复
     reply = await generate_reply(chat_histories[payload.session_id])
+
+    # 清理临时注入的 RAG system 消息，避免对话历史膨胀
+    chat_histories[payload.session_id] = [
+        m for m in chat_histories[payload.session_id]
+        if not (m["role"] == "system" and "ATMR 知识库参考资料" in m.get("content", ""))
+    ]
 
     # 添加助手回复
     chat_histories[payload.session_id].append({
@@ -139,15 +161,10 @@ async def send_message(payload: ChatRequest, db: Session = Depends(get_db)):
 
 async def generate_reply(messages: List[dict]) -> str:
     """调用 Kimi K2.5 API 生成回复"""
-    print(f"[DEBUG] KIMI_API_KEY 是否存在: {bool(KIMI_API_KEY)}")
-    print(f"[DEBUG] KIMI_API_KEY 前10位: {KIMI_API_KEY[:10] if KIMI_API_KEY else '空'}")
-
     if not KIMI_API_KEY:
-        print("[DEBUG] 未配置 API Key，使用备用回复")
         return "【错误】未配置 KIMI_API_KEY 环境变量"
 
     try:
-        print(f"[DEBUG] 开始调用 Kimi API，消息数: {len(messages)}")
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{KIMI_BASE_URL}/chat/completions",
@@ -162,25 +179,26 @@ async def generate_reply(messages: List[dict]) -> str:
                     "max_tokens": 2000
                 }
             )
-            print(f"[DEBUG] Kimi API 响应状态: {response.status_code}")
             response.raise_for_status()
             result = response.json()
-            reply = result["choices"][0]["message"]["content"]
-            print(f"[DEBUG] Kimi 回复长度: {len(reply)}")
-            return reply
+            return result["choices"][0]["message"]["content"]
     except httpx.HTTPStatusError as e:
-        error_msg = f"Kimi API 错误: {e.response.status_code} - {e.response.text}"
-        print(f"[DEBUG] {error_msg}")
-        return f"【API错误】{error_msg}"
+        return f"【API错误】Kimi API 错误: {e.response.status_code}"
     except Exception as e:
-        error_msg = f"调用 Kimi API 失败: {str(e)}"
-        print(f"[DEBUG] {error_msg}")
-        return f"【异常】{error_msg}"
+        return f"【异常】调用 Kimi API 失败: {str(e)}"
 
 
 @router.get("/history/{session_id}")
-async def get_chat_history(session_id: int, user_id: int, db: Session = Depends(get_db)):
+async def get_chat_history(session_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """获取对话历史"""
+    # 验证 session 属于当前用户
+    session = db.query(AssessmentSession).filter(
+        AssessmentSession.id == session_id,
+        AssessmentSession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=403, detail="无权访问此会话")
+
     if session_id not in chat_histories:
         return {"messages": []}
 
@@ -190,7 +208,7 @@ async def get_chat_history(session_id: int, user_id: int, db: Session = Depends(
 
 
 @router.post("/clear")
-async def clear_chat(payload: ChatRequest, db: Session = Depends(get_db)):
+async def clear_chat(payload: ChatRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """清空对话历史"""
     if payload.session_id in chat_histories:
         del chat_histories[payload.session_id]

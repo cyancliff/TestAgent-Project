@@ -1,0 +1,5 @@
+# 特征向量生成依赖
+sentence-transformers
+numpy
+scikit-learn
+torch

@@ -37,9 +37,8 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import api from '../api'
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1/auth'
 const router = useRouter()
 
 const isLogin = ref(true)
@@ -54,10 +53,11 @@ const handleSubmit = async () => {
   const endpoint = isLogin.value ? 'login' : 'register'
 
   try {
-    const res = await axios.post(`${API_BASE}/${endpoint}`, {
+    const res = await api.post(`/auth/${endpoint}`, {
       username: username.value,
       password: password.value,
     })
+    localStorage.setItem('token', res.data.access_token)
     localStorage.setItem('userId', res.data.user_id)
     localStorage.setItem('username', res.data.username)
     router.push('/history')

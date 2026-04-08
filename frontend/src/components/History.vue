@@ -56,13 +56,11 @@
 
         <div class="card-footer">
           <span class="session-time">{{ formatTime(s.started_at) }}</span>
-          <button v-if="s.has_report" class="btn-view" @click="viewReport(s.session_id)">
-            查看报告 →
-          </button>
-          <button v-if="s.has_report" class="btn-chat" @click="goToChat(s.session_id)">
-            💬 咨询
-          </button>
-          <span v-else class="no-report">无报告</span>
+          <div class="card-actions">
+            <button v-if="s.has_report" class="btn-view" @click="viewReport(s.session_id)">查看报告 →</button>
+            <button v-if="s.has_report" class="btn-chat" @click="goToChat(s.session_id)">💬 咨询</button>
+            <button class="btn-delete" @click="deleteSession(s.session_id)">删除记录</button>
+          </div>
         </div>
       </div>
     </div>
@@ -72,18 +70,16 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import api from '../api'
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1/assessment'
 const router = useRouter()
 
-const userId = localStorage.getItem('userId')
 const sessions = ref([])
 const loading = ref(true)
 
 const fetchHistory = async () => {
   try {
-    const res = await axios.get(`${API_BASE}/history/${userId}`)
+    const res = await api.get('/assessment/history')
     sessions.value = res.data.sessions
   } catch (err) {
     console.error('获取历史记录失败:', err)
@@ -94,7 +90,7 @@ const fetchHistory = async () => {
 
 const startNewSession = async () => {
   try {
-    const res = await axios.post(`${API_BASE}/start-session`, { user_id: parseInt(userId) })
+    const res = await api.post('/assessment/start-session', {})
     router.push({ path: '/assessment', query: { sessionId: res.data.session_id } })
   } catch (err) {
     console.error('创建会话失败:', err)
@@ -108,6 +104,17 @@ const viewReport = (sessionId) => {
 
 const goToChat = (sessionId) => {
   router.push({ path: '/chat', query: { sessionId } })
+}
+
+const deleteSession = async (sessionId) => {
+  if (!confirm('确定要删除这次测评记录吗？删除后无法恢复。')) return
+  try {
+    await api.delete(`/assessment/session/${sessionId}`)
+    sessions.value = sessions.value.filter(s => s.session_id !== sessionId)
+  } catch (err) {
+    console.error('删除记录失败:', err)
+    alert(err.response?.data?.detail || '删除失败')
+  }
 }
 
 const formatDay = (isoStr) => {
@@ -331,21 +338,30 @@ onMounted(fetchHistory)
   border-top: 1px solid var(--border);
 }
 
+.card-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .session-time {
   font-size: 13px;
   color: var(--text-muted);
 }
 
-.btn-view {
+.btn-view, .btn-chat, .btn-delete {
   padding: 8px 16px;
   background: transparent;
-  border: 1px solid var(--primary);
   border-radius: 8px;
-  color: var(--primary-light);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+}
+
+.btn-view {
+  border: 1px solid var(--primary);
+  color: var(--primary-light);
 }
 
 .btn-view:hover {
@@ -354,20 +370,23 @@ onMounted(fetchHistory)
 }
 
 .btn-chat {
-  padding: 8px 16px;
-  background: transparent;
   border: 1px solid var(--secondary);
-  border-radius: 8px;
   color: var(--secondary);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
 .btn-chat:hover {
   background: var(--secondary);
   color: var(--bg-dark);
+}
+
+.btn-delete {
+  border: 1px solid var(--error);
+  color: var(--error);
+}
+
+.btn-delete:hover {
+  background: var(--error);
+  color: white;
 }
 
 .no-report {

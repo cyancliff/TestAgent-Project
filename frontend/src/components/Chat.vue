@@ -78,15 +78,13 @@
 <script setup>
 import { ref, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import axios from 'axios'
+import api from '../api'
 import { marked } from 'marked'
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1/chat'
 const route = useRoute()
 const router = useRouter()
 
 const sessionId = ref(parseInt(route.query.sessionId) || 0)
-const userId = parseInt(localStorage.getItem('userId') || '0')
 
 const messages = ref([])
 const inputMessage = ref('')
@@ -98,9 +96,8 @@ const inputRef = ref(null)
 // 初始化对话
 const initChat = async () => {
   try {
-    const res = await axios.post(`${API_BASE}/start`, {
+    const res = await api.post('/chat/start', {
       session_id: sessionId.value,
-      user_id: userId,
       message: ''
     })
     messages.value = [{ role: 'assistant', content: res.data.welcome }]
@@ -127,9 +124,8 @@ const sendMessage = async () => {
   resetTextarea()
 
   try {
-    const res = await axios.post(`${API_BASE}/send`, {
+    const res = await api.post('/chat/send', {
       session_id: sessionId.value,
-      user_id: userId,
       message: text
     })
     messages.value.push({ role: 'assistant', content: res.data.reply })
@@ -149,9 +145,8 @@ const clearChat = async () => {
   if (!confirm('确定要清空对话历史吗？')) return
 
   try {
-    await axios.post(`${API_BASE}/clear`, {
+    await api.post('/chat/clear', {
       session_id: sessionId.value,
-      user_id: userId,
       message: ''
     })
     messages.value = []

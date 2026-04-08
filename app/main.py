@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import assessment
 from app.api import auth
 from app.api import chat
+from app.api import rag
 from app.core.config import settings
 
 app = FastAPI(title=settings.PROJECT_NAME)
@@ -19,6 +20,7 @@ app.add_middleware(
 app.include_router(assessment.router, prefix="/api/v1/assessment", tags=["实时测评系统"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["用户认证"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["心理专家对话"])
+app.include_router(rag.router, prefix="/api/v1/rag", tags=["RAG 知识库"])
 
 @app.get("/")
 def read_root():

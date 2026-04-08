@@ -1,0 +1,39 @@
+# TestAgent 完整依赖列表
+# 基础后端依赖
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# 数据库 (PostgreSQL)
+psycopg2-binary==2.9.9
+
+# HTTP客户端
+httpx==0.25.1
+requests==2.31.0
+
+# 数据处理
+numpy==1.24.3
+scikit-learn==1.3.2
+
+# 特征向量生成（智能选题）
+sentence-transformers==2.2.2
+torch==2.1.0  # 或根据平台选择合适版本
+
+# 多智能体框架
+pyautogen==0.2.14
+
+# PageIndex RAG依赖
+litellm==1.82.0
+pymupdf==1.26.4
+PyPDF2==3.0.1
+pyyaml==6.0.2
+
+# 认证与安全
+python-jose[cryptography]==3.5.0
+passlib[bcrypt]==1.7.4
+
+# 其他工具
+python-multipart==0.0.6
