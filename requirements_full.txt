@@ -20,7 +20,7 @@ scikit-learn==1.3.2
 
 # 特征向量生成（智能选题）
 sentence-transformers==2.2.2
-torch==2.1.0  # 或根据平台选择合适版本
+torch==2.1.0+cpu
 
 # 多智能体框架
 pyautogen==0.2.14
@@ -34,6 +34,10 @@ pyyaml==6.0.2
 # 认证与安全
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
+bcrypt
+
+# AI 对话（DeepSeek API）
+openai
 
 # 其他工具
 python-multipart==0.0.6

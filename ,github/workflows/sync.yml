@@ -1,0 +1,20 @@
+name: Sync to Gitee
+
+on:
+  push:
+    branches:
+      - main  # 监听 main 分支的提交 (如果你的主分支叫 master，请改成 master)
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync to Gitee
+        uses: Yikun/hub-mirror-action@master
+        with:
+          src: github/cyancliff   # 修改为你的 GitHub 用户名
+          dst: gitee/cyancliff     # 修改为你的 Gitee 用户名
+          dst_key: ${{ secrets.GITEE_RSA_PRIVATE_KEY }}
+          dst_token: ${{ secrets.GITEE_PASSWORD }}
+          static_list: "TestAgent-Project"   # 修改为你的项目名 (注意不是链接，是纯名字)
+          force_update: true
