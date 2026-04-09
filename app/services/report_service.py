@@ -65,7 +65,7 @@ def build_debate_context(user_id: str, db: Session, session_id: int = None) -> s
     if module_results:
         module_summary = "\n\n【模块辩论结果汇总】：\n"
         for mr in module_results:
-            module_summary += f"模块 {mr.module}: {mr.result_content[:100]}...\n"
+            module_summary += f"模块 {mr.module}: {mr.result_content}\n"
 
     # RAG 检索：获取 ATMR 理论知识作为辩论证据
     rag_section = ""

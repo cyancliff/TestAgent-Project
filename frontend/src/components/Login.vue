@@ -2,7 +2,7 @@
   <div class="login-page">
     <div class="login-card animate-fade-in">
       <div class="brand-header">
-        <span class="logo">🧠</span>
+        <span class="logo">✨</span>
         <h1 class="app-title">ATMR 测评系统</h1>
         <p class="app-subtitle">多智能体辩论驱动的深度心理画像</p>
       </div>

@@ -3,7 +3,7 @@
     <!-- 统一导航栏 -->
     <nav v-if="showNav" class="navbar">
       <div class="nav-brand">
-        <span class="logo">🧠</span>
+        <span class="logo">✨</span>
         <span class="brand-text">ATMR 心理测评</span>
       </div>
       <div class="nav-links">

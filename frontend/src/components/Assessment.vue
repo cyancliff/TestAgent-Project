@@ -9,7 +9,7 @@
           系统将智能选择最适合您的题目
         </p>
         <div class="start-features">
-          <div class="feature-item"><span class="feature-icon">🧠</span><span>智能选题</span></div>
+          <div class="feature-item"><span class="feature-icon">✨</span><span>智能选题</span></div>
           <div class="feature-item"><span class="feature-icon">🔍</span><span>异常检测</span></div>
           <div class="feature-item"><span class="feature-icon">👥</span><span>专家辩论</span></div>
         </div>
@@ -73,38 +73,35 @@
     </div>
 
     <div v-else class="result-page">
-      <div class="debate-section">
-        <div class="debate-header" @click="debateCollapsed = !debateCollapsed">
-          <div>
-            <h2 class="debate-title">
-              AI 评审团辩论
-              <span v-if="!isGenerating" class="debate-done-badge">已完成</span>
-              <span v-else class="debate-live-badge">进行中</span>
-            </h2>
-            <p class="debate-subtitle">多位 AI 专家正在就您的答题情况进行深度讨论</p>
+      <div v-if="isGenerating" class="debate-loading-section">
+        <div class="debate-loading-card">
+          <div class="orbit-container">
+            <div class="orbit-ring ring-1"></div>
+            <div class="orbit-ring ring-2"></div>
+            <div class="orbit-ring ring-3"></div>
+            <div class="orbit-dot dot-1"></div>
+            <div class="orbit-dot dot-2"></div>
+            <div class="orbit-dot dot-3"></div>
+            <div class="orbit-center-icon">✨</div>
           </div>
-          <span v-if="!isGenerating" class="collapse-toggle">{{ debateCollapsed ? '展开' : '收起' }}</span>
-        </div>
-
-        <div v-show="!debateCollapsed" class="debate-feed" ref="debateFeedRef">
-          <div v-for="(msg, i) in debateMessages" :key="i" :class="['debate-msg', agentClass(msg.agent)]">
-            <div class="msg-header">
-              <span class="agent-avatar">{{ getAgentAvatar(msg.agent) }}</span>
-              <span class="agent-name">{{ formatAgentName(msg.agent) }}</span>
+          <h2 class="debate-loading-title">专家辩论中</h2>
+          <p class="debate-loading-subtitle">多位 AI 专家正在深入分析您的测评数据</p>
+          <div class="debate-loading-steps">
+            <div :class="['step-item', { active: debateMessages.length === 0 }]">
+              <span class="step-dot"></span><span>唤醒评审团</span>
             </div>
-            <div class="msg-content">{{ msg.content }}</div>
+            <div :class="['step-item', { active: debateMessages.length > 0 && debateMessages.length <= 2 }]">
+              <span class="step-dot"></span><span>正反方交锋</span>
+            </div>
+            <div :class="['step-item', { active: debateMessages.length > 2 }]">
+              <span class="step-dot"></span><span>裁决与生成报告</span>
+            </div>
           </div>
-          <div v-if="debateMessages.length === 0" class="waiting-hint">
-            <div class="loader-spinner"></div>
-            <p>正在唤醒多智能体评审团，请稍候...</p>
-          </div>
-          <div v-else-if="isGenerating" class="loader-spinner loader-small"></div>
+          <p v-if="debateError" class="error-text">{{ debateError }}</p>
         </div>
-
-        <p v-if="debateError" class="error-text">{{ debateError }}</p>
       </div>
 
-      <div v-if="!isGenerating" class="report-section">
+      <div v-else class="report-section">
         <div class="report-header">
           <h2 class="report-title">深度心理测评报告</h2>
           <p class="report-subtitle">基于多智能体辩论生成</p>
@@ -499,27 +496,10 @@ textarea { width: 100%; padding: 18px; background: var(--bg-dark); border: 1px s
 
 /* === 结果页 === */
 .result-page { display: flex; flex-direction: column; gap: 28px; }
-.debate-section, .report-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 28px; box-shadow: var(--shadow-lg); overflow: hidden; }
-.debate-header, .report-header { padding: 32px 40px; }
-.debate-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
-.debate-title, .report-title { font-size: 28px; font-weight: 700; color: var(--text-primary); margin: 0 0 10px 0; }
-.debate-subtitle, .report-subtitle { color: var(--text-secondary); margin: 0; font-size: 17px; }
-.debate-done-badge, .debate-live-badge { display: inline-block; padding: 6px 14px; border-radius: 24px; font-size: 14px; margin-left: 12px; font-weight: 600; }
-.debate-done-badge { background: rgba(34,197,94,0.15); color: var(--success); }
-.debate-live-badge { background: rgba(245,158,11,0.15); color: var(--warning); }
-.collapse-toggle { color: var(--primary-light); font-size: 16px; font-weight: 500; }
-.debate-feed { max-height: 560px; overflow-y: auto; padding: 0 40px 36px; }
-.debate-msg { padding: 22px 24px; border-radius: 18px; margin-bottom: 18px; }
-.debate-msg.proponent { background: rgba(99,102,241,0.08); }
-.debate-msg.opponent { background: rgba(6,182,212,0.08); }
-.debate-msg.judge { background: rgba(245,158,11,0.08); }
-.msg-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.agent-name { font-weight: 600; color: var(--text-primary); font-size: 17px; }
-.msg-content { color: var(--text-secondary); line-height: 1.9; white-space: pre-wrap; font-size: 16px; }
-.waiting-hint { text-align: center; padding: 52px 0; color: var(--text-secondary); font-size: 17px; }
-.loader-spinner { width: 44px; height: 44px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
-.loader-small { width: 30px; height: 30px; margin-top: 14px; }
-.error-text { color: var(--error); padding: 0 40px 28px; font-size: 16px; }
+.report-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 28px; box-shadow: var(--shadow-lg); overflow: hidden; }
+.report-header { padding: 32px 40px; }
+.report-title { font-size: 28px; font-weight: 700; color: var(--text-primary); margin: 0 0 10px 0; }
+.report-subtitle { color: var(--text-secondary); margin: 0; font-size: 17px; }
 .report-divider { height: 1px; background: var(--border); }
 .report-content { padding: 40px; color: var(--text-primary); line-height: 2; font-size: 18px; }
 .report-actions { display: flex; gap: 16px; padding: 0 40px 36px; }
@@ -527,5 +507,44 @@ textarea { width: 100%; padding: 18px; background: var(--bg-dark); border: 1px s
 .restart-btn:hover { background: var(--border); }
 .view-report-btn { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; }
 .view-report-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3); }
+.error-text { color: var(--error); padding: 16px 0 0; font-size: 16px; text-align: center; }
+
+/* === 辩论加载动画 === */
+.debate-loading-section { display: flex; justify-content: center; align-items: center; min-height: 60vh; }
+.debate-loading-card { text-align: center; padding: 60px 48px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 28px; box-shadow: var(--shadow-lg); max-width: 520px; width: 100%; }
+.debate-loading-title { font-size: 32px; font-weight: 800; color: var(--text-primary); margin: 32px 0 12px; }
+.debate-loading-subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 40px; line-height: 1.7; }
+
+/* 轨道动画 */
+.orbit-container { position: relative; width: 160px; height: 160px; margin: 0 auto; }
+.orbit-ring {
+  position: absolute; inset: 0; border-radius: 50%; border: 2px solid transparent;
+}
+.orbit-ring.ring-1 { border-top-color: var(--primary); animation: orbit-spin 3s linear infinite; }
+.orbit-ring.ring-2 { inset: 16px; border-right-color: var(--secondary, #06b6d4); animation: orbit-spin 2.5s linear infinite reverse; }
+.orbit-ring.ring-3 { inset: 32px; border-bottom-color: var(--warning); animation: orbit-spin 2s linear infinite; }
+.orbit-dot {
+  position: absolute; width: 12px; height: 12px; border-radius: 50%;
+}
+.orbit-dot.dot-1 { background: var(--primary); top: -6px; left: 50%; transform: translateX(-50%); animation: orbit-spin 3s linear infinite; transform-origin: 50% 86px; }
+.orbit-dot.dot-2 { background: var(--secondary, #06b6d4); top: 50%; right: 10px; animation: orbit-spin 2.5s linear infinite reverse; transform-origin: -54px 50%; }
+.orbit-dot.dot-3 { background: var(--warning); bottom: 26px; left: 26px; animation: orbit-spin 2s linear infinite; transform-origin: 54px -22px; }
+.orbit-center-icon {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 48px; animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* 步骤指示器 */
+.debate-loading-steps { display: flex; flex-direction: column; gap: 16px; align-items: flex-start; margin: 0 auto; max-width: 240px; }
+.step-item { display: flex; align-items: center; gap: 14px; font-size: 16px; color: var(--text-secondary); font-weight: 500; transition: all 0.3s; }
+.step-item.active { color: var(--primary-light); font-weight: 700; }
+.step-dot {
+  width: 10px; height: 10px; border-radius: 50%; background: var(--border); flex-shrink: 0; transition: all 0.3s;
+}
+.step-item.active .step-dot { background: var(--primary); box-shadow: 0 0 12px rgba(99, 102, 241, 0.6); animation: pulse-dot 1.5s ease-in-out infinite; }
+
+@keyframes orbit-spin { to { transform: rotate(360deg); } }
+@keyframes pulse-glow { 0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.8; } }
+@keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 6px rgba(99, 102, 241, 0.4); } 50% { box-shadow: 0 0 18px rgba(99, 102, 241, 0.8); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>

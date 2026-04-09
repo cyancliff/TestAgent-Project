@@ -164,7 +164,7 @@ async def run_module_debate_async(session_id: int, user_id: int, module: str):
 
 数据：{data_json}
 
-请用中文输出你的专业分析（200-300字）。"""
+请用中文输出你的专业分析（不超过400字）。"""
             },
             "behaviorist": {
                 "name": "行为分析师",
@@ -179,7 +179,7 @@ async def run_module_debate_async(session_id: int, user_id: int, module: str):
 
 数据：{data_json}
 
-请用中文输出你的行为分析（150-250字）。"""
+请用中文输出你的行为分析（不超过400字）。"""
             },
             "critic": {
                 "name": "批判性评估师",
@@ -194,7 +194,7 @@ async def run_module_debate_async(session_id: int, user_id: int, module: str):
 
 数据：{data_json}
 
-请用中文输出你的批判性评估（150-250字）。"""
+请用中文输出你的批判性评估（不超过400字）。"""
             }
         }
 
@@ -214,7 +214,7 @@ async def run_module_debate_async(session_id: int, user_id: int, module: str):
                         {"role": "user", "content": expert_config["prompt"]}
                     ],
                     temperature=0.7,
-                    max_tokens=500
+                    max_tokens=800
                 )
 
                 return {
@@ -247,7 +247,7 @@ async def run_module_debate_async(session_id: int, user_id: int, module: str):
                 synthesis_prompt += f"\n【{result['expert']}】\n{result['content']}\n"
 
         synthesis_prompt += """
-请输出一个简洁的模块评估总结（100-150字），包含：
+请输出一个简洁的模块评估总结（不超过400字），包含：
 1. 该模块的核心特质水平评估
 2. 关键发现或注意事项
 3. 与其他模块的关联预期
