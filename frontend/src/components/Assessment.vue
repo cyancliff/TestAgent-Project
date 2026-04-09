@@ -1,6 +1,13 @@
 <template>
   <div class="assessment-container">
-    <div v-if="!hasStarted" class="start-page">
+    <div v-if="isCheckingResume" class="start-page">
+      <div class="start-card">
+        <div class="start-icon"><span class="btn-spinner"></span></div>
+        <p class="start-description">正在检查测评进度...</p>
+      </div>
+    </div>
+
+    <div v-else-if="!hasStarted" class="start-page">
       <div class="start-card">
         <div class="start-icon">📝</div>
         <h1 class="start-title">ATMR 心理测评</h1>
@@ -13,10 +20,22 @@
           <div class="feature-item"><span class="feature-icon">🔍</span><span>异常检测</span></div>
           <div class="feature-item"><span class="feature-icon">👥</span><span>专家辩论</span></div>
         </div>
-        <button class="start-btn" @click="startNewSession" :disabled="isStarting">
-          <span v-if="isStarting"><span class="btn-spinner"></span>准备中...</span>
-          <span v-else>开始测评</span>
-        </button>
+        <div v-if="pendingResume" class="resume-section">
+          <p class="resume-hint">您有一份未完成的测评（已完成 {{ pendingResume.answered_count }}/{{ maxQuestions }} 题）</p>
+          <button class="start-btn resume-btn" @click="resumeSession" :disabled="isStarting">
+            继续测评
+          </button>
+          <button class="start-btn restart-new-btn" @click="startNewSession" :disabled="isStarting">
+            <span v-if="isStarting"><span class="btn-spinner"></span>准备中...</span>
+            <span v-else>重新开始</span>
+          </button>
+        </div>
+        <div v-else>
+          <button class="start-btn" @click="startNewSession" :disabled="isStarting">
+            <span v-if="isStarting"><span class="btn-spinner"></span>准备中...</span>
+            <span v-else>开始测评</span>
+          </button>
+        </div>
         <p v-if="startError" class="start-error">{{ startError }}</p>
       </div>
     </div>
@@ -35,6 +54,23 @@
         <div v-if="currentModule" class="module-info">
           <span class="module-badge">模块 {{ currentModule }}</span>
         </div>
+      </div>
+
+      <div class="question-nav-toggle" @click="showQuestionNav = !showQuestionNav">
+        <span>{{ showQuestionNav ? '收起题目列表' : '展开题目列表' }}</span>
+        <span class="toggle-arrow">{{ showQuestionNav ? '▲' : '▼' }}</span>
+      </div>
+      <div v-if="showQuestionNav" class="question-nav-grid">
+        <button
+          v-for="i in maxQuestions" :key="i"
+          :class="['qnav-item', {
+            current: currentIndex === i - 1,
+            answered: questions[i - 1] && answersMap[questions[i - 1]?.id],
+            locked: !questions[i - 1]
+          }]"
+          @click="jumpToQuestion(i - 1)"
+          :disabled="!questions[i - 1]"
+        >{{ i }}</button>
       </div>
 
       <div class="question-content">
@@ -63,11 +99,31 @@
         <button class="submit-explanation-btn" @click="submitExplanation">保存解释</button>
       </div>
 
+      <div v-if="moduleSubmitInfo" class="module-submit-bar">
+        <div class="module-submit-info">
+          <span class="module-submit-label">模块 {{ moduleSubmitInfo.module }} 已答完</span>
+          <span v-if="moduleSubmitInfo.submitted" class="module-submit-status">辩论已启动</span>
+        </div>
+        <button
+          class="module-submit-btn"
+          :disabled="moduleSubmitInfo.cooling || isSubmittingModule"
+          @click="submitModule(moduleSubmitInfo.module)"
+        >
+          <span v-if="isSubmittingModule"><span class="btn-spinner"></span></span>
+          <span v-else-if="moduleSubmitInfo.cooling">冷却中 ({{ moduleCooldownRemaining }}s)</span>
+          <span v-else-if="moduleSubmitInfo.submitted">重新提交 {{ moduleSubmitInfo.module }} 模块</span>
+          <span v-else>提交 {{ moduleSubmitInfo.module }} 模块</span>
+        </button>
+      </div>
+
       <div class="navigation-actions">
         <button class="nav-btn secondary" @click="prevQuestion" :disabled="currentIndex === 0">上一题</button>
         <button class="nav-btn" v-if="currentIndex < maxQuestions - 1" @click="nextQuestion" :disabled="!canGoNext">下一题</button>
-        <button class="nav-btn submit-final" v-else @click="submitAllAnswers" :disabled="!canSubmitAll || isSubmittingAll">
-          {{ isSubmittingAll ? '提交中...' : '提交答卷' }}
+        <button class="nav-btn submit-final" v-if="currentIndex === maxQuestions - 1" @click="submitAllAnswers" :disabled="!canSubmitAll || isSubmittingAll">
+          {{ isSubmittingAll ? '提交中...' : (isEditMode ? '重新提交' : '提交答卷') }}
+        </button>
+        <button class="nav-btn submit-final" v-else-if="isEditMode && canSubmitAll" @click="submitAllAnswers" :disabled="isSubmittingAll">
+          {{ isSubmittingAll ? '提交中...' : '重新提交' }}
         </button>
       </div>
     </div>
@@ -147,9 +203,92 @@ const debateCollapsed = ref(false)
 const hasStarted = ref(false)
 const isStarting = ref(false)
 const startError = ref('')
+const isCheckingResume = ref(true)
+const pendingResume = ref(null)
+const isEditMode = ref(false)
 const isAdaptive = ref(true)
 const currentModule = ref(null)
 const questionStats = ref(null)
+const showQuestionNav = ref(false)
+const isSubmittingModule = ref(false)
+const moduleSubmitTimes = ref({})  // { A: timestamp, T: timestamp, ... }
+const moduleCooldownRemaining = ref(0)
+let cooldownTimer = null
+
+// 模块边界定义：索引 2-11=A, 12-21=T, 22-31=M, 32-41=R
+const MODULE_RANGES = { A: [2, 11], T: [12, 21], M: [22, 31], R: [32, 41] }
+const MODULE_COOLDOWN = 30
+
+const getModuleForIndex = (idx) => {
+  for (const [mod, [start, end]] of Object.entries(MODULE_RANGES)) {
+    if (idx >= start && idx <= end) return mod
+  }
+  return null
+}
+
+const isModuleComplete = (mod) => {
+  const [start, end] = MODULE_RANGES[mod]
+  for (let i = start; i <= end; i++) {
+    const q = questions.value[i]
+    if (!q || !answersMap.value[q.id]) return false
+  }
+  return true
+}
+
+const moduleSubmitInfo = computed(() => {
+  // 判断当前位置所在的模块
+  const mod = getModuleForIndex(currentIndex.value)
+  if (!mod || !isModuleComplete(mod)) return null
+
+  const submitTime = moduleSubmitTimes.value[mod]
+  const submitted = !!submitTime
+  const cooling = submitted && (Date.now() - submitTime) < MODULE_COOLDOWN * 1000
+
+  return { module: mod, submitted, cooling }
+})
+
+const startCooldownTimer = (mod) => {
+  if (cooldownTimer) clearInterval(cooldownTimer)
+  cooldownTimer = setInterval(() => {
+    const submitTime = moduleSubmitTimes.value[mod]
+    if (!submitTime) { clearInterval(cooldownTimer); return }
+    const remaining = Math.ceil(MODULE_COOLDOWN - (Date.now() - submitTime) / 1000)
+    if (remaining <= 0) {
+      moduleCooldownRemaining.value = 0
+      clearInterval(cooldownTimer)
+    } else {
+      moduleCooldownRemaining.value = remaining
+    }
+  }, 1000)
+}
+
+const submitModule = async (mod) => {
+  isSubmittingModule.value = true
+  try {
+    await api.post('/assessment/submit-module', {
+      session_id: sessionId.value,
+      module: mod,
+    })
+    moduleSubmitTimes.value[mod] = Date.now()
+    moduleCooldownRemaining.value = MODULE_COOLDOWN
+    startCooldownTimer(mod)
+  } catch (err) {
+    const detail = err.response?.data?.detail
+    if (err.response?.status === 429) {
+      // 从错误消息提取剩余时间
+      const match = detail?.match(/(\d+)/)
+      if (match) {
+        moduleSubmitTimes.value[mod] = Date.now() - (MODULE_COOLDOWN - parseInt(match[1])) * 1000
+        moduleCooldownRemaining.value = parseInt(match[1])
+        startCooldownTimer(mod)
+      }
+    } else {
+      alert(detail || '模块提交失败')
+    }
+  } finally {
+    isSubmittingModule.value = false
+  }
+}
 
 watch(() => debateMessages.value.length, () => {
   nextTick(() => {
@@ -279,6 +418,18 @@ const selectOption = async (option) => {
     const isAnomaly = res.data.status === 'anomaly' && !answersMap.value[currentQuestion.value.id].user_explanation
     anomalyTriggered.value = isAnomaly
 
+    // 实时保存到后端（fire-and-forget）
+    api.post('/assessment/save-answer', {
+      session_id: sessionId.value,
+      exam_no: currentQuestion.value.id,
+      selected_option: option,
+      time_spent: timeSpentSeconds,
+      score: res.data.score,
+      is_anomaly: isAnomaly ? 1 : 0,
+      ai_follow_up: res.data.follow_up_question || null,
+      user_explanation: answersMap.value[currentQuestion.value.id]?.user_explanation || null,
+    }).catch(err => console.warn('草稿保存失败:', err))
+
     // 非异常情况下自动跳转下一题
     if (!isAnomaly && currentIndex.value + 1 < maxQuestions) {
       setTimeout(() => {
@@ -299,6 +450,18 @@ const submitExplanation = () => {
     user_explanation: userExplanation.value,
   }
   anomalyTriggered.value = false
+
+  // 同步解释到后端
+  api.post('/assessment/save-answer', {
+    session_id: sessionId.value,
+    exam_no: currentQuestion.value.id,
+    selected_option: answer.selected_option,
+    time_spent: answer.time_spent,
+    score: answer.score,
+    is_anomaly: 1,
+    ai_follow_up: answer.follow_up_question || null,
+    user_explanation: userExplanation.value,
+  }).catch(err => console.warn('解释保存失败:', err))
 }
 
 const nextQuestion = async () => {
@@ -313,6 +476,14 @@ const prevQuestion = async () => {
   if (currentIndex.value === 0) return
   currentIndex.value--
   await loadQuestionAtIndex(currentIndex.value)
+}
+
+const jumpToQuestion = async (index) => {
+  if (!questions.value[index]) return
+  currentIndex.value = index
+  currentQuestion.value = questions.value[index]
+  currentModule.value = getModuleForIndex(index) || getCurrentModule()
+  restoreCurrentState()
 }
 
 const startDebateStream = () => {
@@ -410,8 +581,100 @@ const startNewSession = async () => {
   }
 }
 
-onMounted(() => {
-  hasStarted.value = false
+const resumeSession = async () => {
+  const data = pendingResume.value
+  if (!data) return
+  isStarting.value = true
+  try {
+    sessionId.value = data.session_id
+    hasStarted.value = true
+
+    // 恢复 questions 和 answersMap
+    data.questions.forEach((q, i) => {
+      questions.value[i] = { id: q.examNo, content: q.exam, options: q.options }
+    })
+    data.answers.forEach(a => {
+      answersMap.value[a.exam_no] = {
+        exam_no: a.exam_no,
+        selected_option: a.selected_option,
+        time_spent: a.time_spent,
+        score: a.score,
+        status: a.is_anomaly ? 'anomaly' : 'normal',
+        follow_up_question: a.ai_follow_up || null,
+        user_explanation: a.user_explanation || '',
+      }
+    })
+
+    // 跳转到第一道未答的题
+    currentIndex.value = data.answered_count
+    router.replace({ query: { ...route.query, sessionId: sessionId.value } })
+    await loadQuestionAtIndex(currentIndex.value)
+  } catch (error) {
+    startError.value = '恢复会话失败，请重新开始'
+    hasStarted.value = false
+  } finally {
+    isStarting.value = false
+  }
+}
+
+onMounted(async () => {
+  const mode = route.query.mode
+  const querySid = parseInt(route.query.sessionId) || 0
+
+  // 编辑模式：从历史记录点击"修改答案"进入
+  if (mode === 'edit' && querySid) {
+    isCheckingResume.value = true
+    isEditMode.value = true
+    try {
+      const res = await api.get('/assessment/resume-session')
+      if (res.data.has_active_session && res.data.session_id === querySid) {
+        sessionId.value = res.data.session_id
+        hasStarted.value = true
+
+        res.data.questions.forEach((q, i) => {
+          questions.value[i] = { id: q.examNo, content: q.exam, options: q.options }
+        })
+        res.data.answers.forEach(a => {
+          answersMap.value[a.exam_no] = {
+            exam_no: a.exam_no,
+            selected_option: a.selected_option,
+            time_spent: a.time_spent,
+            score: a.score,
+            status: a.is_anomaly ? 'anomaly' : 'normal',
+            follow_up_question: a.ai_follow_up || null,
+            user_explanation: a.user_explanation || '',
+          }
+        })
+
+        currentIndex.value = 0
+        currentQuestion.value = questions.value[0]
+        restoreCurrentState()
+      } else {
+        startError.value = '会话数据加载失败'
+        hasStarted.value = false
+      }
+    } catch (err) {
+      startError.value = '加载编辑模式失败'
+      hasStarted.value = false
+    } finally {
+      isCheckingResume.value = false
+    }
+    return
+  }
+
+  // 正常模式：检查是否有未完成会话
+  isCheckingResume.value = true
+  try {
+    const res = await api.get('/assessment/resume-session')
+    if (res.data.has_active_session) {
+      pendingResume.value = res.data
+    }
+  } catch (err) {
+    console.warn('检查未完成会话失败:', err)
+  } finally {
+    isCheckingResume.value = false
+    hasStarted.value = false
+  }
 })
 </script>
 
@@ -433,6 +696,12 @@ onMounted(() => {
 .start-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 10px; vertical-align: middle; }
 .start-error { margin-top: 18px; color: var(--error); font-size: 16px; }
+.resume-section { display: flex; flex-direction: column; gap: 14px; }
+.resume-hint { font-size: 17px; color: var(--primary-light); font-weight: 600; margin-bottom: 8px; }
+.resume-btn { background: linear-gradient(135deg, var(--success), #16a34a); }
+.resume-btn:hover:not(:disabled) { box-shadow: 0 10px 28px rgba(34, 197, 94, 0.4); }
+.restart-new-btn { background: var(--bg-dark); color: var(--text-primary); border: 2px solid var(--border); }
+.restart-new-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); transform: translateY(-2px); box-shadow: none; }
 
 /* === 答题卡片 === */
 .question-card {
@@ -452,6 +721,30 @@ onMounted(() => {
 .adaptive-badge { background: rgba(99, 102, 241, 0.15); color: var(--primary-light); }
 .sequential-badge { background: rgba(16, 185, 129, 0.15); color: var(--success); }
 .module-badge { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+
+/* === 题目导航列表 === */
+.question-nav-toggle {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 18px; margin-bottom: 16px; cursor: pointer;
+  background: var(--bg-dark); border: 1px solid var(--border); border-radius: 12px;
+  font-size: 15px; color: var(--text-secondary); font-weight: 500; transition: all 0.2s;
+}
+.question-nav-toggle:hover { border-color: var(--primary); color: var(--primary-light); }
+.toggle-arrow { font-size: 12px; }
+.question-nav-grid {
+  display: grid; grid-template-columns: repeat(14, 1fr); gap: 8px;
+  padding: 16px; margin-bottom: 20px;
+  background: var(--bg-dark); border: 1px solid var(--border); border-radius: 14px;
+}
+.qnav-item {
+  width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--border); border-radius: 8px; background: transparent;
+  color: var(--text-secondary); font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+}
+.qnav-item:hover:not(:disabled) { border-color: var(--primary); color: var(--primary-light); }
+.qnav-item.current { border-color: var(--primary); background: var(--primary); color: white; }
+.qnav-item.answered:not(.current) { border-color: var(--success); color: var(--success); background: rgba(34, 197, 94, 0.1); }
+.qnav-item.locked { opacity: 0.3; cursor: not-allowed; }
 
 /* === 题目内容 === */
 .question-content { margin-bottom: 40px; flex-shrink: 0; }
@@ -479,6 +772,24 @@ onMounted(() => {
 .warning-icon { color: var(--warning); font-size: 24px; }
 textarea { width: 100%; padding: 18px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 14px; color: var(--text-primary); font-size: 17px; resize: vertical; box-sizing: border-box; line-height: 1.6; }
 .submit-explanation-btn { margin-top: 16px; padding: 16px 28px; border: none; border-radius: 14px; cursor: pointer; font-weight: 600; font-size: 17px; background: linear-gradient(135deg, var(--warning), #d97706); color: white; }
+
+/* === 模块提交栏 === */
+.module-submit-bar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 18px 24px; margin-top: 24px;
+  background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 14px;
+}
+.module-submit-info { display: flex; flex-direction: column; gap: 4px; }
+.module-submit-label { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.module-submit-status { font-size: 14px; color: var(--success); font-weight: 500; }
+.module-submit-btn {
+  padding: 14px 28px; border: none; border-radius: 12px; cursor: pointer;
+  font-weight: 600; font-size: 16px; transition: all 0.2s;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white;
+}
+.module-submit-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(99, 102, 241, 0.3); }
+.module-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
 /* === 导航按钮 === */
 .navigation-actions { display: flex; justify-content: space-between; gap: 16px; margin-top: 36px; flex-shrink: 0; }

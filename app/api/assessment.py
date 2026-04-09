@@ -322,6 +322,22 @@ trigger_module_debate = run_module_debate_async
 class StartSessionRequest(BaseModel):
     pass  # user_id 从 JWT token 获取
 
+
+class SubmitModuleRequest(BaseModel):
+    session_id: int
+    module: str  # A/T/M/R
+
+
+class SaveAnswerRequest(BaseModel):
+    session_id: int
+    exam_no: str
+    selected_option: str
+    time_spent: float
+    score: float
+    is_anomaly: int = 0
+    ai_follow_up: Optional[str] = None
+    user_explanation: Optional[str] = None
+
 class AnswerSubmitRequest(BaseModel):
     session_id: int
     exam_no: str
@@ -485,11 +501,191 @@ def trigger_completed_module_debates(db: Session, session_id: int, user_id: int,
 # --- 接口 0：启动新会话 ---
 @router.post("/start-session")
 async def start_session(payload: StartSessionRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # 清理该用户所有旧的 active 会话及其草稿记录
+    old_sessions = db.query(AssessmentSession).filter(
+        AssessmentSession.user_id == current_user.id,
+        AssessmentSession.status == 'active',
+    ).all()
+    for old in old_sessions:
+        db.query(AnswerRecord).filter(AnswerRecord.session_id == old.id).delete()
+        db.query(ModuleDebateResult).filter(ModuleDebateResult.session_id == old.id).delete()
+        db.delete(old)
+    db.commit()
+
     new_session = AssessmentSession(user_id=current_user.id, status='active')
     db.add(new_session)
     db.commit()
     db.refresh(new_session)
     return {"session_id": new_session.id, "status": "success"}
+
+
+# --- 接口 0.1：实时保存单题答案（草稿） ---
+@router.post("/save-answer")
+async def save_answer(payload: SaveAnswerRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    session = ensure_session_owner(db, payload.session_id, current_user.id)
+    if session.status == 'completed':
+        raise HTTPException(status_code=400, detail="该测评已完成")
+
+    existing = db.query(AnswerRecord).filter(
+        AnswerRecord.session_id == payload.session_id,
+        AnswerRecord.user_id == current_user.id,
+        AnswerRecord.exam_no == payload.exam_no,
+    ).first()
+
+    if existing:
+        existing.selected_option = payload.selected_option
+        existing.time_spent = payload.time_spent
+        existing.score = payload.score
+        existing.is_anomaly = payload.is_anomaly
+        existing.ai_follow_up = payload.ai_follow_up
+        existing.user_explanation = payload.user_explanation
+    else:
+        db.add(AnswerRecord(
+            session_id=payload.session_id,
+            user_id=current_user.id,
+            exam_no=payload.exam_no,
+            selected_option=payload.selected_option,
+            score=payload.score,
+            time_spent=payload.time_spent,
+            is_anomaly=payload.is_anomaly,
+            ai_follow_up=payload.ai_follow_up,
+            user_explanation=payload.user_explanation,
+        ))
+    db.commit()
+    return {"status": "success"}
+
+
+# --- 接口 0.2：恢复未完成会话 ---
+@router.get("/resume-session")
+async def resume_session(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    session = db.query(AssessmentSession).filter(
+        AssessmentSession.user_id == current_user.id,
+        AssessmentSession.status == 'active',
+    ).order_by(AssessmentSession.started_at.desc()).first()
+
+    if not session:
+        return {"has_active_session": False}
+
+    records = db.query(AnswerRecord).filter(
+        AnswerRecord.session_id == session.id,
+        AnswerRecord.user_id == current_user.id,
+    ).all()
+
+    if not records:
+        return {"has_active_session": False}
+
+    exam_nos = [r.exam_no for r in records]
+    questions = db.query(Question).filter(
+        Question.exam_no.in_(exam_nos)
+    ).all()
+    q_map = {q.exam_no: q for q in questions}
+
+    answers_data = []
+    questions_data = []
+    for r in records:
+        q = q_map.get(r.exam_no)
+        answers_data.append({
+            "exam_no": r.exam_no,
+            "selected_option": r.selected_option,
+            "time_spent": float(r.time_spent) if r.time_spent else 0,
+            "score": float(r.score) if r.score else 0,
+            "is_anomaly": r.is_anomaly,
+            "ai_follow_up": r.ai_follow_up,
+            "user_explanation": r.user_explanation,
+        })
+        if q:
+            questions_data.append({
+                "examNo": q.exam_no,
+                "exam": q.content,
+                "options": q.options,
+            })
+
+    return {
+        "has_active_session": True,
+        "session_id": session.id,
+        "answered_count": len(records),
+        "answers": answers_data,
+        "questions": questions_data,
+    }
+
+
+# --- 接口 0.3：重新打开已完成会话（用于修改答案） ---
+@router.post("/reopen-session/{session_id}")
+async def reopen_session(session_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    session = ensure_session_owner(db, session_id, current_user.id)
+    if session.status != 'completed':
+        raise HTTPException(status_code=400, detail="该会话不是已完成状态")
+
+    # 先关闭该用户其他 active 会话
+    old_active = db.query(AssessmentSession).filter(
+        AssessmentSession.user_id == current_user.id,
+        AssessmentSession.status == 'active',
+        AssessmentSession.id != session_id,
+    ).all()
+    for old in old_active:
+        db.query(AnswerRecord).filter(AnswerRecord.session_id == old.id).delete()
+        db.query(ModuleDebateResult).filter(ModuleDebateResult.session_id == old.id).delete()
+        db.delete(old)
+
+    # 重新打开会话
+    session.status = 'active'
+    session.finished_at = None
+    session.report_content = None
+    session.report_file_path = None
+    # 清除模块辩论结果（重新提交后会重新生成）
+    db.query(ModuleDebateResult).filter(ModuleDebateResult.session_id == session_id).delete()
+    db.commit()
+
+    return {"status": "success", "session_id": session_id}
+
+
+# --- 接口 0.4：手动提交模块触发辩论 ---
+MODULE_COOLDOWN_SECONDS = 30
+
+@router.post("/submit-module")
+async def submit_module(payload: SubmitModuleRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    module = payload.module.upper()
+    if module not in MODULES:
+        raise HTTPException(status_code=400, detail=f"无效模块: {module}")
+
+    session = ensure_session_owner(db, payload.session_id, current_user.id)
+
+    # 检查该模块答题数是否足够
+    module_map = {'A': '6', 'T': '4', 'M': '5', 'R': '7'}
+    target_dimension = module_map[module]
+
+    records = db.query(AnswerRecord).filter(
+        AnswerRecord.session_id == payload.session_id,
+        AnswerRecord.user_id == current_user.id,
+    ).all()
+    exam_nos = [r.exam_no for r in records]
+    questions = db.query(Question).filter(Question.exam_no.in_(exam_nos)).all() if exam_nos else []
+    q_map = {q.exam_no: q for q in questions}
+
+    module_count = sum(1 for r in records if q_map.get(r.exam_no) and q_map[r.exam_no].dimension_id == target_dimension)
+    if module_count < QUESTIONS_PER_MODULE:
+        raise HTTPException(status_code=400, detail=f"模块 {module} 答题不足 {QUESTIONS_PER_MODULE} 题（当前 {module_count} 题）")
+
+    # 检查冷却时间
+    from datetime import datetime, timedelta
+    existing = db.query(ModuleDebateResult).filter(
+        ModuleDebateResult.session_id == payload.session_id,
+        ModuleDebateResult.module == module,
+    ).first()
+
+    if existing:
+        elapsed = (datetime.now(existing.created_at.tzinfo) if existing.created_at.tzinfo else datetime.now()) - existing.created_at
+        if elapsed.total_seconds() < MODULE_COOLDOWN_SECONDS:
+            remaining = int(MODULE_COOLDOWN_SECONDS - elapsed.total_seconds())
+            raise HTTPException(status_code=429, detail=f"请等待 {remaining} 秒后再重新提交")
+        # 冷却已过，删除旧结果
+        db.delete(existing)
+        db.commit()
+
+    # 触发模块辩论
+    background_tasks.add_task(trigger_module_debate, payload.session_id, current_user.id, module)
+
+    return {"status": "success", "message": f"模块 {module} 辩论已启动"}
 
 
 # --- 接口 1：获取题目 (42题完整测评版) ---

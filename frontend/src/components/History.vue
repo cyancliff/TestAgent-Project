@@ -78,6 +78,7 @@
           <span class="session-time">{{ formatTime(s.started_at) }}</span>
           <div class="card-actions">
             <button v-if="s.has_report" class="btn-view" @click="viewReport(s.session_id)">查看报告 →</button>
+            <button v-if="s.status === 'completed'" class="btn-edit" @click="editAnswers(s.session_id)">修改答案</button>
             <button v-if="s.has_report" class="btn-chat" @click="goToChat(s.session_id)">💬 咨询</button>
             <button class="btn-delete" @click="deleteSession(s.session_id)">删除记录</button>
           </div>
@@ -135,6 +136,15 @@ const viewReport = (sessionId) => {
 
 const goToChat = (sessionId) => {
   router.push({ path: '/chat', query: { sessionId } })
+}
+
+const editAnswers = async (sessionId) => {
+  try {
+    await api.post(`/assessment/reopen-session/${sessionId}`)
+    router.push({ path: '/assessment', query: { sessionId, mode: 'edit' } })
+  } catch (err) {
+    alert(err.response?.data?.detail || '打开编辑模式失败')
+  }
 }
 
 const deleteSession = async (sessionId) => {
@@ -411,6 +421,16 @@ onMounted(fetchHistory)
 
 .btn-view:hover {
   background: var(--primary);
+  color: white;
+}
+
+.btn-edit {
+  border: 1px solid var(--warning);
+  color: var(--warning);
+}
+
+.btn-edit:hover {
+  background: var(--warning);
   color: white;
 }
 
