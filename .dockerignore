@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+.git
+.gitignore
+*.md
+frontend/
+node_modules/
+.env
+*.db
+*.sqlite3
+.claude/
+*.png
+*.pdf
