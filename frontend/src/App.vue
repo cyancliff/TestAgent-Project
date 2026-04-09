@@ -98,7 +98,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 32px;
+  padding: 0 24px;
   z-index: 100;
   backdrop-filter: blur(10px);
 }
@@ -200,6 +200,10 @@ body {
 /* ========== 主内容区 ========== */
 .main-content {
   min-height: 100vh;
+  width: 100%;
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 0 24px;
 }
 
 .main-content.with-nav {

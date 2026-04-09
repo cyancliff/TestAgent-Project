@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+!/usr/bin/env python
 """
 智能选题系统完整测试与启动脚本
 """

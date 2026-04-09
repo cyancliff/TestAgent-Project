@@ -51,6 +51,26 @@
               </span>
               <span class="stat-label">异常</span>
             </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <span class="stat-value dim-a">{{ getDimScore(s, 'A') }}分</span>
+              <span class="stat-label">A</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <span class="stat-value dim-t">{{ getDimScore(s, 'T') }}分</span>
+              <span class="stat-label">T</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <span class="stat-value dim-m">{{ getDimScore(s, 'M') }}分</span>
+              <span class="stat-label">M</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <span class="stat-value dim-r">{{ getDimScore(s, 'R') }}分</span>
+              <span class="stat-label">R</span>
+            </div>
           </div>
         </div>
 
@@ -76,6 +96,17 @@ const router = useRouter()
 
 const sessions = ref([])
 const loading = ref(true)
+
+const atmrDimensions = [
+  { key: 'A', name: '欣赏型', color: '#6366f1' },
+  { key: 'T', name: '目标型', color: '#06b6d4' },
+  { key: 'M', name: '包容型', color: '#22c55e' },
+  { key: 'R', name: '责任型', color: '#f59e0b' },
+]
+
+const getDimScore = (session, key) => {
+  return session.dim_scores?.[key] || 0
+}
 
 const fetchHistory = async () => {
   try {
@@ -138,7 +169,8 @@ onMounted(fetchHistory)
 
 <style scoped>
 .history-page {
-  max-width: 1200px;
+  width: 100%;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 32px 24px;
 }
@@ -151,14 +183,14 @@ onMounted(fetchHistory)
 }
 
 .page-title {
-  font-size: 32px;
+  font-size: 36px;
   font-weight: 700;
   color: var(--text-primary);
-  margin: 0 0 4px 0;
+  margin: 0 0 6px 0;
 }
 
 .page-subtitle {
-  font-size: 16px;
+  font-size: 17px;
   color: var(--text-secondary);
   margin: 0;
 }
@@ -166,10 +198,10 @@ onMounted(fetchHistory)
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 24px;
-  border-radius: 10px;
-  font-size: 14px;
+  gap: 10px;
+  padding: 16px 32px;
+  border-radius: 12px;
+  font-size: 16px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -177,7 +209,7 @@ onMounted(fetchHistory)
 }
 
 .btn span {
-  font-size: 18px;
+  font-size: 22px;
   line-height: 1;
 }
 
@@ -225,58 +257,63 @@ onMounted(fetchHistory)
 }
 
 .sessions-grid {
-  display: grid;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .session-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 24px;
-  transition: all 0.2s;
+  border-radius: 20px;
+  padding: 28px 32px;
+  transition: all 0.25s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .session-card:hover {
   border-color: var(--primary);
-  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 8px 30px rgba(99, 102, 241, 0.15);
+  transform: translateY(-2px);
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .session-date {
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: var(--bg-dark);
-  border-radius: 12px;
-  padding: 12px 16px;
-  min-width: 60px;
+  background: linear-gradient(135deg, var(--bg-dark), var(--bg-hover));
+  border-radius: 14px;
+  padding: 14px 18px;
+  min-width: 70px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .date-day {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
   color: var(--primary-light);
   line-height: 1;
 }
 
 .date-month {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-secondary);
   text-transform: uppercase;
-  margin-top: 4px;
+  margin-top: 6px;
+  font-weight: 500;
 }
 
 .status-badge {
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 12px;
+  padding: 8px 16px;
+  border-radius: 24px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -309,7 +346,7 @@ onMounted(fetchHistory)
 }
 
 .stat-value {
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -319,9 +356,10 @@ onMounted(fetchHistory)
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-secondary);
   text-transform: uppercase;
+  font-weight: 500;
 }
 
 .stat-divider {
@@ -334,26 +372,33 @@ onMounted(fetchHistory)
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-top: 16px;
+  padding-top: 20px;
   border-top: 1px solid var(--border);
 }
 
 .card-actions {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
 }
 
 .session-time {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--text-muted);
+  font-weight: 500;
 }
 
+/* ATMR 维度分值颜色 */
+.dim-a { color: #6366f1; }
+.dim-t { color: #06b6d4; }
+.dim-m { color: #22c55e; }
+.dim-r { color: #f59e0b; }
+
 .btn-view, .btn-chat, .btn-delete {
-  padding: 8px 16px;
+  padding: 12px 20px;
   background: transparent;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 10px;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;

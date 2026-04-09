@@ -83,9 +83,9 @@ const handleSubmit = async () => {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 20px;
-  padding: 48px 40px;
+  padding: 56px 48px;
   width: 100%;
-  max-width: 500px;
+  max-width: 600px;
   box-shadow: var(--shadow-lg);
 }
 

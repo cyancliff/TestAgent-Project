@@ -32,12 +32,8 @@
           </div>
           <span class="progress-percent">{{ Math.round((answeredCount) / maxQuestions * 100) }}%</span>
         </div>
-        <div v-if="currentModule || questionStats" class="module-info">
-          <span v-if="currentModule" class="module-badge">模块 {{ currentModule }}</span>
-          <div v-if="questionStats" class="stats-grid">
-            <span class="stat-item"><span class="stat-icon">📊</span><span class="stat-label">难度</span><span class="stat-value">{{ questionStats.difficulty.toFixed(2) }}</span></span>
-            <span class="stat-item"><span class="stat-icon">📈</span><span class="stat-label">区分度</span><span class="stat-value">{{ questionStats.discrimination.toFixed(2) }}</span></span>
-          </div>
+        <div v-if="currentModule" class="module-info">
+          <span class="module-badge">模块 {{ currentModule }}</span>
         </div>
       </div>
 
@@ -130,7 +126,7 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
 import { marked } from 'marked'
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1/assessment'
+const API_BASE = '/api/v1/assessment'
 const route = useRoute()
 const router = useRouter()
 const sessionId = ref(parseInt(route.query.sessionId) || 0)
@@ -283,7 +279,15 @@ const selectOption = async (option) => {
     }
 
     userExplanation.value = answersMap.value[currentQuestion.value.id].user_explanation || ''
-    anomalyTriggered.value = res.data.status === 'anomaly' && !answersMap.value[currentQuestion.value.id].user_explanation
+    const isAnomaly = res.data.status === 'anomaly' && !answersMap.value[currentQuestion.value.id].user_explanation
+    anomalyTriggered.value = isAnomaly
+
+    // 非异常情况下自动跳转下一题
+    if (!isAnomaly && currentIndex.value + 1 < maxQuestions) {
+      setTimeout(() => {
+        nextQuestion()
+      }, 300)
+    }
   } catch (error) {
     console.error('检测答案失败:', error)
     alert('检测失败，请检查后端服务')
@@ -337,11 +341,18 @@ const startDebateStream = () => {
   })
 
   evtSource.addEventListener('error', () => {
+    evtSource.close()
+    // 如果已经收到了辩论结果（isGenerating 已被 debate_complete 设为 false），不报错
     if (isGenerating.value) {
-      debateError.value = '与服务器的连接已断开，请检查后端服务是否正常运行'
+      // 如果已经收到过消息，说明连接中途断了或服务端处理完关闭了连接
+      if (debateMessages.value.length > 0) {
+        // 给后端一点时间，可能 debate_complete 还没到就断了
+        debateError.value = '辩论过程连接中断，请刷新重试或查看历史报告'
+      } else {
+        debateError.value = '无法连接到辩论服务，请检查后端服务是否正常运行'
+      }
       isGenerating.value = false
     }
-    evtSource.close()
   })
 }
 
@@ -408,78 +419,113 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.assessment-container { max-width: 1000px; margin: 0 auto; padding: 32px 24px; }
+/* === 容器 === */
+.assessment-container { width: 100%; max-width: 1400px; margin: 0 auto; padding: 40px 32px; }
+
+/* === 开始页 === */
 .start-page { display: flex; justify-content: center; align-items: center; min-height: 70vh; }
-.start-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 24px; padding: 60px 48px; box-shadow: var(--shadow); text-align: center; max-width: 500px; width: 100%; }
-.start-icon { font-size: 64px; margin-bottom: 24px; }
-.start-title { font-size: 32px; font-weight: 800; color: var(--text-primary); margin: 0 0 16px 0; }
-.start-description { font-size: 16px; color: var(--text-secondary); line-height: 1.8; margin-bottom: 32px; }
-.start-features { display: flex; justify-content: center; gap: 24px; margin-bottom: 40px; }
-.feature-item { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 14px; }
-.feature-icon { font-size: 28px; }
-.start-btn { width: 100%; padding: 16px 32px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.start-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4); }
+.start-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 28px; padding: 64px 56px; box-shadow: var(--shadow-lg); text-align: center; max-width: 680px; width: 100%; }
+.start-icon { font-size: 72px; margin-bottom: 28px; }
+.start-title { font-size: 38px; font-weight: 800; color: var(--text-primary); margin: 0 0 20px 0; }
+.start-description { font-size: 18px; color: var(--text-secondary); line-height: 1.9; margin-bottom: 36px; }
+.start-features { display: flex; justify-content: center; gap: 32px; margin-bottom: 44px; }
+.feature-item { display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--text-secondary); font-size: 16px; font-weight: 500; }
+.feature-icon { font-size: 36px; }
+.start-btn { width: 100%; padding: 20px 40px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; border: none; border-radius: 14px; font-size: 20px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.start-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(99, 102, 241, 0.4); }
 .start-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
-.start-error { margin-top: 16px; color: var(--error); font-size: 14px; }
-.question-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 24px; padding: 36px; box-shadow: var(--shadow); }
-.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; gap: 20px; }
+.btn-spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 10px; vertical-align: middle; }
+.start-error { margin-top: 18px; color: var(--error); font-size: 16px; }
+
+/* === 答题卡片 === */
+.question-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 28px;
+  padding: 48px 56px; box-shadow: var(--shadow-lg); min-height: 520px;
+  display: flex; flex-direction: column;
+}
+
+/* === 头部进度 === */
+.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; gap: 24px; }
 .progress-info { flex: 1; }
-.progress-text { display: block; font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; }
-.progress-bar { width: 100%; height: 8px; background: var(--bg-dark); border-radius: 4px; overflow: hidden; margin-top: 12px; }
-.progress-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--secondary)); transition: width 0.3s; }
-.progress-percent { display: inline-block; margin-top: 8px; font-size: 13px; color: var(--primary-light); font-weight: 600; }
-.adaptive-badge, .sequential-badge, .module-badge { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-right: 8px; }
+.progress-text { display: block; font-size: 18px; color: var(--text-secondary); margin-bottom: 14px; font-weight: 500; }
+.progress-bar { width: 100%; height: 10px; background: var(--bg-dark); border-radius: 5px; overflow: hidden; margin-top: 14px; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--secondary)); transition: width 0.3s; border-radius: 5px; }
+.progress-percent { display: inline-block; margin-top: 10px; font-size: 16px; color: var(--primary-light); font-weight: 700; }
+.adaptive-badge, .sequential-badge, .module-badge { display: inline-block; padding: 8px 16px; border-radius: 24px; font-size: 14px; font-weight: 600; margin-right: 8px; }
 .adaptive-badge { background: rgba(99, 102, 241, 0.15); color: var(--primary-light); }
 .sequential-badge { background: rgba(16, 185, 129, 0.15); color: var(--success); }
 .module-badge { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
-.stats-grid { display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
-.stat-item { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--bg-dark); border-radius: 10px; font-size: 12px; }
-.stat-label { color: var(--text-secondary); }
-.stat-value { color: var(--text-primary); font-weight: 600; }
-.question-content { margin-bottom: 32px; }
-.question-title { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1.5; }
-.options-container { display: flex; flex-direction: column; gap: 14px; }
-.option-btn { display: flex; align-items: center; gap: 16px; width: 100%; padding: 20px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 14px; cursor: pointer; transition: all 0.2s; text-align: left; }
-.option-btn:hover, .option-btn.selected { border-color: var(--primary); background: rgba(99,102,241,0.08); }
-.option-label { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; background: var(--primary); color: white; border-radius: 50%; font-weight: 700; flex-shrink: 0; }
-.option-text { color: var(--text-primary); font-size: 15px; line-height: 1.5; }
-.anomaly-container { margin-top: 24px; }
-.warning-box { display: flex; gap: 12px; align-items: flex-start; padding: 16px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245,158,11,0.3); border-radius: 12px; margin-bottom: 16px; }
-.warning-icon { color: var(--warning); font-size: 20px; }
-textarea { width: 100%; padding: 14px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 12px; color: var(--text-primary); resize: vertical; box-sizing: border-box; }
-.submit-explanation-btn, .nav-btn { margin-top: 14px; padding: 12px 20px; border: none; border-radius: 12px; cursor: pointer; font-weight: 600; }
-.navigation-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 24px; }
-.nav-btn { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; }
-.nav-btn.secondary { background: var(--bg-dark); color: var(--text-primary); border: 1px solid var(--border); }
-.nav-btn.submit-final { background: linear-gradient(135deg, var(--success), #16a34a); }
-.nav-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.result-page { display: flex; flex-direction: column; gap: 24px; }
-.debate-section, .report-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 24px; box-shadow: var(--shadow); overflow: hidden; }
-.debate-header, .report-header { padding: 28px 32px; }
+
+/* === 题目内容 === */
+.question-content { margin-bottom: 40px; flex-shrink: 0; }
+.question-title { font-size: 32px; font-weight: 700; color: var(--text-primary); line-height: 1.6; }
+
+/* === 选项 === */
+.options-container { display: flex; flex-direction: column; gap: 16px; flex: 1; }
+.option-btn {
+  display: flex; align-items: center; gap: 20px; width: 100%;
+  padding: 24px 28px; background: var(--bg-dark); border: 2px solid var(--border);
+  border-radius: 16px; cursor: pointer; transition: all 0.2s; text-align: left;
+}
+.option-btn:hover { border-color: var(--primary); background: rgba(99,102,241,0.06); transform: translateX(4px); }
+.option-btn.selected { border-color: var(--primary); background: rgba(99,102,241,0.1); box-shadow: 0 4px 16px rgba(99,102,241,0.15); }
+.option-label {
+  display: flex; align-items: center; justify-content: center;
+  width: 48px; height: 48px; background: var(--primary); color: white;
+  border-radius: 50%; font-weight: 700; font-size: 20px; flex-shrink: 0;
+}
+.option-text { color: var(--text-primary); font-size: 19px; line-height: 1.6; font-weight: 500; }
+
+/* === 异常追问 === */
+.anomaly-container { margin-top: 28px; }
+.warning-box { display: flex; gap: 14px; align-items: flex-start; padding: 20px 24px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245,158,11,0.3); border-radius: 14px; margin-bottom: 20px; font-size: 17px; line-height: 1.7; }
+.warning-icon { color: var(--warning); font-size: 24px; }
+textarea { width: 100%; padding: 18px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 14px; color: var(--text-primary); font-size: 17px; resize: vertical; box-sizing: border-box; line-height: 1.6; }
+.submit-explanation-btn { margin-top: 16px; padding: 16px 28px; border: none; border-radius: 14px; cursor: pointer; font-weight: 600; font-size: 17px; background: linear-gradient(135deg, var(--warning), #d97706); color: white; }
+
+/* === 导航按钮 === */
+.navigation-actions { display: flex; justify-content: space-between; gap: 16px; margin-top: 36px; flex-shrink: 0; }
+.nav-btn {
+  padding: 18px 36px; border: none; border-radius: 14px; cursor: pointer;
+  font-weight: 600; font-size: 18px; transition: all 0.2s;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white;
+}
+.nav-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3); }
+.nav-btn.secondary { background: var(--bg-dark); color: var(--text-primary); border: 2px solid var(--border); }
+.nav-btn.secondary:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.nav-btn.submit-final { background: linear-gradient(135deg, var(--success), #16a34a); padding: 18px 48px; }
+.nav-btn.submit-final:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(34, 197, 94, 0.3); }
+.nav-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* === 结果页 === */
+.result-page { display: flex; flex-direction: column; gap: 28px; }
+.debate-section, .report-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 28px; box-shadow: var(--shadow-lg); overflow: hidden; }
+.debate-header, .report-header { padding: 32px 40px; }
 .debate-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
-.debate-title, .report-title { font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 8px 0; }
-.debate-subtitle, .report-subtitle { color: var(--text-secondary); margin: 0; }
-.debate-done-badge, .debate-live-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 12px; margin-left: 10px; }
+.debate-title, .report-title { font-size: 28px; font-weight: 700; color: var(--text-primary); margin: 0 0 10px 0; }
+.debate-subtitle, .report-subtitle { color: var(--text-secondary); margin: 0; font-size: 17px; }
+.debate-done-badge, .debate-live-badge { display: inline-block; padding: 6px 14px; border-radius: 24px; font-size: 14px; margin-left: 12px; font-weight: 600; }
 .debate-done-badge { background: rgba(34,197,94,0.15); color: var(--success); }
 .debate-live-badge { background: rgba(245,158,11,0.15); color: var(--warning); }
-.collapse-toggle { color: var(--primary-light); font-size: 14px; }
-.debate-feed { max-height: 520px; overflow-y: auto; padding: 0 32px 32px; }
-.debate-msg { padding: 18px 20px; border-radius: 16px; margin-bottom: 16px; }
+.collapse-toggle { color: var(--primary-light); font-size: 16px; font-weight: 500; }
+.debate-feed { max-height: 560px; overflow-y: auto; padding: 0 40px 36px; }
+.debate-msg { padding: 22px 24px; border-radius: 18px; margin-bottom: 18px; }
 .debate-msg.proponent { background: rgba(99,102,241,0.08); }
 .debate-msg.opponent { background: rgba(6,182,212,0.08); }
 .debate-msg.judge { background: rgba(245,158,11,0.08); }
-.msg-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.agent-name { font-weight: 600; color: var(--text-primary); }
-.msg-content { color: var(--text-secondary); line-height: 1.8; white-space: pre-wrap; }
-.waiting-hint { text-align: center; padding: 48px 0; color: var(--text-secondary); }
-.loader-spinner { width: 42px; height: 42px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
-.loader-small { width: 28px; height: 28px; margin-top: 12px; }
-.error-text { color: var(--error); padding: 0 32px 24px; }
+.msg-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.agent-name { font-weight: 600; color: var(--text-primary); font-size: 17px; }
+.msg-content { color: var(--text-secondary); line-height: 1.9; white-space: pre-wrap; font-size: 16px; }
+.waiting-hint { text-align: center; padding: 52px 0; color: var(--text-secondary); font-size: 17px; }
+.loader-spinner { width: 44px; height: 44px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+.loader-small { width: 30px; height: 30px; margin-top: 14px; }
+.error-text { color: var(--error); padding: 0 40px 28px; font-size: 16px; }
 .report-divider { height: 1px; background: var(--border); }
-.report-content { padding: 32px; color: var(--text-primary); line-height: 1.9; }
-.report-actions { display: flex; gap: 12px; padding: 0 32px 32px; }
-.restart-btn { padding: 12px 20px; border: none; border-radius: 12px; background: var(--bg-dark); color: var(--text-primary); cursor: pointer; }
+.report-content { padding: 40px; color: var(--text-primary); line-height: 2; font-size: 18px; }
+.report-actions { display: flex; gap: 16px; padding: 0 40px 36px; }
+.restart-btn { padding: 16px 28px; border: none; border-radius: 14px; background: var(--bg-dark); color: var(--text-primary); cursor: pointer; font-size: 17px; font-weight: 600; transition: all 0.2s; }
+.restart-btn:hover { background: var(--border); }
 .view-report-btn { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; }
+.view-report-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3); }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>

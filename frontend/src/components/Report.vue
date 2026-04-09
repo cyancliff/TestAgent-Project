@@ -177,7 +177,7 @@ ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, 
 
 const props = defineProps({ sessionId: String })
 const router = useRouter()
-const API_BASE = 'http://127.0.0.1:8000/api/v1/assessment'
+const API_BASE = '/api/v1/assessment'
 
 const reportData = ref({})
 const loading = ref(true)
@@ -304,47 +304,48 @@ onMounted(fetchReport)
 
 <style scoped>
 .report-container {
-  max-width: 960px;
+  width: 100%;
+  max-width: 1400px;
   margin: 40px auto 0;
-  padding: 0 20px 60px;
+  padding: 0 24px 60px;
   color: var(--text-primary);
 }
 
 /* === 卡片通用 === */
 .report-card {
   background: var(--bg-card);
-  padding: 28px 32px;
-  border-radius: 14px;
+  padding: 36px 40px;
+  border-radius: 18px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border);
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 
 /* === 头部 === */
 .header-card {
   text-align: center;
   background: linear-gradient(135deg, #f8fafc, #eef2ff);
-  padding: 32px;
+  padding: 40px 32px;
 }
 .report-title {
-  font-size: 26px;
+  font-size: 36px;
   font-weight: 700;
-  margin: 0 0 4px;
+  margin: 0 0 8px;
   background: linear-gradient(135deg, var(--primary), var(--secondary));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
-.report-meta { font-size: 15px; color: var(--text-muted); margin: 0; }
+.report-meta { font-size: 17px; color: var(--text-muted); margin: 0; }
 
 /* === 章节 === */
-.section-title { font-size: 20px; font-weight: 600; margin: 0 0 14px; color: var(--text-primary); }
-.section-desc { font-size: 15px; color: var(--text-muted); margin: -6px 0 16px; }
-.no-report-hint { text-align: center; color: var(--text-muted); padding: 28px; }
+.section-title { font-size: 26px; font-weight: 600; margin: 0 0 18px; color: var(--text-primary); }
+.section-desc { font-size: 17px; color: var(--text-muted); margin: -6px 0 20px; }
+.no-report-hint { text-align: center; color: var(--text-muted); padding: 32px; font-size: 18px; }
 
 /* === 雷达图 === */
-.radar-layout { display: flex; gap: 36px; align-items: center; }
-.radar-chart-wrapper { flex: 0 0 300px; max-width: 300px; }
+.radar-layout { display: flex; gap: 48px; align-items: center; }
+.radar-chart-wrapper { flex: 0 0 400px; max-width: 400px; }
 .dimension-scores { flex: 1; display: flex; flex-direction: column; gap: 14px; }
 .dim-score-item { display: flex; flex-direction: column; gap: 4px; }
 .dim-header { display: flex; align-items: center; gap: 10px; }
@@ -354,30 +355,30 @@ onMounted(fetchReport)
   color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0;
 }
 .dim-badge-sm { width: 20px; height: 20px; font-size: 10px; border-radius: 5px; }
-.dim-name { font-size: 16px; font-weight: 600; }
-.dim-pct { margin-left: auto; font-size: 16px; font-weight: 700; color: var(--text-secondary); }
+.dim-name { font-size: 18px; font-weight: 600; }
+.dim-pct { margin-left: auto; font-size: 20px; font-weight: 700; color: var(--primary); }
 .dim-bar-wrapper { width: 100%; height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
 .dim-bar { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
 .dim-detail { font-size: 14px; color: var(--text-muted); }
 
 /* === Markdown 报告渲染 === */
-.report-body { padding-top: 4px; text-align: left; }
-.markdown-body { line-height: 1.9; font-size: 17px; color: var(--text-secondary); text-align: left; }
-.markdown-body :deep(h1) { font-size: 26px; font-weight: 700; color: var(--text-primary); margin: 32px 0 14px; padding-bottom: 10px; border-bottom: 2px solid var(--border); text-align: left; }
-.markdown-body :deep(h2) { font-size: 22px; font-weight: 600; color: var(--text-primary); margin: 28px 0 12px; text-align: left; }
-.markdown-body :deep(h3) { font-size: 19px; font-weight: 600; color: var(--primary); margin: 22px 0 10px; text-align: left; }
-.markdown-body :deep(h4) { font-size: 17px; font-weight: 600; color: var(--text-primary); margin: 18px 0 8px; text-align: left; }
-.markdown-body :deep(p) { margin: 0 0 14px; text-align: left; }
-.markdown-body :deep(li) { margin-bottom: 6px; font-size: 17px; }
+.report-body { padding-top: 8px; text-align: left; }
+.markdown-body { line-height: 2; font-size: 20px; color: var(--text-secondary); text-align: left; }
+.markdown-body :deep(h1) { font-size: 32px; font-weight: 700; color: var(--text-primary); margin: 36px 0 18px; padding-bottom: 12px; border-bottom: 2px solid var(--border); text-align: left; }
+.markdown-body :deep(h2) { font-size: 28px; font-weight: 600; color: var(--text-primary); margin: 32px 0 16px; text-align: left; }
+.markdown-body :deep(h3) { font-size: 24px; font-weight: 600; color: var(--primary); margin: 26px 0 14px; text-align: left; }
+.markdown-body :deep(h4) { font-size: 21px; font-weight: 600; color: var(--text-primary); margin: 22px 0 12px; text-align: left; }
+.markdown-body :deep(p) { margin: 0 0 18px; text-align: left; }
+.markdown-body :deep(li) { margin-bottom: 10px; font-size: 19px; }
 .markdown-body :deep(strong) { color: var(--text-primary); font-weight: 600; }
-.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 20px; margin: 0 0 12px; }
-.markdown-body :deep(li) { margin-bottom: 4px; }
+.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 28px; margin: 0 0 16px; }
+.markdown-body :deep(li) { margin-bottom: 8px; }
 .markdown-body :deep(li)::marker { color: var(--primary); }
 .markdown-body :deep(blockquote) {
-  border-left: 3px solid var(--primary); padding: 8px 16px; margin: 12px 0;
-  background: rgba(99, 102, 241, 0.04); border-radius: 0 8px 8px 0; color: var(--text-secondary);
+  border-left: 4px solid var(--primary); padding: 12px 20px; margin: 16px 0;
+  background: rgba(99, 102, 241, 0.04); border-radius: 0 10px 10px 0; color: var(--text-secondary);
 }
-.markdown-body :deep(hr) { border: none; height: 1px; background: var(--border); margin: 20px 0; }
+.markdown-body :deep(hr) { border: none; height: 1px; background: var(--border); margin: 24px 0; }
 
 /* === 可折叠模块（证据链 & 辩论共用） === */
 .evidence-modules { display: flex; flex-direction: column; gap: 6px; }
@@ -447,12 +448,27 @@ onMounted(fetchReport)
 
 /* === 返回按钮 === */
 .back-btn {
-  display: block; margin: 8px auto 0; padding: 12px 32px;
+  display: block; margin: 12px auto 0; padding: 16px 40px;
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: #fff; border: none; border-radius: 10px;
-  cursor: pointer; font-size: 15px; font-weight: 500; transition: all 0.2s;
+  color: #fff; border: none; border-radius: 12px;
+  cursor: pointer; font-size: 17px; font-weight: 600; transition: all 0.2s;
 }
-.back-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3); }
+.back-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(99, 102, 241, 0.35); }
+
+.delete-btn {
+  display: block; margin: 12px auto 0; padding: 14px 32px;
+  background: transparent; color: var(--error); border: 1px solid var(--error); border-radius: 12px;
+  cursor: pointer; font-size: 16px; font-weight: 600; transition: all 0.2s;
+}
+.delete-btn:hover { background: var(--error); color: white; }
+
+.report-bottom-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  margin-top: 24px;
+}
 
 /* === 加载 === */
 .loading-hint { text-align: center; padding: 80px 20px; color: var(--text-muted); }
@@ -471,7 +487,7 @@ onMounted(fetchReport)
 /* === 响应式 === */
 @media (max-width: 768px) {
   .radar-layout { flex-direction: column; gap: 20px; }
-  .radar-chart-wrapper { flex: 0 0 auto; max-width: 260px; margin: 0 auto; }
+  .radar-chart-wrapper { flex: 0 0 auto; max-width: 320px; margin: 0 auto; }
   .report-card { padding: 18px 14px; }
 }
 </style>

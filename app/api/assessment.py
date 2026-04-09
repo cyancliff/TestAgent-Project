@@ -1038,6 +1038,15 @@ async def get_history(db: Session = Depends(get_db), current_user: User = Depend
         AnswerRecord.session_id.in_(session_ids)
     ).all() if session_ids else []
 
+    # 批量查询题目的维度信息
+    all_exam_nos = list(set(r.exam_no for r in all_history_records))
+    question_dim_map = {}
+    if all_exam_nos:
+        questions = db.query(Question.exam_no, Question.dimension_id).filter(
+            Question.exam_no.in_(all_exam_nos)
+        ).all()
+        question_dim_map = {q.exam_no: q.dimension_id for q in questions}
+
     # 按 session_id 分组
     from collections import defaultdict
     records_by_session = defaultdict(list)
@@ -1050,6 +1059,17 @@ async def get_history(db: Session = Depends(get_db), current_user: User = Depend
         total_score = sum(float(r.score or 0) for r in records)
         anomaly_count = sum(1 for r in records if r.is_anomaly == 1)
 
+        # 计算 ATMR 各维度百分比 (dimension_id: A=6, T=4, M=5, R=7)
+        atmr_dim_map = {'A': '6', 'T': '4', 'M': '5', 'R': '7'}
+        dim_scores = {}
+        for m in ['A', 'T', 'M', 'R']:
+            dim_records = [r for r in records if question_dim_map.get(r.exam_no) == atmr_dim_map[m]]
+            if dim_records:
+                dim_total = sum(float(r.score or 0) for r in dim_records)
+                dim_scores[m] = round(dim_total, 1)
+            else:
+                dim_scores[m] = 0
+
         result.append({
             "session_id": s.id,
             "started_at": s.started_at.isoformat() if s.started_at else None,
@@ -1059,6 +1079,7 @@ async def get_history(db: Session = Depends(get_db), current_user: User = Depend
             "total_score": total_score,
             "anomaly_count": anomaly_count,
             "has_report": s.report_content is not None,
+            "dim_scores": dim_scores,
         })
 
     return {"user_id": user_id, "sessions": result}

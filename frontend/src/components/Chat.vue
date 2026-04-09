@@ -204,7 +204,8 @@ onMounted(() => {
 
 <style scoped>
 .chat-page {
-  max-width: 1200px;
+  width: 100%;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 24px;
   height: calc(100vh - 64px);
@@ -314,7 +315,7 @@ onMounted(() => {
 .message {
   display: flex;
   gap: 12px;
-  max-width: 85%;
+  max-width: 90%;
 }
 
 .message.user {
