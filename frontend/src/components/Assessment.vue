@@ -66,10 +66,8 @@
           :class="['qnav-item', {
             current: currentIndex === i - 1,
             answered: questions[i - 1] && answersMap[questions[i - 1]?.id],
-            locked: !questions[i - 1]
           }]"
           @click="jumpToQuestion(i - 1)"
-          :disabled="!questions[i - 1]"
         >{{ i }}</button>
       </div>
 
@@ -479,11 +477,9 @@ const prevQuestion = async () => {
 }
 
 const jumpToQuestion = async (index) => {
-  if (!questions.value[index]) return
   currentIndex.value = index
-  currentQuestion.value = questions.value[index]
   currentModule.value = getModuleForIndex(index) || getCurrentModule()
-  restoreCurrentState()
+  await loadQuestionAtIndex(index)
 }
 
 const startDebateStream = () => {
@@ -744,7 +740,6 @@ onMounted(async () => {
 .qnav-item:hover:not(:disabled) { border-color: var(--primary); color: var(--primary-light); }
 .qnav-item.current { border-color: var(--primary); background: var(--primary); color: white; }
 .qnav-item.answered:not(.current) { border-color: var(--success); color: var(--success); background: rgba(34, 197, 94, 0.1); }
-.qnav-item.locked { opacity: 0.3; cursor: not-allowed; }
 
 /* === 题目内容 === */
 .question-content { margin-bottom: 40px; flex-shrink: 0; }
