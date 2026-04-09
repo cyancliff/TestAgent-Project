@@ -3,9 +3,17 @@
 import os
 import asyncio
 from datetime import datetime
+from decimal import Decimal
 import json
 from sqlalchemy.orm import Session
 from app.models.question import SessionLocal, Question, AnswerRecord, ModuleDebateResult
+
+
+class _DecimalEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, Decimal):
+            return float(o)
+        return super().default(o)
 
 
 def build_debate_context(user_id: str, db: Session, session_id: int = None) -> str:
@@ -45,7 +53,7 @@ def build_debate_context(user_id: str, db: Session, session_id: int = None) -> s
 
         debate_context.append(record_data)
 
-    context_str = json.dumps(debate_context, ensure_ascii=False, indent=2)
+    context_str = json.dumps(debate_context, ensure_ascii=False, indent=2, cls=_DecimalEncoder)
 
     # 查询模块辩论结果
     module_query = db.query(ModuleDebateResult).filter(ModuleDebateResult.user_id == user_id)
