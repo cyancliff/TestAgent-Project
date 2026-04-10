@@ -1,6 +1,19 @@
 # ATMR 智能心理测评系统
 
+![License](https://img.shields.io/badge/License-MIT-green.svg) ![Python](https://img.shields.io/badge/Python-3.9+-blue.svg) ![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-yellow.svg) ![Vue](https://img.shields.io/badge/Vue-3.3+-brightgreen.svg) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-orange.svg)
+
 基于 **多智能体辩论** 和 **自适应题目选择** 的 AI 心理测评系统。系统融合贝叶斯能力估计、异常检测、RAG 知识库检索和大语言模型，实现对被试者态度(A)、情绪(T)、认知(M)、韧性(R) 四维度的智能化心理评估。
+
+- [技术栈](#技术栈)
+- [核心功能](#核心功能)
+- [测评流程](#测评流程)
+- [快速开始](#快速开始)
+- [项目结构](#项目结构)
+- [API概览](#api概览)
+- [环境变量](#环境变量)
+- [贡献](#贡献)
+- [常见问题](#常见问题)
+- [License](#license)
 
 ## 技术栈
 
@@ -54,7 +67,7 @@
 
 ```bash
 # 1. 克隆项目
-git clone <仓库地址>
+git clone <仓库地址>  # 请将 <仓库地址> 替换为实际 URL
 cd TestAgent
 
 # 2. 配置环境变量
@@ -66,6 +79,34 @@ docker compose up -d --build
 
 # 访问：http://localhost (前端) | http://localhost:8000/docs (API文档)
 ```
+
+### 环境变量配置
+
+请复制 `.env.example` 为 `.env` 并填写必要的密钥：
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env` 文件，内容示例：
+
+```env
+# === 数据库密码（必填，请修改为你自己的密码）===
+DB_PASSWORD=your_secure_password
+
+# === JWT 密钥（必填，请修改为一个随机字符串）===
+SECRET_KEY=your_random_secret_key
+
+# === AI 功能密钥（选填，不填则 AI 对话功能不可用）===
+DEEPSEEK_API_KEY=sk-xxx
+DASHSCOPE_API_KEY=
+ZHIPU_API_KEY=
+```
+
+**注意**：
+- `DB_PASSWORD` 和 `SECRET_KEY` 必须填写
+- `DEEPSEEK_API_KEY` 可选，但如果不填，多智能体辩论和 AI 咨询功能将无法使用
+- 其他 AI 密钥可选，用于备选模型
 
 ### 本地开发
 
@@ -133,6 +174,28 @@ TestAgent/
 | `DASHSCOPE_API_KEY` | 否 | 阿里云通义千问密钥 |
 | `ZHIPU_API_KEY` | 否 | 智谱 AI 密钥 |
 
+## 常见问题
+
+### 1. 如果没有 DeepSeek API 密钥，系统还能运行吗？
+可以，但多智能体辩论和 AI 咨询功能将无法使用。测评流程、自适应选题、异常检测等核心功能仍可正常工作。
+
+### 2. 如何重置数据库？
+停止 Docker 服务后删除 `postgres_data` 目录，重新启动即可。
+
+### 3. 如何导入自定义题库？
+修改 `atmr_full_questions.json` 文件后，运行 `python import_data.py` 重新导入。
+
+### 4. 如何修改测评模块的题目数量？
+在 `app/services/adaptive_selection.py` 中调整 `MODULE_QUESTION_COUNT` 常量。
+
 ## License
 
-MIT
+本项目采用 [MIT License](LICENSE)。您可以在遵守以下条件的情况下自由使用、修改和分发本软件：
+
+### 主要条款
+1. **自由使用** – 允许商用、私用、修改、分发
+2. **保留版权声明** – 所有副本必须包含原版权声明和许可声明
+3. **免责声明** – 软件按"原样"提供，不承担任何保证责任
+4. **责任限制** – 作者不对因使用本软件导致的任何索赔或损害负责
+
+完整的许可证文本请参阅 [LICENSE](LICENSE) 文件。
