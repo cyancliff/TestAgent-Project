@@ -305,80 +305,88 @@ onMounted(fetchReport)
 <style scoped>
 .report-container {
   width: 100%;
-  max-width: 1400px;
-  margin: 40px auto 0;
-  padding: 0 24px 60px;
+  max-width: 1320px;
+  margin: 32px auto 0;
+  padding: 0 0 80px;
   color: var(--text-primary);
 }
 
 /* === 卡片通用 === */
 .report-card {
   background: var(--bg-card);
-  padding: 36px 40px;
-  border-radius: 18px;
-  box-shadow: var(--shadow);
+  padding: 48px 56px;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
   border: 1px solid var(--border);
-  margin-bottom: 24px;
+  margin-bottom: 32px;
+  transition: all var(--transition-normal);
 }
+.report-card:hover { box-shadow: var(--shadow-xl), 0 0 60px rgba(99, 102, 241, 0.05); }
 
 /* === 头部 === */
 .header-card {
   text-align: center;
-  background: linear-gradient(135deg, #f8fafc, #eef2ff);
-  padding: 40px 32px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.03), rgba(99, 102, 241, 0.08));
+  padding: 56px 48px;
+  border: 2px solid rgba(99, 102, 241, 0.1);
 }
 .report-title {
-  font-size: 36px;
-  font-weight: 700;
-  margin: 0 0 8px;
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  font-size: 42px;
+  font-weight: 800;
+  margin: 0 0 12px;
+  background: var(--gradient-primary);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  letter-spacing: -0.5px;
 }
-.report-meta { font-size: 17px; color: var(--text-muted); margin: 0; }
+.report-meta { font-size: 18px; color: var(--text-secondary); margin: 0; }
 
 /* === 章节 === */
-.section-title { font-size: 26px; font-weight: 600; margin: 0 0 18px; color: var(--text-primary); }
-.section-desc { font-size: 17px; color: var(--text-muted); margin: -6px 0 20px; }
-.no-report-hint { text-align: center; color: var(--text-muted); padding: 32px; font-size: 18px; }
+.section-title { font-size: 28px; font-weight: 800; margin: 0 0 20px; color: var(--text-primary); background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.section-desc { font-size: 18px; color: var(--text-secondary); margin: -8px 0 24px; }
+.no-report-hint { text-align: center; color: var(--text-muted); padding: 40px; font-size: 20px; }
 
 /* === 雷达图 === */
-.radar-layout { display: flex; gap: 48px; align-items: center; }
-.radar-chart-wrapper { flex: 0 0 400px; max-width: 400px; }
-.dimension-scores { flex: 1; display: flex; flex-direction: column; gap: 14px; }
-.dim-score-item { display: flex; flex-direction: column; gap: 4px; }
-.dim-header { display: flex; align-items: center; gap: 10px; }
+.radar-layout { display: flex; gap: 60px; align-items: center; }
+.radar-chart-wrapper { flex: 0 0 440px; max-width: 440px; background: var(--bg-hover); padding: 24px; border-radius: var(--radius-lg); border: 1px solid var(--border); box-shadow: var(--shadow); }
+.dimension-scores { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+.dim-score-item { display: flex; flex-direction: column; gap: 6px; padding: 16px 20px; border-radius: var(--radius-md); background: var(--bg-hover); transition: all var(--transition-normal); }
+.dim-score-item:hover { background: var(--border); transform: translateX(8px); }
+.dim-header { display: flex; align-items: center; gap: 12px; }
 .dim-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 7px;
-  color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0;
+  width: 32px; height: 32px; border-radius: var(--radius-md);
+  color: #fff; font-size: 14px; font-weight: 800; flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
-.dim-badge-sm { width: 20px; height: 20px; font-size: 10px; border-radius: 5px; }
-.dim-name { font-size: 18px; font-weight: 600; }
-.dim-pct { margin-left: auto; font-size: 20px; font-weight: 700; color: var(--primary); }
-.dim-bar-wrapper { width: 100%; height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
-.dim-bar { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
-.dim-detail { font-size: 14px; color: var(--text-muted); }
+.dim-badge-sm { width: 24px; height: 24px; font-size: 12px; border-radius: var(--radius-sm); }
+.dim-name { font-size: 20px; font-weight: 700; }
+.dim-pct { margin-left: auto; font-size: 24px; font-weight: 800; color: var(--primary); }
+.dim-bar-wrapper { width: 100%; height: 8px; background: var(--bg-card); border-radius: var(--radius-sm); overflow: hidden; box-shadow: var(--shadow-inner); }
+.dim-bar { height: 100%; border-radius: var(--radius-sm); transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); position: relative; }
+.dim-bar::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmer 2s infinite; }
+.dim-detail { font-size: 15px; color: var(--text-secondary); }
 
 /* === Markdown 报告渲染 === */
-.report-body { padding-top: 8px; text-align: left; }
-.markdown-body { line-height: 2; font-size: 20px; color: var(--text-secondary); text-align: left; }
-.markdown-body :deep(h1) { font-size: 32px; font-weight: 700; color: var(--text-primary); margin: 36px 0 18px; padding-bottom: 12px; border-bottom: 2px solid var(--border); text-align: left; }
-.markdown-body :deep(h2) { font-size: 28px; font-weight: 600; color: var(--text-primary); margin: 32px 0 16px; text-align: left; }
-.markdown-body :deep(h3) { font-size: 24px; font-weight: 600; color: var(--primary); margin: 26px 0 14px; text-align: left; }
-.markdown-body :deep(h4) { font-size: 21px; font-weight: 600; color: var(--text-primary); margin: 22px 0 12px; text-align: left; }
-.markdown-body :deep(p) { margin: 0 0 18px; text-align: left; }
-.markdown-body :deep(li) { margin-bottom: 10px; font-size: 19px; }
-.markdown-body :deep(strong) { color: var(--text-primary); font-weight: 600; }
-.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 28px; margin: 0 0 16px; }
-.markdown-body :deep(li) { margin-bottom: 8px; }
-.markdown-body :deep(li)::marker { color: var(--primary); }
+.report-body { padding-top: 12px; text-align: left; }
+.markdown-body { line-height: 2; font-size: 22px; color: var(--text-secondary); text-align: left; }
+.markdown-body :deep(h1) { font-size: 36px; font-weight: 800; color: var(--text-primary); margin: 40px 0 20px; padding-bottom: 16px; border-bottom: 3px solid var(--border); text-align: left; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.markdown-body :deep(h2) { font-size: 32px; font-weight: 700; color: var(--text-primary); margin: 36px 0 18px; text-align: left; }
+.markdown-body :deep(h3) { font-size: 28px; font-weight: 700; color: var(--primary); margin: 32px 0 16px; text-align: left; }
+.markdown-body :deep(h4) { font-size: 24px; font-weight: 600; color: var(--text-primary); margin: 28px 0 14px; text-align: left; }
+.markdown-body :deep(p) { margin: 0 0 20px; text-align: left; }
+.markdown-body :deep(li) { margin-bottom: 12px; font-size: 21px; }
+.markdown-body :deep(strong) { color: var(--text-primary); font-weight: 700; }
+.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 32px; margin: 0 0 20px; }
+.markdown-body :deep(li) { margin-bottom: 10px; }
+.markdown-body :deep(li)::marker { color: var(--primary); font-weight: 700; }
 .markdown-body :deep(blockquote) {
-  border-left: 4px solid var(--primary); padding: 12px 20px; margin: 16px 0;
-  background: rgba(99, 102, 241, 0.04); border-radius: 0 10px 10px 0; color: var(--text-secondary);
+  border-left: 5px solid var(--primary); padding: 20px 28px; margin: 24px 0;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.04), rgba(99, 102, 241, 0.08)); border-radius: 0 var(--radius-lg) var(--radius-lg) 0; color: var(--text-secondary);
+  font-style: italic;
 }
-.markdown-body :deep(hr) { border: none; height: 1px; background: var(--border); margin: 24px 0; }
+.markdown-body :deep(hr) { border: none; height: 2px; background: linear-gradient(90deg, var(--border), var(--primary), var(--border)); margin: 32px 0; }
 
 /* === 可折叠模块（证据链 & 辩论共用） === */
 .evidence-modules { display: flex; flex-direction: column; gap: 6px; }
@@ -486,8 +494,32 @@ onMounted(fetchReport)
 
 /* === 响应式 === */
 @media (max-width: 768px) {
-  .radar-layout { flex-direction: column; gap: 20px; }
+  .report-container { padding: 32px 16px 60px; }
+  .report-card { padding: 32px 24px; }
+  .header-card { padding: 40px 24px; }
+  .report-title { font-size: 32px; }
+  .radar-layout { flex-direction: column; gap: 24px; }
   .radar-chart-wrapper { flex: 0 0 auto; max-width: 320px; margin: 0 auto; }
-  .report-card { padding: 18px 14px; }
+  .dim-name { font-size: 18px; }
+  .dim-pct { font-size: 20px; }
+  .markdown-body { font-size: 18px; }
+  .markdown-body :deep(h1) { font-size: 28px; }
+  .markdown-body :deep(h2) { font-size: 24px; }
+  .markdown-body :deep(h3) { font-size: 22px; }
+}
+
+@media (max-width: 480px) {
+  .report-container { padding: 24px 12px 48px; }
+  .report-card { padding: 24px 20px; }
+  .header-card { padding: 32px 20px; }
+  .report-title { font-size: 28px; }
+  .section-title { font-size: 24px; }
+  .radar-chart-wrapper { max-width: 280px; }
+  .dim-name { font-size: 16px; }
+  .dim-pct { font-size: 18px; }
+  .markdown-body { font-size: 16px; }
+  .markdown-body :deep(h1) { font-size: 24px; }
+  .markdown-body :deep(h2) { font-size: 22px; }
+  .markdown-body :deep(h3) { font-size: 20px; }
 }
 </style>

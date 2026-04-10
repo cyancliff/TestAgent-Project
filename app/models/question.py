@@ -55,6 +55,7 @@ class User(Base):
     sessions = relationship("AssessmentSession", back_populates="user")
     answers = relationship("AnswerRecord", back_populates="user")
     debate_results = relationship("ModuleDebateResult", back_populates="user")
+    chat_messages = relationship("ChatMessage", back_populates="user", cascade="all, delete-orphan")
 
 
 # --- 测评会话表 ---
@@ -73,6 +74,7 @@ class AssessmentSession(Base):
     user = relationship("User", back_populates="sessions")
     answers = relationship("AnswerRecord", back_populates="session")
     debate_results = relationship("ModuleDebateResult", back_populates="session")
+    chat_messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index('idx_session_user_started', 'user_id', started_at.desc()),
@@ -126,6 +128,25 @@ class ModuleDebateResult(Base):
 
     __table_args__ = (
         Index('idx_debate_session_module', 'session_id', 'module'),
+    )
+
+
+# --- 聊天消息表 ---
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey('assessment_sessions.id'), index=True, nullable=False, comment="所属会话ID")
+    user_id = Column(Integer, ForeignKey('users.id'), index=True, nullable=False, comment="用户ID")
+    role = Column(String(20), nullable=False, comment="角色: system/user/assistant")
+    content = Column(Text, nullable=False, comment="消息内容")
+    created_at = Column(DateTime(timezone=True), default=datetime.now, comment="创建时间")
+
+    session = relationship("AssessmentSession", back_populates="chat_messages")
+    user = relationship("User", back_populates="chat_messages")
+
+    __table_args__ = (
+        Index('idx_chat_session_created', 'session_id', 'created_at'),
     )
 
 

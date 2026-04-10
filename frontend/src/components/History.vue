@@ -1,14 +1,33 @@
 <template>
-  <div class="history-page">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">测评记录</h1>
-        <p class="page-subtitle">共 {{ sessions.length }} 次测评</p>
+  <div class="page-layout">
+    <aside v-if="!loading && sessions.length" class="page-sidebar">
+      <div class="sidebar-header">
+        <h3>测试导航</h3>
+        <p>{{ sessions.length }} 条记录</p>
       </div>
-      <button class="btn btn-primary" @click="startNewSession">
-        <span>+</span> 开始新测评
-      </button>
-    </div>
+      <div class="sidebar-list">
+        <button
+          v-for="s in sessions"
+          :key="s.session_id"
+          class="sidebar-item"
+          @click="scrollToSession(s.session_id)"
+        >
+          <span class="sidebar-item-title">{{ formatMonth(s.started_at) }} {{ formatDay(s.started_at) }}</span>
+          <span class="sidebar-item-meta">#{{ s.session_id }} · {{ s.status === 'completed' ? '已完成' : '进行中' }}</span>
+        </button>
+      </div>
+    </aside>
+
+    <div class="history-page">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">测评记录</h1>
+          <p class="page-subtitle">共 {{ sessions.length }} 次测评</p>
+        </div>
+        <button class="btn btn-primary" @click="startNewSession">
+          <span>+</span> 开始新测评
+        </button>
+      </div>
 
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -22,7 +41,7 @@
     </div>
 
     <div v-else class="sessions-grid">
-      <div v-for="s in sessions" :key="s.session_id" class="session-card">
+      <div v-for="s in sessions" :key="s.session_id" :id="`session-${s.session_id}`" class="session-card">
         <div class="card-header">
           <div class="session-date">
             <span class="date-day">{{ formatDay(s.started_at) }}</span>
@@ -85,6 +104,7 @@
         </div>
       </div>
     </div>
+  </div>
   </div>
 </template>
 
@@ -174,15 +194,19 @@ const formatTime = (isoStr) => {
   return new Date(isoStr).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
+const scrollToSession = (sessionId) => {
+  const el = document.getElementById(`session-${sessionId}`)
+  el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 onMounted(fetchHistory)
 </script>
 
 <style scoped>
 .history-page {
   width: 100%;
-  max-width: 1600px;
   margin: 0 auto;
-  padding: 32px 24px;
+  padding: 32px 0;
 }
 
 .page-header {

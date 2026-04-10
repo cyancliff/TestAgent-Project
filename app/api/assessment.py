@@ -350,6 +350,8 @@ class AnswerSubmitResponse(BaseModel):
     message: str
     score: float
     follow_up_question: Optional[str] = None
+    risk_score: Optional[int] = None
+    risk_reasons: list[str] = Field(default_factory=list)
 
 
 class ExplanationSubmitRequest(BaseModel):
@@ -402,14 +404,21 @@ def calculate_question_score(db_question: Question, selected_option: str) -> flo
     return raw_score
 
 
-async def analyze_answer(db_question: Question, selected_option: str, time_spent: float) -> tuple[float, dict]:
+async def analyze_answer(
+        db_question: Question,
+        selected_option: str,
+        time_spent: float,
+        recent_answers: Optional[list[dict]] = None,
+) -> tuple[float, dict]:
     """计算分数并执行异常检测"""
     score = calculate_question_score(db_question, selected_option)
     detection_result = await check_anomaly_and_generate_question(
         time_spent=time_spent,
         avg_time=float(db_question.avg_time or 8.0),
         question_content=db_question.content,
-        selected_option=selected_option
+        selected_option=selected_option,
+        recent_answers=recent_answers or [],
+        available_options=db_question.options,
     )
     return score, detection_result
 
@@ -423,6 +432,23 @@ def ensure_session_owner(db: Session, session_id: int, user_id: int) -> Assessme
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在或无权访问")
     return session
+
+
+def build_recent_answer_context(db: Session, session_id: int, user_id: int, limit: int = 5) -> list[dict]:
+    records = db.query(AnswerRecord).filter(
+        AnswerRecord.session_id == session_id,
+        AnswerRecord.user_id == user_id,
+    ).order_by(AnswerRecord.created_at.asc()).all()
+    return [
+        {
+            "exam_no": record.exam_no,
+            "selected_option": record.selected_option,
+            "time_spent": float(record.time_spent or 0),
+            "score": float(record.score or 0),
+            "is_anomaly": int(record.is_anomaly or 0),
+        }
+        for record in records[-limit:]
+    ]
 
 
 def build_transient_answer_context(db: Session, answers: list[AdaptiveAnswerItem]) -> dict:
@@ -895,7 +921,12 @@ async def check_answer(payload: CheckAnswerRequest, db: Session = Depends(get_db
         raise HTTPException(status_code=404, detail="题目不存在")
 
     try:
-        current_score, detection_result = await analyze_answer(db_question, payload.selected_option, payload.time_spent)
+        current_score, detection_result = await analyze_answer(
+            db_question,
+            payload.selected_option,
+            payload.time_spent,
+            recent_answers=[],
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"答案检测失败: {e}")
 
@@ -903,7 +934,9 @@ async def check_answer(payload: CheckAnswerRequest, db: Session = Depends(get_db
         status=detection_result["status"],
         message="检测完成，尚未正式提交",
         score=current_score,
-        follow_up_question=detection_result.get("follow_up")
+        follow_up_question=detection_result.get("follow_up"),
+        risk_score=detection_result.get("risk_score"),
+        risk_reasons=detection_result.get("reasons", []),
     )
 
 
@@ -934,9 +967,15 @@ async def submit_batch(payload: BatchSubmitRequest, background_tasks: Background
     db.query(ModuleDebateResult).filter(ModuleDebateResult.session_id == payload.session_id).delete()
     db.commit()
 
+    recent_answers = []
     for item in payload.answers:
         db_question = question_map[item.exam_no]
-        score, detection_result = await analyze_answer(db_question, item.selected_option, item.time_spent)
+        score, detection_result = await analyze_answer(
+            db_question,
+            item.selected_option,
+            item.time_spent,
+            recent_answers=recent_answers,
+        )
         is_anomaly_flag = 1 if detection_result["status"] == "anomaly" else 0
         new_record = AnswerRecord(
             session_id=payload.session_id,
@@ -950,6 +989,14 @@ async def submit_batch(payload: BatchSubmitRequest, background_tasks: Background
             user_explanation=item.user_explanation if is_anomaly_flag else None,
         )
         db.add(new_record)
+        recent_answers.append({
+            "exam_no": item.exam_no,
+            "selected_option": item.selected_option,
+            "time_spent": item.time_spent,
+            "score": score,
+            "is_anomaly": is_anomaly_flag,
+        })
+        recent_answers = recent_answers[-5:]
 
     session.status = 'completed'
     from datetime import datetime
@@ -976,7 +1023,12 @@ async def submit_answer(payload: AnswerSubmitRequest, background_tasks: Backgrou
     if not db_question:
         raise HTTPException(status_code=404, detail="题目不存在")
 
-    current_score, detection_result = await analyze_answer(db_question, payload.selected_option, payload.time_spent)
+    current_score, detection_result = await analyze_answer(
+        db_question,
+        payload.selected_option,
+        payload.time_spent,
+        recent_answers=build_recent_answer_context(db, payload.session_id, current_user.id),
+    )
     is_anomaly_flag = 1 if detection_result["status"] == "anomaly" else 0
     new_record = AnswerRecord(
         session_id=payload.session_id,
@@ -1000,7 +1052,9 @@ async def submit_answer(payload: AnswerSubmitRequest, background_tasks: Backgrou
         status=detection_result["status"],
         message="记录已成功存入数据库",
         score=current_score,
-        follow_up_question=detection_result.get("follow_up")
+        follow_up_question=detection_result.get("follow_up"),
+        risk_score=detection_result.get("risk_score"),
+        risk_reasons=detection_result.get("reasons", []),
     )
 
 
@@ -1038,49 +1092,6 @@ async def finish_assessment(
     from datetime import datetime
     session.finished_at = datetime.now()
     db.commit()
-
-    return {
-        "status": "success",
-        "message": "测评已完成！请连接 /finish-stream 端点观看专家评审团的实时辩论并获取最终报告。"
-    }
-
-
-# --- 接口 3：提交补充解释 (新增！) ---
-@router.post("/submit_explanation")
-async def submit_explanation(payload: ExplanationSubmitRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # 找到刚才那条被拦截的异常记录
-    record = db.query(AnswerRecord).filter(
-        AnswerRecord.session_id == payload.session_id,
-        AnswerRecord.user_id == current_user.id,
-        AnswerRecord.exam_no == payload.exam_no,
-        AnswerRecord.is_anomaly == 1
-    ).order_by(AnswerRecord.created_at.desc()).first()
-
-    if record:
-        record.user_explanation = payload.text
-        db.commit()
-        return {"status": "success", "message": "解释已入库"}
-
-    raise HTTPException(status_code=404, detail="找不到对应的异常记录")
-
-
-@router.post("/finish")
-async def finish_assessment(
-        session_id: int,
-        background_tasks: BackgroundTasks,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user),
-):
-    """
-    前端答完10题后调用此接口。
-    返回成功响应，提示前端连接流式端点观看实时辩论。
-    """
-    session = db.query(AssessmentSession).filter(AssessmentSession.id == session_id).first()
-    if session:
-        session.status = 'completed'
-        from datetime import datetime
-        session.finished_at = datetime.now()
-        db.commit()
 
     return {
         "status": "success",
@@ -1385,7 +1396,7 @@ async def get_report(session_id: int, db: Session = Depends(get_db), current_use
 @router.delete("/session/{session_id}")
 async def delete_session(session_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     import os
-    from app.api.chat import chat_histories
+    from app.models.question import ChatMessage
 
     session = db.query(AssessmentSession).filter(
         AssessmentSession.id == session_id,
@@ -1398,11 +1409,9 @@ async def delete_session(session_id: int, db: Session = Depends(get_db), current
 
     db.query(ModuleDebateResult).filter(ModuleDebateResult.session_id == session_id).delete()
     db.query(AnswerRecord).filter(AnswerRecord.session_id == session_id).delete()
+    db.query(ChatMessage).filter(ChatMessage.session_id == session_id).delete()
     db.delete(session)
     db.commit()
-
-    if session_id in chat_histories:
-        del chat_histories[session_id]
 
     if report_file_path and os.path.exists(report_file_path):
         try:

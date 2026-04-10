@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
-from app.models.question import SessionLocal, AssessmentSession, AnswerRecord, User
+from app.models.question import SessionLocal, AssessmentSession, AnswerRecord, ChatMessage as ChatMessageModel, User
 from app.services.rag_service import retrieve_knowledge
 from app.core.security import get_current_user
 import os
@@ -41,8 +41,37 @@ class ChatResponse(BaseModel):
     messages: List[ChatMessage]
 
 
-# 存储对话历史（简化版，用内存存储，生产环境应使用数据库）
-chat_histories = {}
+def serialize_messages(messages: List[ChatMessageModel], include_system: bool = False) -> List[dict]:
+    result = []
+    for msg in messages:
+        if not include_system and msg.role == "system":
+            continue
+        result.append({
+            "role": msg.role,
+            "content": msg.content,
+            "timestamp": msg.created_at.isoformat() if msg.created_at else None,
+        })
+    return result
+
+
+def get_chat_messages(db: Session, session_id: int, include_system: bool = True) -> List[ChatMessageModel]:
+    query = db.query(ChatMessageModel).filter(ChatMessageModel.session_id == session_id).order_by(ChatMessageModel.id.asc())
+    if not include_system:
+        query = query.filter(ChatMessageModel.role != "system")
+    return query.all()
+
+
+def append_chat_message(db: Session, session_id: int, user_id: int, role: str, content: str) -> ChatMessageModel:
+    message = ChatMessageModel(
+        session_id=session_id,
+        user_id=user_id,
+        role=role,
+        content=content,
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
 
 
 def get_session_context(session_id: int, db: Session) -> str:
@@ -78,7 +107,15 @@ async def start_chat(payload: ChatRequest, db: Session = Depends(get_db), curren
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
 
-    # 构建系统提示词
+    existing_messages = get_chat_messages(db, payload.session_id, include_system=True)
+    if existing_messages:
+        visible_messages = serialize_messages(existing_messages, include_system=False)
+        welcome_msg = next((msg["content"] for msg in visible_messages if msg["role"] == "assistant"), "")
+        return {
+            "welcome": welcome_msg,
+            "messages": visible_messages,
+        }
+
     context = get_session_context(payload.session_id, db)
     system_prompt = f"""你是一位专业的心理咨询师和心理分析专家。你已经完成了对以下用户的心理测评分析，现在需要基于测评结果与用户进行深入的对话交流。
 
@@ -92,70 +129,53 @@ async def start_chat(payload: ChatRequest, db: Session = Depends(get_db), curren
 
 请用中文回复，语气要专业且富有同理心。"""
 
-    # 初始化对话历史
-    chat_histories[payload.session_id] = [
-        {"role": "system", "content": system_prompt}
-    ]
-
-    # 生成欢迎语
     welcome_msg = "你好！我是你的AI心理顾问。我已经详细了解了你的测评结果，很高兴能和你交流。你可以问我关于测评结果的任何问题，或者聊聊你当前的心理状态。"
 
-    chat_histories[payload.session_id].append({
-        "role": "assistant",
-        "content": welcome_msg
-    })
+    append_chat_message(db, payload.session_id, current_user.id, "system", system_prompt)
+    append_chat_message(db, payload.session_id, current_user.id, "assistant", welcome_msg)
 
     return {
         "welcome": welcome_msg,
-        "messages": chat_histories[payload.session_id][1:]  # 不返回system消息
+        "messages": serialize_messages(get_chat_messages(db, payload.session_id, include_system=False)),
     }
 
 
 @router.post("/send")
 async def send_message(payload: ChatRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """发送消息并获取回复，自动检索 ATMR 知识库增强回答"""
-    if payload.session_id not in chat_histories:
+    session = db.query(AssessmentSession).filter(
+        AssessmentSession.id == payload.session_id,
+        AssessmentSession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    existing_messages = get_chat_messages(db, payload.session_id, include_system=True)
+    if not existing_messages:
         raise HTTPException(status_code=400, detail="对话未初始化，请先调用/start")
 
-    # RAG 检索：根据用户问题从 ATMR 知识库中检索相关知识
     rag_context = ""
     try:
         rag_context = await retrieve_knowledge(payload.message, max_sections=3, max_chars=2000)
     except Exception as e:
         print(f"[Chat] RAG 检索失败（不影响回复）: {e}")
 
-    # 如果检索到知识库内容，注入为一条临时 system 消息
+    append_chat_message(db, payload.session_id, current_user.id, "user", payload.message)
+    persisted_messages = serialize_messages(get_chat_messages(db, payload.session_id, include_system=True), include_system=True)
+
+    llm_messages = list(persisted_messages)
     if rag_context:
-        chat_histories[payload.session_id].append({
+        llm_messages.append({
             "role": "system",
-            "content": f"【ATMR 知识库参考资料】以下是与用户问题相关的 ATMR 心理学专业知识，"
-                       f"请结合这些资料回答用户问题，并在适当时引用理论依据：\n\n{rag_context}"
+            "content": f"【ATMR 知识库参考资料】以下是与用户问题相关的 ATMR 心理学专业知识，请结合这些资料回答用户问题，并在适当时引用理论依据：\n\n{rag_context}"
         })
 
-    # 添加用户消息
-    chat_histories[payload.session_id].append({
-        "role": "user",
-        "content": payload.message
-    })
-
-    # 调用 LLM API 生成回复
-    reply = await generate_reply(chat_histories[payload.session_id])
-
-    # 清理临时注入的 RAG system 消息，避免对话历史膨胀
-    chat_histories[payload.session_id] = [
-        m for m in chat_histories[payload.session_id]
-        if not (m["role"] == "system" and "ATMR 知识库参考资料" in m.get("content", ""))
-    ]
-
-    # 添加助手回复
-    chat_histories[payload.session_id].append({
-        "role": "assistant",
-        "content": reply
-    })
+    reply = await generate_reply(llm_messages)
+    append_chat_message(db, payload.session_id, current_user.id, "assistant", reply)
 
     return {
         "reply": reply,
-        "messages": [m for m in chat_histories[payload.session_id] if m["role"] != "system"]
+        "messages": serialize_messages(get_chat_messages(db, payload.session_id, include_system=False))
     }
 
 
@@ -191,7 +211,6 @@ async def generate_reply(messages: List[dict]) -> str:
 @router.get("/history/{session_id}")
 async def get_chat_history(session_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """获取对话历史"""
-    # 验证 session 属于当前用户
     session = db.query(AssessmentSession).filter(
         AssessmentSession.id == session_id,
         AssessmentSession.user_id == current_user.id
@@ -199,18 +218,25 @@ async def get_chat_history(session_id: int, db: Session = Depends(get_db), curre
     if not session:
         raise HTTPException(status_code=403, detail="无权访问此会话")
 
-    if session_id not in chat_histories:
-        return {"messages": []}
-
     return {
-        "messages": [m for m in chat_histories[session_id] if m["role"] != "system"]
+        "messages": serialize_messages(get_chat_messages(db, session_id, include_system=False))
     }
 
 
 @router.post("/clear")
 async def clear_chat(payload: ChatRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """清空对话历史"""
-    if payload.session_id in chat_histories:
-        del chat_histories[payload.session_id]
+    session = db.query(AssessmentSession).filter(
+        AssessmentSession.id == payload.session_id,
+        AssessmentSession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    db.query(ChatMessageModel).filter(
+        ChatMessageModel.session_id == payload.session_id,
+        ChatMessageModel.user_id == current_user.id,
+    ).delete()
+    db.commit()
 
     return {"status": "success", "message": "对话历史已清空"}
