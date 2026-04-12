@@ -1,49 +1,73 @@
 <template>
   <div class="page-layout">
-    <!-- 左侧：对话导航 -->
-    <aside v-if="!loading && messages.length" class="page-sidebar">
+    <!-- 左侧：咨询会话列表 -->
+    <aside class="page-sidebar">
       <div class="sidebar-header">
-        <h3>对话记录</h3>
-        <p>{{ messages.length }} 条消息</p>
+        <h3>咨询会话</h3>
+        <p>{{ chatSessions.length }} 个会话</p>
       </div>
       <div class="sidebar-actions">
-        <button class="btn-danger" style="width:100%" @click="clearChat">清空当前对话</button>
+        <button class="btn-new-chat" @click="createNewSession">+ 新建对话</button>
       </div>
       <div class="sidebar-list">
         <button
-          v-for="(msg, index) in messages"
-          :key="`nav-${index}`"
-          class="sidebar-item"
-          :class="{ 'sidebar-item--user': msg.role === 'user' }"
-          @click="scrollToMessage(index)"
+          v-for="s in chatSessions"
+          :key="s.id"
+          :class="['sidebar-item', { active: activeChatId === s.id }]"
+          @click="switchSession(s.id)"
         >
-          <span class="sidebar-item-meta">{{ msg.role === 'user' ? '我' : '顾问' }}</span>
-          <span class="sidebar-item-title">{{ previewText(msg.content, index) }}</span>
+          <span class="sidebar-item-title">{{ s.title || '新对话' }}</span>
+          <span class="sidebar-item-meta">
+            {{ s.assessment_session_id ? `测评 #${s.assessment_session_id}` : '未关联测评' }}
+            · {{ s.message_count }}条
+          </span>
         </button>
       </div>
     </aside>
 
     <!-- 右侧：聊天主区域 -->
     <div class="chat-main">
-      <div class="chat-container">
+      <!-- 未选择会话 -->
+      <div v-if="!activeChatId" class="chat-empty-state">
+        <div class="empty-icon">💬</div>
+        <h3>开始一段咨询对话</h3>
+        <p>选择左侧已有的会话，或创建一个新对话</p>
+        <button class="btn-new-chat-big" @click="createNewSession">+ 新建对话</button>
+      </div>
+
+      <!-- 聊天界面 -->
+      <div v-else class="chat-container">
         <div class="chat-header">
           <div class="chat-header-info">
             <span class="chat-avatar">🧑‍⚕️</span>
             <div>
               <h2 class="chat-title">AI心理顾问</h2>
-              <p class="chat-subtitle">基于你的测评结果为你提供心理支持</p>
+              <p class="chat-subtitle">
+                <select
+                  class="assessment-select"
+                  :value="currentAssessmentId || 0"
+                  @change="changeAssessment($event.target.value)"
+                >
+                  <option :value="0">不关联测评</option>
+                  <option
+                    v-for="a in availableAssessments"
+                    :key="a.session_id"
+                    :value="a.session_id"
+                  >测评 #{{ a.session_id }} ({{ formatDate(a.started_at) }}){{ a.has_report ? '' : ' [无报告]' }}</option>
+                </select>
+              </p>
             </div>
           </div>
           <div class="chat-header-actions">
-            <button class="btn-ghost" @click="clearChat">🗑️</button>
-            <button class="btn-ghost" @click="backToHistory">✕</button>
+            <button class="btn-ghost" @click="clearCurrentChat" title="清空对话">🗑️</button>
+            <button class="btn-ghost" @click="deleteCurrentSession" title="删除会话">✕</button>
           </div>
         </div>
 
         <div class="chat-messages" ref="messagesRef">
-          <div v-if="loading" class="state-block">
+          <div v-if="loadingMessages" class="state-block">
             <div class="spinner"></div>
-            <p>正在连接心理顾问...</p>
+            <p>正在加载对话...</p>
           </div>
 
           <template v-else>
@@ -54,7 +78,11 @@
               :class="['chat-bubble', msg.role]"
             >
               <div class="chat-bubble-avatar">
-                {{ msg.role === 'user' ? '👤' : '🧑‍⚕️' }}
+                <template v-if="msg.role === 'user'">
+                  <img v-if="userAvatarUrl" :src="userAvatarUrl" class="bubble-avatar-img" alt="" />
+                  <span v-else>{{ usernameInitial }}</span>
+                </template>
+                <template v-else>🧑‍⚕️</template>
               </div>
               <div class="chat-bubble-body">
                 <div class="chat-bubble-text" v-html="formatMessage(msg.content)"></div>
@@ -94,43 +122,103 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
 import { marked } from 'marked'
 
+const props = defineProps({ chatId: { type: [String, Number], default: null } })
+
+const userAvatarUrl = ref(localStorage.getItem('avatarUrl') || '')
+const usernameInitial = computed(() => {
+  const name = localStorage.getItem('username') || '?'
+  return name[0].toUpperCase()
+})
 const route = useRoute()
 const router = useRouter()
-const sessionId = ref(parseInt(route.query.sessionId) || 0)
 
+const chatSessions = ref([])
+const activeChatId = ref(null)
+const currentAssessmentId = ref(null)
+const availableAssessments = ref([])
 const messages = ref([])
 const inputMessage = ref('')
-const loading = ref(true)
+const loadingMessages = ref(false)
 const sending = ref(false)
 const messagesRef = ref(null)
 const inputRef = ref(null)
 
-const initChat = async () => {
-  loading.value = true
+// --- 会话列表 ---
+const fetchSessions = async () => {
   try {
-    const res = await api.post('/chat/start', { session_id: sessionId.value, message: '' })
-    messages.value = res.data.messages?.length
-      ? res.data.messages
-      : [{ role: 'assistant', content: res.data.welcome }]
+    const res = await api.get('/chat/sessions')
+    chatSessions.value = res.data.sessions
   } catch (err) {
-    console.error('初始化对话失败:', err)
-    messages.value = [{
-      role: 'assistant',
-      content: '你好！我是你的AI心理顾问。我已经了解了你的测评结果，很高兴能和你交流。有什么想聊的吗？'
-    }]
+    console.error('获取咨询会话失败:', err)
+  }
+}
+
+const fetchAssessments = async () => {
+  try {
+    const res = await api.get('/chat/available-assessments')
+    availableAssessments.value = res.data.assessments
+  } catch (err) {
+    console.error('获取测评列表失败:', err)
+  }
+}
+
+const createNewSession = async (assessmentSessionId = null) => {
+  try {
+    const payload = {}
+    if (assessmentSessionId && typeof assessmentSessionId === 'number') {
+      payload.assessment_session_id = assessmentSessionId
+    }
+    const res = await api.post('/chat/sessions', payload)
+    await fetchSessions()
+    router.push(`/chat/${res.data.id}`)
+  } catch (err) {
+    console.error('创建会话失败:', err)
+    alert('创建会话失败')
+  }
+}
+
+const switchSession = (id) => {
+  router.push(`/chat/${id}`)
+}
+
+const deleteCurrentSession = async () => {
+  if (!activeChatId.value) return
+  if (!confirm('确定要删除这个咨询会话吗？所有消息将被清除。')) return
+  try {
+    await api.delete(`/chat/sessions/${activeChatId.value}`)
+    activeChatId.value = null
+    messages.value = []
+    await fetchSessions()
+    router.push('/chat')
+  } catch (err) {
+    console.error('删除会话失败:', err)
+  }
+}
+
+// --- 消息 ---
+const loadMessages = async (chatId) => {
+  if (!chatId) return
+  loadingMessages.value = true
+  try {
+    const res = await api.get(`/chat/sessions/${chatId}/messages`)
+    messages.value = res.data.messages || []
+    currentAssessmentId.value = res.data.assessment_session_id
+  } catch (err) {
+    console.error('加载消息失败:', err)
+    messages.value = []
   } finally {
-    loading.value = false
+    loadingMessages.value = false
   }
 }
 
 const sendMessage = async () => {
   const text = inputMessage.value.trim()
-  if (!text || sending.value) return
+  if (!text || sending.value || !activeChatId.value) return
 
   const optimistic = [...messages.value, { role: 'user', content: text }]
   messages.value = optimistic
@@ -139,10 +227,12 @@ const sendMessage = async () => {
   resetTextarea()
 
   try {
-    const res = await api.post('/chat/send', { session_id: sessionId.value, message: text })
+    const res = await api.post(`/chat/sessions/${activeChatId.value}/send`, { message: text })
     messages.value = res.data.messages?.length
       ? res.data.messages
       : [...optimistic, { role: 'assistant', content: res.data.reply }]
+    // 刷新侧边栏（标题可能更新了）
+    await fetchSessions()
   } catch (err) {
     console.error('发送消息失败:', err)
     messages.value = [...optimistic, { role: 'assistant', content: '抱歉，我刚才走神了。能再说一遍吗？' }]
@@ -151,33 +241,43 @@ const sendMessage = async () => {
   }
 }
 
-const clearChat = async () => {
-  if (!confirm('确定要清空对话历史吗？')) return
+const clearCurrentChat = async () => {
+  if (!activeChatId.value) return
+  if (!confirm('确定要清空当前对话历史吗？')) return
   try {
-    await api.post('/chat/clear', { session_id: sessionId.value, message: '' })
-    messages.value = []
-    await initChat()
+    const res = await api.post(`/chat/sessions/${activeChatId.value}/clear`)
+    messages.value = res.data.messages || []
   } catch (err) {
     console.error('清空对话失败:', err)
   }
 }
 
-const backToHistory = () => router.push('/history')
-
-const previewText = (text, index) => {
-  const cleaned = (text || '').replace(/\s+/g, ' ').trim()
-  if (!cleaned) return `消息 ${index + 1}`
-  return cleaned.length > 28 ? `${cleaned.slice(0, 28)}...` : cleaned
+// --- 关联测评切换 ---
+const changeAssessment = async (value) => {
+  const newId = parseInt(value) || 0
+  try {
+    await api.put(`/chat/sessions/${activeChatId.value}`, {
+      assessment_session_id: newId,
+    })
+    currentAssessmentId.value = newId || null
+    // 重新加载消息（系统上下文已更新）
+    await loadMessages(activeChatId.value)
+    await fetchSessions()
+  } catch (err) {
+    console.error('切换关联测评失败:', err)
+    alert('切换失败')
+  }
 }
 
-const scrollToMessage = (index) => {
-  const el = document.getElementById(`chat-msg-${index}`)
-  el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-}
-
+// --- 工具函数 ---
 const formatMessage = (text) => {
   if (!text) return ''
   return marked.parse(text.replace(/^[ \t]+/gm, ''), { breaks: true })
+}
+
+const formatDate = (isoStr) => {
+  if (!isoStr) return ''
+  return new Date(isoStr).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 
 const autoResize = () => {
@@ -194,13 +294,103 @@ watch(() => messages.value.length, () => {
   nextTick(() => { if (messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight })
 })
 
-onMounted(() => initChat())
+// 监听路由变化，切换活跃会话
+watch(
+  () => route.params.chatId,
+  async (newId) => {
+    if (newId) {
+      activeChatId.value = parseInt(newId)
+      await loadMessages(activeChatId.value)
+    } else {
+      activeChatId.value = null
+      messages.value = []
+    }
+  },
+  { immediate: true }
+)
+
+onMounted(async () => {
+  await Promise.all([fetchSessions(), fetchAssessments()])
+
+  // 如果 URL 带了 assessmentSessionId query 参数（从历史页跳转），自动创建会话
+  const assessmentId = parseInt(route.query.assessmentSessionId)
+  if (assessmentId && !route.params.chatId) {
+    await createNewSession(assessmentId)
+  }
+})
 </script>
 
 <style scoped>
-/* 侧栏角色区分 */
-.sidebar-item--user { border-left: 3px solid rgba(99, 102, 241, 0.5); }
-.sidebar-item:not(.sidebar-item--user) { border-left: 3px solid rgba(6, 182, 212, 0.5); }
+/* 侧边栏 */
+.sidebar-item.active {
+  background: rgba(99, 102, 241, 0.12);
+  border-left: 3px solid var(--primary);
+}
+.sidebar-item:not(.active) {
+  border-left: 3px solid transparent;
+}
+
+.btn-new-chat {
+  width: 100%;
+  padding: 14px 20px;
+  background: var(--gradient-primary);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-new-chat:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.3);
+}
+
+/* 空状态 */
+.chat-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: calc(100vh - 100px);
+  color: var(--text-secondary);
+  text-align: center;
+}
+.chat-empty-state .empty-icon { font-size: 64px; margin-bottom: 16px; opacity: 0.5; }
+.chat-empty-state h3 { font-size: 20px; color: var(--text-primary); margin: 0 0 8px; }
+.chat-empty-state p { font-size: 15px; margin: 0 0 24px; }
+.btn-new-chat-big {
+  padding: 16px 32px;
+  background: var(--gradient-primary);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-new-chat-big:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+}
+
+/* 测评关联选择器 */
+.assessment-select {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 4px 8px;
+  cursor: pointer;
+  max-width: 280px;
+}
+.assessment-select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
 
 /* 主聊天区 */
 .chat-main {
@@ -294,6 +484,20 @@ onMounted(() => initChat())
   justify-content: center;
   font-size: 22px;
   flex-shrink: 0;
+}
+
+.bubble-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.chat-bubble.user .chat-bubble-avatar {
+  background: var(--gradient-primary);
+  color: white;
+  font-weight: 700;
+  font-size: 16px;
 }
 
 .chat-bubble-body {
@@ -405,6 +609,23 @@ onMounted(() => initChat())
   text-align: center;
 }
 
+/* 加载状态 */
+.state-block {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+}
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* 响应式 */
 @media (max-width: 768px) {
   .chat-main { height: calc(100vh - 72px); }
@@ -416,5 +637,19 @@ onMounted(() => initChat())
   .chat-input-area { padding: 16px 20px 20px; }
   .chat-input-row textarea { padding: 14px 16px; font-size: 16px; }
   .chat-send-btn { width: 44px; height: 44px; font-size: 20px; }
+}
+
+@media (max-width: 480px) {
+  .chat-main { height: calc(100vh - 64px); }
+  .chat-header { padding: 12px 16px; }
+  .chat-avatar { font-size: 32px; }
+  .chat-title { font-size: 18px; }
+  .chat-messages { padding: 16px; gap: 12px; }
+  .chat-bubble-body { padding: 12px 14px; font-size: 14px; }
+  .chat-input-area { padding: 12px 16px 16px; }
+  .chat-input-row textarea { padding: 12px 14px; font-size: 14px; }
+  .chat-send-btn { width: 40px; height: 40px; font-size: 18px; }
+  .chat-bubble-avatar { width: 36px; height: 36px; font-size: 20px; }
+  .chat-bubble.user .chat-bubble-avatar { font-size: 14px; }
 }
 </style>

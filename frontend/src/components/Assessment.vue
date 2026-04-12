@@ -117,11 +117,13 @@
       <div class="navigation-actions">
         <button class="nav-btn secondary" @click="prevQuestion" :disabled="currentIndex === 0">上一题</button>
         <button class="nav-btn" v-if="currentIndex < maxQuestions - 1" @click="nextQuestion" :disabled="!canGoNext">下一题</button>
-        <button class="nav-btn submit-final" v-if="currentIndex === maxQuestions - 1" @click="submitAllAnswers" :disabled="!canSubmitAll || isSubmittingAll">
-          {{ isSubmittingAll ? '提交中...' : (isEditMode ? '重新提交' : '提交答卷') }}
-        </button>
-        <button class="nav-btn submit-final" v-else-if="isEditMode && canSubmitAll" @click="submitAllAnswers" :disabled="isSubmittingAll">
-          {{ isSubmittingAll ? '提交中...' : '重新提交' }}
+        <button
+          class="nav-btn submit-final"
+          v-if="currentIndex === maxQuestions - 1 || canSubmitAll"
+          @click="submitAllAnswers"
+          :disabled="!canSubmitAll || isSubmittingAll"
+        >
+          {{ isSubmittingAll ? '提交中...' : !canSubmitAll ? `还剩 ${maxQuestions - answeredCount} 题未答` : (isEditMode ? '重新提交' : '提交答卷') }}
         </button>
       </div>
     </div>
@@ -318,7 +320,15 @@ const formatAgentName = (name) => {
 }
 
 const currentAnswer = computed(() => answersMap.value[currentQuestion.value.id] || null)
-const answeredCount = computed(() => Object.keys(answersMap.value).length)
+const answeredCount = computed(() => {
+  // 统计所有位置中已作答的数量（与格子绿色一致）
+  let count = 0
+  for (let i = 0; i < maxQuestions; i++) {
+    const q = questions.value[i]
+    if (q && answersMap.value[q.id]) count++
+  }
+  return count
+})
 const canGoNext = computed(() => !!currentAnswer.value && (!anomalyTriggered.value || !!(currentAnswer.value.user_explanation || userExplanation.value.trim())))
 const canSubmitAll = computed(() => answeredCount.value === maxQuestions && !anomalyTriggered.value)
 
@@ -524,19 +534,29 @@ const submitAllAnswers = async () => {
   if (!canSubmitAll.value) return
   isSubmittingAll.value = true
   try {
-    const orderedAnswers = questions.value.map((q) => ({
-      exam_no: q.id,
-      selected_option: answersMap.value[q.id].selected_option,
-      time_spent: answersMap.value[q.id].time_spent,
-      user_explanation: answersMap.value[q.id].user_explanation || null,
-    }))
+    // 基于 answersMap 去重构建答案列表，避免 questions 数组中同一 exam_no 出现在多个位置
+    const seen = new Set()
+    const orderedAnswers = []
+    for (const q of questions.value) {
+      if (!q || seen.has(q.id)) continue
+      const ans = answersMap.value[q.id]
+      if (!ans) continue
+      seen.add(q.id)
+      orderedAnswers.push({
+        exam_no: q.id,
+        selected_option: ans.selected_option,
+        time_spent: ans.time_spent,
+        user_explanation: ans.user_explanation || null,
+      })
+    }
 
     await api.post('/assessment/submit-batch', {
       session_id: sessionId.value,
       answers: orderedAnswers,
     })
 
-    startDebateStream()
+    // 提交成功后直接跳转到历史页面，报告在后台自动生成
+    router.push('/history')
   } catch (error) {
     console.error('最终提交失败:', error)
     alert(error.response?.data?.detail || '提交失败，请稍后重试')
@@ -878,34 +898,57 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
 
 /* ========== 响应式设计 ========== */
 @media (max-width: 768px) {
-  .assessment-container { padding: 32px 16px; }
-  .start-card { padding: 48px 32px; }
-  .start-title { font-size: 32px; }
-  .start-description { font-size: 18px; }
-  .start-features { flex-direction: column; gap: 20px; }
-  .question-card { padding: 32px 24px; min-height: auto; }
-  .question-title { font-size: 28px; }
-  .question-nav-grid { grid-template-columns: repeat(7, 1fr); }
-  .option-btn { padding: 20px 24px; }
-  .option-text { font-size: 18px; }
-  .nav-btn { padding: 18px 32px; font-size: 18px; }
-  .header { flex-direction: column; align-items: flex-start; gap: 16px; }
-  .progress-text { font-size: 18px; }
+  .assessment-container { padding: 28px 14px; }
+  .start-card { padding: 40px 28px; }
+  .start-title { font-size: 28px; }
+  .start-description { font-size: 16px; }
+  .start-features { flex-direction: column; gap: 16px; }
+  .feature-item { padding: 14px 20px; font-size: 15px; }
+  .feature-icon { font-size: 34px; }
+  .question-card { padding: 28px 20px; min-height: auto; }
+  .question-title { font-size: 24px; }
+  .question-nav-toggle { padding: 14px 20px; font-size: 15px; }
+  .question-nav-grid { grid-template-columns: repeat(6, 1fr); }
+  .progress-bar { height: 8px; }
+  .adaptive-badge, .sequential-badge, .module-badge { padding: 7px 16px; font-size: 14px; }
+  .option-btn { padding: 18px 22px; }
+  .option-text { font-size: 16px; }
+  .anomaly-container { margin-top: 24px; }
+  .warning-box { padding: 20px 24px; font-size: 15px; }
+  textarea { padding: 16px 20px; font-size: 15px; }
+  .module-submit-bar { flex-direction: column; align-items: flex-start; gap: 16px; padding: 20px 24px; }
+  .module-submit-btn { width: 100%; padding: 16px 28px; font-size: 15px; }
+  .nav-btn { padding: 16px 28px; font-size: 16px; }
+  .header { flex-direction: column; align-items: flex-start; gap: 14px; }
+  .progress-text { font-size: 16px; }
 }
 
 @media (max-width: 480px) {
-  .assessment-container { padding: 24px 12px; }
-  .start-card { padding: 32px 24px; }
-  .start-title { font-size: 28px; }
-  .start-description { font-size: 16px; }
-  .question-card { padding: 24px 20px; }
-  .question-title { font-size: 24px; }
-  .question-nav-grid { grid-template-columns: repeat(5, 1fr); }
-  .option-btn { padding: 16px 20px; gap: 16px; }
-  .option-label { width: 44px; height: 44px; font-size: 20px; }
-  .option-text { font-size: 16px; }
-  .nav-btn { padding: 16px 24px; font-size: 16px; }
-  .navigation-actions { flex-direction: column; gap: 12px; }
+  .assessment-container { padding: 20px 10px; }
+  .start-card { padding: 24px 20px; }
+  .start-title { font-size: 24px; }
+  .start-description { font-size: 14px; }
+  .start-features { flex-direction: column; gap: 12px; }
+  .feature-item { padding: 12px 16px; font-size: 14px; }
+  .feature-icon { font-size: 32px; }
+  .question-card { padding: 20px 16px; }
+  .question-title { font-size: 20px; }
+  .question-nav-toggle { padding: 12px 16px; font-size: 14px; }
+  .question-nav-grid { grid-template-columns: repeat(4, 1fr); }
+  .progress-bar { height: 8px; }
+  .progress-text { font-size: 14px; }
+  .adaptive-badge, .sequential-badge, .module-badge { padding: 6px 12px; font-size: 12px; }
+  .option-btn { padding: 14px 16px; gap: 12px; }
+  .option-label { width: 40px; height: 40px; font-size: 18px; }
+  .option-text { font-size: 14px; }
+  .anomaly-container { margin-top: 20px; }
+  .warning-box { padding: 16px 20px; font-size: 14px; }
+  textarea { padding: 14px 16px; font-size: 14px; min-height: 80px; }
+  .submit-explanation-btn { padding: 14px 24px; font-size: 14px; }
+  .module-submit-bar { flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px 20px; }
+  .module-submit-btn { width: 100%; padding: 14px 24px; font-size: 14px; }
+  .nav-btn { padding: 14px 20px; font-size: 14px; }
+  .navigation-actions { flex-direction: column; gap: 10px; }
   .nav-btn { width: 100%; }
 }
 </style>

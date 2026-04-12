@@ -12,6 +12,7 @@ const routes = [
   { path: '/assessment', component: Assessment },
   { path: '/report/:sessionId', component: Report, props: true },
   { path: '/chat', component: Chat },
+  { path: '/chat/:chatId', component: Chat, props: true },
 ]
 
 const router = createRouter({

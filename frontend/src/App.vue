@@ -17,6 +17,20 @@
         </router-link>
       </div>
       <div class="nav-user">
+        <div class="avatar-wrapper" @click="triggerAvatarUpload" title="点击更换头像">
+          <img v-if="avatarUrl" :src="avatarUrl" class="nav-avatar" alt="头像" />
+          <span v-else class="nav-avatar-fallback">{{ usernameInitial }}</span>
+          <div class="avatar-overlay">
+            <span>换</span>
+          </div>
+          <input
+            ref="avatarInput"
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            style="display:none"
+            @change="handleAvatarUpload"
+          />
+        </div>
         <span class="username">{{ username }}</span>
         <button class="logout-btn" @click="logout">
           <span class="nav-icon">🚪</span>
@@ -33,18 +47,49 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import api from './api'
 
 const route = useRoute()
 const router = useRouter()
 
 const showNav = computed(() => route.path !== '/login')
 const username = computed(() => localStorage.getItem('username') || '用户')
+const avatarUrl = ref(localStorage.getItem('avatarUrl') || '')
+const usernameInitial = computed(() => (username.value || '?')[0].toUpperCase())
+const avatarInput = ref(null)
+
+const triggerAvatarUpload = () => {
+  avatarInput.value?.click()
+}
+
+const handleAvatarUpload = async (e) => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  if (file.size > 2 * 1024 * 1024) {
+    alert('图片大小不能超过 2MB')
+    return
+  }
+  const formData = new FormData()
+  formData.append('file', file)
+  try {
+    const res = await api.post('/auth/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    avatarUrl.value = res.data.avatar_url
+    localStorage.setItem('avatarUrl', res.data.avatar_url)
+  } catch (err) {
+    alert(err.response?.data?.detail || '头像上传失败')
+  }
+  // 重置 input 以便再次选择同一文件
+  e.target.value = ''
+}
 
 const logout = () => {
   localStorage.removeItem('userId')
   localStorage.removeItem('username')
+  localStorage.removeItem('avatarUrl')
   router.push('/login')
 }
 </script>
@@ -82,6 +127,7 @@ const logout = () => {
   --transition-fast: 150ms ease;
   --transition-normal: 250ms ease;
   --transition-slow: 350ms ease;
+  --safe-area-inset-top: env(safe-area-inset-top, 0px);
 }
 
 /* ========== 全局重置 ========== */
@@ -99,22 +145,30 @@ body {
   line-height: 1.6;
 }
 
+/* ========== 应用包装器 ========== */
+.app-wrapper {
+  position: relative;
+  min-height: 100vh;
+}
+
 /* ========== 导航栏 ========== */
 .navbar {
-  position: fixed;
+  position: sticky;
   top: 0;
   left: 0;
   right: 0;
-  height: 72px;
-  background: rgba(255, 255, 255, 0.85);
+  min-height: 72px;
+  --nav-height: calc(72px + var(--safe-area-inset-top));
+  padding: var(--safe-area-inset-top) 32px 0 32px;
+  background: var(--bg-dark);
   border-bottom: 1px solid rgba(229, 231, 235, 0.6);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 32px;
   z-index: 100;
   backdrop-filter: blur(12px);
   box-shadow: var(--shadow);
+  overflow: visible;
 }
 
 .nav-brand {
@@ -192,6 +246,62 @@ body {
   gap: 16px;
 }
 
+.avatar-wrapper {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.nav-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  transition: border-color 0.2s;
+}
+
+.nav-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--gradient-primary);
+  color: white;
+  font-size: 18px;
+  font-weight: 700;
+  border: 2px solid transparent;
+}
+
+.avatar-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.avatar-wrapper:hover .avatar-overlay {
+  opacity: 1;
+}
+
+.avatar-wrapper:hover .nav-avatar {
+  border-color: var(--primary);
+}
+
 .username {
   color: var(--text-secondary);
   font-size: 17px;
@@ -227,7 +337,7 @@ body {
 }
 
 .main-content.with-nav {
-  padding-top: 88px;
+  padding-top: 24px;
 }
 
 /* ========== 通用卡片样式 ========== */
@@ -330,13 +440,13 @@ body {
 
 .page-sidebar {
   position: sticky;
-  top: 100px;
+  top: calc(var(--nav-height) + 24px);
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
   padding: 20px 16px;
-  max-height: calc(100vh - 124px);
+  max-height: calc(100vh - var(--nav-height) - 48px);
   overflow: hidden;
 }
 
@@ -542,33 +652,41 @@ body {
 
 @media (max-width: 768px) {
   .navbar {
-    height: 60px;
-    padding: 0 16px;
+    min-height: 60px;
+    --nav-height: calc(60px + var(--safe-area-inset-top));
+    padding: var(--safe-area-inset-top) 16px 0 16px;
   }
 
   .logo {
-    font-size: 28px;
+    font-size: 26px;
   }
 
   .brand-text {
-    font-size: 20px;
-  }
-
-  .nav-link {
-    padding: 10px 16px;
-    font-size: 16px;
-  }
-
-  .nav-icon {
     font-size: 18px;
   }
 
+  .nav-link {
+    padding: 8px 14px;
+    font-size: 15px;
+  }
+
+  .nav-icon {
+    font-size: 16px;
+  }
+
   .main-content {
-    padding: 0 16px;
+    padding: 0 12px;
   }
 
   .main-content.with-nav {
-    padding-top: 72px;
+    padding-top: 16px;
+  }
+
+  .sidebar-item-title {
+    font-size: 14px;
+  }
+  .sidebar-item-meta {
+    font-size: 11px;
   }
 }
 
@@ -576,22 +694,65 @@ body {
   .navbar {
     flex-direction: column;
     height: auto;
-    padding: 12px 16px;
+    --nav-height: calc(100px + var(--safe-area-inset-top));
+    padding: calc(12px + var(--safe-area-inset-top)) 12px 12px 12px;
     gap: 12px;
+  }
+
+  .nav-brand,
+  .nav-links,
+  .nav-user {
+    max-width: 100%;
+  }
+
+  .logo {
+    font-size: 24px;
+  }
+
+  .brand-text {
+    font-size: 18px;
   }
 
   .nav-links {
     width: 100%;
     justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .nav-link {
+    white-space: nowrap;
+    overflow: visible;
+    max-width: 100%;
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+
+  .nav-icon {
+    font-size: 16px;
   }
 
   .nav-user {
     width: 100%;
     justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .username {
+    white-space: nowrap;
+    overflow: visible;
+    max-width: 100%;
+    font-size: 14px;
+  }
+
+  .logout-btn {
+    padding: 8px 12px;
+    font-size: 14px;
   }
 
   .main-content.with-nav {
-    padding-top: 120px;
+    padding-top: 20px;
   }
 }
 </style>

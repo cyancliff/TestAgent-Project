@@ -60,6 +60,11 @@ const handleSubmit = async () => {
     localStorage.setItem('token', res.data.access_token)
     localStorage.setItem('userId', res.data.user_id)
     localStorage.setItem('username', res.data.username)
+    if (res.data.avatar_url) {
+      localStorage.setItem('avatarUrl', res.data.avatar_url)
+    } else {
+      localStorage.removeItem('avatarUrl')
+    }
     router.push('/history')
   } catch (err) {
     errorMsg.value = err.response?.data?.detail || '请求失败，请检查后端服务'
@@ -227,6 +232,52 @@ const handleSubmit = async () => {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+@media (max-width: 768px) {
+  .login-card {
+    padding: 40px 32px;
+  }
+  .logo {
+    font-size: 48px;
+  }
+  .app-title {
+    font-size: 24px;
+  }
+  .app-subtitle {
+    font-size: 14px;
+  }
+  .input-group input {
+    padding: 12px 14px;
+    font-size: 14px;
+  }
+  .submit-btn {
+    padding: 12px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 32px 24px;
+  }
+  .logo {
+    font-size: 40px;
+  }
+  .app-title {
+    font-size: 22px;
+  }
+  .app-subtitle {
+    font-size: 13px;
+  }
+  .input-group input {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .submit-btn {
+    padding: 10px;
+    font-size: 13px;
+  }
 }
 
 @keyframes fadeIn {
