@@ -1,5 +1,6 @@
 import json
 import os
+
 from openai import OpenAI
 
 # ================= 配置区 =================
@@ -7,10 +8,7 @@ from openai import OpenAI
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
 # 2. 初始化标准的客户端，指向 DeepSeek 官方服务器
-client = OpenAI(
-    api_key=DEEPSEEK_API_KEY,
-    base_url="https://api.deepseek.com"
-)
+client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
 
 # 3. 指定我们之前成功生成的两个文件
 JSON_PATH = "./results/MinerU_markdown_ATMR_Longtext_structure.json"
@@ -18,10 +16,10 @@ MD_PATH = "MinerU_markdown_ATMR_Longtext.md"
 # ==========================================
 
 print("正在加载本地目录树和正文资料库...")
-with open(JSON_PATH, "r", encoding="utf-8") as f:
+with open(JSON_PATH, encoding="utf-8") as f:
     doc_structure = f.read()
 
-with open(MD_PATH, "r", encoding="utf-8") as f:
+with open(MD_PATH, encoding="utf-8") as f:
     md_lines = f.readlines()
 
 
@@ -46,8 +44,8 @@ tools = [
         "function": {
             "name": "get_document_structure",
             "description": "获取文档的目录树结构。当你需要寻找某类特质（如AR特质）在文档的哪个章节时，优先调用此工具查看 line_num。",
-            "parameters": {"type": "object", "properties": {}}
-        }
+            "parameters": {"type": "object", "properties": {}},
+        },
     },
     {
         "type": "function",
@@ -58,21 +56,23 @@ tools = [
                 "type": "object",
                 "properties": {
                     "start_line": {"type": "integer", "description": "起始行号"},
-                    "end_line": {"type": "integer", "description": "结束行号"}
+                    "end_line": {"type": "integer", "description": "结束行号"},
                 },
-                "required": ["start_line", "end_line"]
-            }
-        }
-    }
+                "required": ["start_line", "end_line"],
+            },
+        },
+    },
 ]
 
 # --- 发起 RAG 问答主循环 ---
 query = "如果一个孩子是 AR 特质，他通常会有哪些天赋优势？在性格上又有什么潜在的弱势？"
 
 messages = [
-    {"role": "system",
-     "content": "你是一个基于真实文档回答问题的专家。执行步骤：1.先调用工具查看目录，找到对应章节行号；2.调用工具提取正文；3.基于正文回答问题。禁止自己编造。"},
-    {"role": "user", "content": query}
+    {
+        "role": "system",
+        "content": "你是一个基于真实文档回答问题的专家。执行步骤：1.先调用工具查看目录，找到对应章节行号；2.调用工具提取正文；3.基于正文回答问题。禁止自己编造。",
+    },
+    {"role": "user", "content": query},
 ]
 
 print(f"\n🙋‍♂️ 你的问题: {query}")
@@ -80,11 +80,7 @@ print("🤖 AI 探员开始工作...\n")
 
 # 允许 AI 最多进行 3 轮推理（看目录 -> 翻正文 -> 回答）
 for i in range(10):
-    response = client.chat.completions.create(
-        model="deepseek-chat",
-        messages=messages,
-        tools=tools
-    )
+    response = client.chat.completions.create(model="deepseek-chat", messages=messages, tools=tools)
 
     msg = response.choices[0].message
     messages.append(msg)
@@ -98,14 +94,10 @@ for i in range(10):
                 result = get_document_structure()
             elif tool_call.function.name == "get_page_content":
                 print(f"-> 📖 AI 动作：正在翻阅正文 (第 {args['start_line']} 行 至 {args['end_line']} 行)...")
-                result = get_page_content(args['start_line'], args['end_line'])
+                result = get_page_content(args["start_line"], args["end_line"])
 
             # 将工具得到的内容汇报给 AI
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": result
-            })
+            messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
     else:
         # 如果没有调用工具，说明资料找齐了，AI 输出了最终答案！
         print("\n================= 🌟 AI 分析师的最终回答 =================\n")

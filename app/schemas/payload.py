@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field
 from typing import Optional
+
+from pydantic import BaseModel, Field
+
 
 class AnswerSubmitRequest(BaseModel):
     user_id: int = Field(default=1, description="受试者ID")
@@ -9,7 +11,8 @@ class AnswerSubmitRequest(BaseModel):
     time_spent: float = Field(default=1.5, description="实际作答耗时（秒）")
     avg_time: float = Field(default=8.0, description="基准平均作答时间（秒）")
 
+
 class AnswerSubmitResponse(BaseModel):
     status: str = Field(description="normal: 正常 / anomaly: 异常")
     message: str = Field(description="后端处理结果说明")
-    follow_up_question: Optional[str] = Field(default=None, description="AI追问文本")
+    follow_up_question: str | None = Field(default=None, description="AI追问文本")

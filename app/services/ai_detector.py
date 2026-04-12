@@ -9,12 +9,12 @@ def _build_follow_up(reasons: list[str]) -> str:
 
 
 async def check_anomaly_and_generate_question(
-        time_spent: float,
-        avg_time: float,
-        question_content: str,
-        selected_option: str,
-        recent_answers: list[dict] | None = None,
-        available_options: list[str] | None = None,
+    time_spent: float,
+    avg_time: float,
+    question_content: str,
+    selected_option: str,
+    recent_answers: list[dict] | None = None,
+    available_options: list[str] | None = None,
 ) -> dict:
     recent_answers = recent_answers or []
     reasons = []

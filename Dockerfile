@@ -25,9 +25,8 @@ RUN pip install --no-cache-dir --timeout=300 --extra-index-url https://download.
 
 # 复制应用代码
 COPY app/ ./app/
-COPY import_data.py .
-COPY generate_feature_vectors.py .
-COPY atmr_full_questions.json .
+COPY scripts/ ./scripts/
+COPY data/ ./data/
 COPY PageIndex/ ./PageIndex/
 COPY agent/ ./agent/
 

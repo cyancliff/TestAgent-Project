@@ -4,25 +4,25 @@ RAG 服务模块 - 基于 PageIndex 的 ATMR 心理学知识库检索
 提供知识库初始化、查询、证据检索等功能，供聊天和辩论系统使用。
 """
 
+import json
 import os
 import sys
-import json
-import httpx
-from typing import Optional
 from pathlib import Path
+from typing import Optional
+
+import httpx
 
 # 将 PageIndex 目录加入模块搜索路径
 PAGEINDEX_DIR = Path(__file__).resolve().parent.parent.parent / "PageIndex"
 if str(PAGEINDEX_DIR) not in sys.path:
     sys.path.insert(0, str(PAGEINDEX_DIR))
 
-from pageindex import PageIndexClient
-
+from pageindex import PageIndexClient  # noqa: E402
 
 # ── 单例知识库客户端 ──────────────────────────────────────────────────────────
 
-_client: Optional[PageIndexClient] = None
-_doc_id: Optional[str] = None
+_client: PageIndexClient | None = None
+_doc_id: str | None = None
 
 WORKSPACE = PAGEINDEX_DIR / "results"
 ATMR_DOC_NAME = "MinerU_markdown_ATMR_Longtext"
@@ -59,8 +59,7 @@ def get_rag_client() -> tuple[PageIndexClient, str]:
 
     if _doc_id is None:
         raise RuntimeError(
-            f"未找到已索引的文档 '{ATMR_DOC_NAME}'，"
-            f"请先运行 PageIndex 索引构建（workspace: {WORKSPACE}）"
+            f"未找到已索引的文档 '{ATMR_DOC_NAME}'，请先运行 PageIndex 索引构建（workspace: {WORKSPACE}）"
         )
 
     print(f"[RAG] 知识库已加载: doc_id={_doc_id}, 文档={ATMR_DOC_NAME}")
@@ -68,6 +67,7 @@ def get_rag_client() -> tuple[PageIndexClient, str]:
 
 
 # ── 核心检索功能 ──────────────────────────────────────────────────────────────
+
 
 def get_document_structure() -> dict:
     """获取文档目录结构（不含正文）。"""
@@ -123,15 +123,17 @@ def _find_relevant_sections(structure: list[dict], query: str) -> list[dict]:
             match_text = title + " " + summary
             score = sum(1 for term in search_terms if term in match_text)
             if score > 0:
-                relevant.append({
-                    "node_id": node.get("node_id"),
-                    "title": node.get("title"),
-                    "line_num": node.get("line_num"),
-                    "summary": node.get("summary", ""),
-                    "text": node.get("text", ""),  # 直接携带正文
-                    "score": score,
-                    "depth": depth,
-                })
+                relevant.append(
+                    {
+                        "node_id": node.get("node_id"),
+                        "title": node.get("title"),
+                        "line_num": node.get("line_num"),
+                        "summary": node.get("summary", ""),
+                        "text": node.get("text", ""),  # 直接携带正文
+                        "score": score,
+                        "depth": depth,
+                    }
+                )
             if node.get("nodes"):
                 _traverse(node["nodes"], depth + 1)
 
@@ -145,10 +147,10 @@ def _get_full_structure() -> list[dict]:
     """获取包含 text 字段的完整文档结构（从已加载的索引中）。"""
     client, doc_id = get_rag_client()
     # 确保完整数据已加载（包含 text 字段）
-    if hasattr(client, '_ensure_doc_loaded'):
+    if hasattr(client, "_ensure_doc_loaded"):
         client._ensure_doc_loaded(doc_id)
     doc = client.documents.get(doc_id, {})
-    return doc.get('structure', [])
+    return doc.get("structure", [])
 
 
 async def retrieve_knowledge(query: str, max_sections: int = 3, max_chars: int = 3000) -> str:

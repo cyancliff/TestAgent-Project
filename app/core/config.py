@@ -1,4 +1,5 @@
 import os
+
 from pydantic_settings import BaseSettings
 
 
@@ -12,16 +13,10 @@ class Settings(BaseSettings):
     ZHIPU_API_KEY: str = os.environ.get("ZHIPU_API_KEY", "")
 
     # 数据库信息 (PostgreSQL)
-    DATABASE_URL: str = os.environ.get(
-        "DATABASE_URL",
-        "postgresql://postgres:123456@localhost:5432/atmr_db"
-    )
+    DATABASE_URL: str = os.environ.get("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/atmr_db")
 
     # JWT 认证配置
-    SECRET_KEY: str = os.environ.get(
-        "SECRET_KEY",
-        "atmr-test-agent-secret-key-change-in-production"
-    )
+    SECRET_KEY: str = os.environ.get("SECRET_KEY", "atmr-test-agent-secret-key-change-in-production")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 默认 24 小时
 
     class Config:

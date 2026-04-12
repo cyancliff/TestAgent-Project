@@ -38,7 +38,7 @@ def is_legacy_hash(hashed_password: str) -> bool:
     return not (hashed_password.startswith("$2b$") or hashed_password.startswith("$2a$"))
 
 
-def create_access_token(user_id: int, username: str, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(user_id: int, username: str, expires_delta: timedelta | None = None) -> str:
     """生成 JWT access token"""
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     payload = {
@@ -52,6 +52,7 @@ def create_access_token(user_id: int, username: str, expires_delta: Optional[tim
 def get_db():
     """获取数据库会话"""
     from app.models.question import SessionLocal
+
     db = SessionLocal()
     try:
         yield db
@@ -82,6 +83,7 @@ async def get_current_user(
         raise credentials_exception
 
     from app.models.question import User
+
     user = db.query(User).filter(User.id == int(user_id)).first()
     if user is None:
         raise credentials_exception

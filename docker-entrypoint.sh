@@ -34,7 +34,7 @@ print(count)
 
 if [ "$NEED_IMPORT" = "0" ]; then
     echo "题库为空，开始导入数据..."
-    python import_data.py
+    python scripts/import_data.py
 else
     echo "题库已有 $NEED_IMPORT 道题目，跳过导入"
 fi

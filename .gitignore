@@ -26,10 +26,13 @@ config.json
 .obsidian/
 Obsidian Files/
 
+# 数据目录（数据库不提交，题库JSON提交）
+data/*.db
+
 # 前端依赖包
-frontend/node_modules/
 node_modules/
 frontend/dist/
+frontend/.vite/
 
 # 本地数据库和生成文件
 *.db

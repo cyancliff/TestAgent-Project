@@ -6,11 +6,11 @@ RAG 知识库查询 API 端点
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional
+
 from app.services.rag_service import (
+    get_document_structure,
     query_knowledge_base,
     retrieve_knowledge,
-    get_document_structure,
 )
 
 router = APIRouter()
@@ -22,7 +22,7 @@ class RAGQueryRequest(BaseModel):
 
 class RAGQueryResponse(BaseModel):
     answer: str
-    sources: List[dict]
+    sources: list[dict]
     query: str
 
 
@@ -92,9 +92,11 @@ async def rag_status():
     """
     try:
         from app.services.rag_service import get_rag_client
+
         client, doc_id = get_rag_client()
         doc_meta = client.get_document(doc_id)
         import json
+
         return {
             "status": "ok",
             "doc_id": doc_id,

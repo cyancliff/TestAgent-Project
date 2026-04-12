@@ -8,21 +8,22 @@
 - 选题策略 = Fisher信息量 + 覆盖度 + 难度匹配 + 区分度（权重随不确定性动态调整）
 """
 
-import numpy as np
-from typing import Any, List, Optional, Tuple
-from sqlalchemy.orm import Session
-from app.models.question import Question, AnswerRecord
 import logging
 import os
+from typing import Any
+
+import numpy as np
+from sqlalchemy.orm import Session
+
+from app.core.constants import MODULE_DIM_MAP
+from app.models.question import AnswerRecord, Question
 
 # 配置日志
-log_level = os.environ.get('QUESTION_SELECTION_LOG_LEVEL', 'INFO').upper()
+log_level = os.environ.get("QUESTION_SELECTION_LOG_LEVEL", "INFO").upper()
 log_level = getattr(logging, log_level, logging.INFO)
 
 logging.basicConfig(
-    level=log_level,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
 )
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class QuestionSelectionService:
 
     def __init__(self, db: Session):
         self.db = db
-        self.module_map = {'A': '6', 'T': '4', 'M': '5', 'R': '7'}
+        self.module_map = MODULE_DIM_MAP
 
     @staticmethod
     def _record_value(record: Any, key: str, default=None):
@@ -41,8 +42,12 @@ class QuestionSelectionService:
         return getattr(record, key, default)
 
     def get_user_ability(
-        self, user_id: int, session_id: Optional[int] = None, module: Optional[str] = None, transient_records: Optional[List[Any]] = None
-    ) -> Tuple[Optional[np.ndarray], float, float, List[np.ndarray]]:
+        self,
+        user_id: int,
+        session_id: int | None = None,
+        module: str | None = None,
+        transient_records: list[Any] | None = None,
+    ) -> tuple[np.ndarray | None, float, float, list[np.ndarray]]:
         """
         计算用户作答画像向量和贝叶斯能力估计
 
@@ -67,10 +72,8 @@ class QuestionSelectionService:
             logger.info("[ABILITY] 无答题记录")
             return None, 0.5, 0.25, []
 
-        record_exam_nos = [self._record_value(r, 'exam_no') for r in records]
-        questions = self.db.query(Question).filter(
-            Question.exam_no.in_(record_exam_nos)
-        ).all()
+        record_exam_nos = [self._record_value(r, "exam_no") for r in records]
+        questions = self.db.query(Question).filter(Question.exam_no.in_(record_exam_nos)).all()
         question_map = {q.exam_no: q for q in questions}
 
         vectors = []
@@ -82,7 +85,7 @@ class QuestionSelectionService:
         sigma2 = 0.25
 
         for record in records:
-            exam_no = self._record_value(record, 'exam_no')
+            exam_no = self._record_value(record, "exam_no")
             question = question_map.get(exam_no)
             if not question:
                 continue
@@ -95,8 +98,8 @@ class QuestionSelectionService:
             if not question.feature_vector:
                 continue
 
-            is_anomaly = bool(self._record_value(record, 'is_anomaly', False))
-            score = float(self._record_value(record, 'score', 0) or 0)
+            is_anomaly = bool(self._record_value(record, "is_anomaly", False))
+            score = float(self._record_value(record, "score", 0) or 0)
 
             vector = np.array(question.feature_vector)
             answered_vectors.append(vector)
@@ -106,7 +109,6 @@ class QuestionSelectionService:
             weights.append(weight)
 
             score_norm = score / 5.0  # 归一化到 0-1
-            difficulty = float(question.difficulty or 0.5)
             discrimination = float(question.discrimination or 0.5)
 
             anomaly_factor = 0.3 if is_anomaly else 1.0
@@ -138,15 +140,18 @@ class QuestionSelectionService:
         mu = float(np.clip(mu, 0.0, 1.0))
         sigma2 = float(max(sigma2, 1e-6))
 
-        logger.info(f"[ABILITY] 有效记录: {len(vectors)}, "
-                    f"能力水平: {mu:.3f}, 不确定性: {sigma2:.4f}")
+        logger.info(f"[ABILITY] 有效记录: {len(vectors)}, 能力水平: {mu:.3f}, 不确定性: {sigma2:.4f}")
 
         return profile_vector, mu, sigma2, answered_vectors
 
     # 保持旧接口兼容
     def get_user_ability_vector(
-        self, user_id: int, session_id: Optional[int] = None, module: Optional[str] = None, transient_records: Optional[List[Any]] = None
-    ) -> Tuple[Optional[np.ndarray], float, List[np.ndarray]]:
+        self,
+        user_id: int,
+        session_id: int | None = None,
+        module: str | None = None,
+        transient_records: list[Any] | None = None,
+    ) -> tuple[np.ndarray | None, float, list[np.ndarray]]:
         """兼容旧接口"""
         profile_vector, ability_level, _, answered_vectors = self.get_user_ability(
             user_id, session_id, module, transient_records=transient_records
@@ -157,17 +162,19 @@ class QuestionSelectionService:
         self,
         user_id: int,
         session_id: int,
-        answered_question_ids: List[int],
-        module: Optional[str] = None,
-        transient_records: Optional[List[Any]] = None
-    ) -> Optional[Question]:
+        answered_question_ids: list[int],
+        module: str | None = None,
+        transient_records: list[Any] | None = None,
+    ) -> Question | None:
         """
         智能选择下一题
 
         策略：Fisher信息量 + 覆盖度 + 难度匹配 + 区分度
         权重随能力不确定性动态调整
         """
-        logger.info(f"[SELECT] 开始选题 - 用户: {user_id}, 已答: {len(answered_question_ids)}题, 模块: {module or '无'}")
+        logger.info(
+            f"[SELECT] 开始选题 - 用户: {user_id}, 已答: {len(answered_question_ids)}题, 模块: {module or '无'}"
+        )
 
         if transient_records == []:
             transient_records = None
@@ -197,8 +204,7 @@ class QuestionSelectionService:
         question_scores = []
         for question in candidate_questions:
             score = self._calculate_question_score(
-                question, profile_vector, ability_level,
-                ability_uncertainty, answered_vectors
+                question, profile_vector, ability_level, ability_uncertainty, answered_vectors
             )
             question_scores.append((question, score))
 
@@ -211,11 +217,13 @@ class QuestionSelectionService:
         # 日志：前3名
         top3 = sorted(question_scores, key=lambda x: x[1], reverse=True)[:3]
         for i, (q, s) in enumerate(top3):
-            logger.info(f"  Top{i+1}: {q.exam_no} 分数={s:.4f} 难度={float(q.difficulty or 0.5):.2f} 区分度={float(q.discrimination or 0.7):.2f}")
+            logger.info(
+                f"  Top{i + 1}: {q.exam_no} 分数={s:.4f} 难度={float(q.difficulty or 0.5):.2f} 区分度={float(q.discrimination or 0.7):.2f}"
+            )
 
         return best_question
 
-    def _select_first_question(self, candidate_questions: List[Question]) -> Question:
+    def _select_first_question(self, candidate_questions: list[Question]) -> Question:
         """
         选择第一题：中等难度 + 高区分度
         """
@@ -240,7 +248,7 @@ class QuestionSelectionService:
         profile_vector: np.ndarray,
         ability_level: float,
         ability_uncertainty: float,
-        answered_vectors: List[np.ndarray]
+        answered_vectors: list[np.ndarray],
     ) -> float:
         """
         计算题目的推荐分数
@@ -256,19 +264,14 @@ class QuestionSelectionService:
 
         # 1. Fisher信息量
         # 区分度高 + 难度接近能力水平 → 该题能最有效地缩小不确定性
-        fisher_info = (discrimination ** 2) * np.exp(
-            -((difficulty - ability_level) ** 2) / (2 * 0.15)
-        )
+        fisher_info = (discrimination**2) * np.exp(-((difficulty - ability_level) ** 2) / (2 * 0.15))
         # 归一化到 0~1
         fisher_info = float(np.clip(fisher_info, 0.0, 1.0))
 
         # 2. 覆盖度（信息增益）
         if question.feature_vector and answered_vectors:
             question_vector = np.array(question.feature_vector)
-            similarities = [
-                abs(self._cosine_similarity(question_vector, av))
-                for av in answered_vectors
-            ]
+            similarities = [abs(self._cosine_similarity(question_vector, av)) for av in answered_vectors]
             avg_similarity = float(np.mean(similarities))
             coverage_score = 1.0 - avg_similarity
         else:
@@ -287,16 +290,16 @@ class QuestionSelectionService:
 
         # 不确定时：更看重Fisher信息量和区分度
         # 确定后：更看重覆盖度和难度匹配
-        w_fisher = 0.15 + 0.25 * uncertainty_ratio       # 0.15 ~ 0.40
-        w_coverage = 0.40 - 0.15 * uncertainty_ratio      # 0.25 ~ 0.40
-        w_difficulty = 0.25 - 0.05 * uncertainty_ratio     # 0.20 ~ 0.25
-        w_discrimination = 0.20 - 0.05 * uncertainty_ratio # 0.15 ~ 0.20
+        w_fisher = 0.15 + 0.25 * uncertainty_ratio  # 0.15 ~ 0.40
+        w_coverage = 0.40 - 0.15 * uncertainty_ratio  # 0.25 ~ 0.40
+        w_difficulty = 0.25 - 0.05 * uncertainty_ratio  # 0.20 ~ 0.25
+        w_discrimination = 0.20 - 0.05 * uncertainty_ratio  # 0.15 ~ 0.20
 
         score = (
-            w_fisher * fisher_info +
-            w_coverage * coverage_score +
-            w_difficulty * difficulty_match +
-            w_discrimination * discrimination_score
+            w_fisher * fisher_info
+            + w_coverage * coverage_score
+            + w_difficulty * difficulty_match
+            + w_discrimination * discrimination_score
         )
 
         logger.debug(
@@ -317,15 +320,11 @@ class QuestionSelectionService:
         return dot_product / (norm_a * norm_b)
 
     def get_adaptive_test_plan(
-        self,
-        user_id: int,
-        session_id: int,
-        total_questions: int = 10,
-        modules: List[str] = None
-    ) -> List[Question]:
+        self, user_id: int, session_id: int, total_questions: int = 10, modules: list[str] = None
+    ) -> list[Question]:
         """生成自适应测评计划"""
         if modules is None:
-            modules = ['A', 'T', 'M', 'R']
+            modules = ["A", "T", "M", "R"]
 
         questions_per_module = max(1, total_questions // len(modules))
         selected_questions = []
@@ -333,18 +332,14 @@ class QuestionSelectionService:
 
         for module in modules:
             for _ in range(questions_per_module):
-                question = self.select_next_question(
-                    user_id, session_id, answered_ids, module
-                )
+                question = self.select_next_question(user_id, session_id, answered_ids, module)
                 if question:
                     selected_questions.append(question)
                     answered_ids.append(question.id)
 
         if len(selected_questions) < total_questions:
             remaining = total_questions - len(selected_questions)
-            extra = self.db.query(Question).filter(
-                Question.id.notin_(answered_ids)
-            ).limit(remaining).all()
+            extra = self.db.query(Question).filter(Question.id.notin_(answered_ids)).limit(remaining).all()
             selected_questions.extend(extra)
 
         return selected_questions[:total_questions]
@@ -352,20 +347,17 @@ class QuestionSelectionService:
 
 # 简化版选题函数（用于直接集成）
 def select_adaptive_question(
-    db: Session,
-    user_id: int,
-    session_id: int,
-    answered_question_nos: List[str]
-) -> Optional[dict]:
+    db: Session, user_id: int, session_id: int, answered_question_nos: list[str]
+) -> dict | None:
     """简化版自适应选题函数"""
     logger.info(f"[API] 自适应选题 - 用户: {user_id}, 已答: {len(answered_question_nos)}题")
 
     service = QuestionSelectionService(db)
 
     # 批量查询，避免 N+1
-    answered_questions = db.query(Question).filter(
-        Question.exam_no.in_(answered_question_nos)
-    ).all() if answered_question_nos else []
+    answered_questions = (
+        db.query(Question).filter(Question.exam_no.in_(answered_question_nos)).all() if answered_question_nos else []
+    )
     answered_ids = [q.id for q in answered_questions]
 
     profile_vector, ability_level, _ = service.get_user_ability_vector(user_id, session_id, None)
@@ -382,6 +374,6 @@ def select_adaptive_question(
             "question": selected_question,
             "similarity": similarity,
             "ability_level": ability_level,
-            "ability_vector_exists": profile_vector is not None
+            "ability_vector_exists": profile_vector is not None,
         }
     return None

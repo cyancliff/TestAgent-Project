@@ -18,11 +18,13 @@ Steps:
 
 Requirements: pip install openai-agents
 """
-import sys
-import json
+
 import asyncio
 import concurrent.futures
+import json
+import sys
 from pathlib import Path
+
 import requests
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -30,10 +32,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from agents import Agent, Runner, function_tool, set_tracing_disabled
 from agents.model_settings import ModelSettings
 from agents.stream_events import RawResponsesStreamEvent, RunItemStreamEvent
-from openai.types.responses import ResponseTextDeltaEvent, ResponseReasoningSummaryTextDeltaEvent
+from openai.types.responses import ResponseReasoningSummaryTextDeltaEvent, ResponseTextDeltaEvent
 
-from pageindex import PageIndexClient
 import pageindex.utils as utils
+from pageindex import PageIndexClient
 
 PDF_URL = "https://arxiv.org/pdf/2603.15031"
 
@@ -137,7 +139,6 @@ def query_agent(client: PageIndexClient, doc_id: str, prompt: str, verbose: bool
 
 
 if __name__ == "__main__":
-
     set_tracing_disabled(True)
 
     # Download PDF if needed
@@ -160,7 +161,7 @@ if __name__ == "__main__":
     print("Step 1: Index PDF and view tree structure")
     print("=" * 60)
     doc_id = next(
-        (did for did, doc in client.documents.items() if doc.get('doc_name') == PDF_PATH.name),
+        (did for did, doc in client.documents.items() if doc.get("doc_name") == PDF_PATH.name),
         None,
     )
     if doc_id:

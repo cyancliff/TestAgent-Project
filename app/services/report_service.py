@@ -1,12 +1,14 @@
 # app/services/report_service.py
 
-import os
 import asyncio
+import json
+import os
 from datetime import datetime
 from decimal import Decimal
-import json
+
 from sqlalchemy.orm import Session
-from app.models.question import SessionLocal, Question, AnswerRecord, ModuleDebateResult
+
+from app.models.question import AnswerRecord, ModuleDebateResult, Question, SessionLocal
 
 
 class _DecimalEncoder(json.JSONEncoder):
@@ -27,9 +29,7 @@ def build_debate_context(user_id: str, db: Session, session_id: int = None) -> s
 
     # 批量查询所有相关题目，避免 N+1
     record_exam_nos = [r.exam_no for r in records]
-    questions = db.query(Question).filter(
-        Question.exam_no.in_(record_exam_nos)
-    ).all()
+    questions = db.query(Question).filter(Question.exam_no.in_(record_exam_nos)).all()
     question_map = {q.exam_no: q for q in questions}
 
     debate_context = []
@@ -46,9 +46,9 @@ def build_debate_context(user_id: str, db: Session, session_id: int = None) -> s
             "is_anomaly": r.is_anomaly,
             "is_reverse": question.is_reverse if question else False,
             "trait_label": question.trait_label if question else None,
-            "dimension_id": question.dimension_id if question else None
+            "dimension_id": question.dimension_id if question else None,
         }
-        if hasattr(r, 'user_explanation') and r.user_explanation:
+        if hasattr(r, "user_explanation") and r.user_explanation:
             record_data["user_explanation"] = r.user_explanation
 
         debate_context.append(record_data)
@@ -89,15 +89,11 @@ def build_debate_context(user_id: str, db: Session, session_id: int = None) -> s
 
         if loop and loop.is_running():
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor() as pool:
-                evidence = pool.submit(
-                    asyncio.run,
-                    retrieve_evidence_for_debate(user_traits)
-                ).result(timeout=30)
+                evidence = pool.submit(asyncio.run, retrieve_evidence_for_debate(user_traits)).result(timeout=30)
         else:
-            evidence = asyncio.run(
-                retrieve_evidence_for_debate(user_traits)
-            )
+            evidence = asyncio.run(retrieve_evidence_for_debate(user_traits))
 
         if evidence:
             rag_section = f"\n\n【ATMR 理论知识库参考】：\n{evidence}"
@@ -125,6 +121,3 @@ def save_report_to_file(user_id: str, report_content: str) -> str:
         f.write(report_content)
     print(f"报告已保存至: {file_path}")
     return file_path
-
-
-
