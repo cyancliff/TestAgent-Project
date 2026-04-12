@@ -27,6 +27,10 @@ _doc_id: str | None = None
 WORKSPACE = PAGEINDEX_DIR / "results"
 ATMR_DOC_NAME = "MinerU_markdown_ATMR_Longtext"
 
+# LLM 语义评分检索配置
+RELEVANCE_THRESHOLD = 0.3  # 相关性阈值，低于此分数视为不相关
+MAX_SECTIONS_TO_SCORE = 30  # 最多评分的章节数（先粗筛后精排）
+
 
 def get_rag_client() -> tuple[PageIndexClient, str]:
     """
@@ -81,19 +85,40 @@ def get_page_content(pages: str) -> list[dict]:
     return json.loads(client.get_page_content(doc_id, pages))
 
 
-def _find_relevant_sections(structure: list[dict], query: str) -> list[dict]:
-    """
-    根据查询关键词，从文档目录结构中找出相关章节。
-    使用简单的关键词匹配（标题 + summary 匹配），返回相关节点列表。
-    直接携带节点的 text 内容，避免二次查找。
-    """
+def _collect_all_sections(structure: list[dict]) -> list[dict]:
+    """将树形结构展平为一维列表，便于检索。"""
+    sections = []
+
+    def _traverse(nodes, depth=0):
+        for node in nodes:
+            sections.append(
+                {
+                    "node_id": node.get("node_id"),
+                    "title": node.get("title", ""),
+                    "line_num": node.get("line_num"),
+                    "summary": node.get("summary", ""),
+                    "text": node.get("text", ""),
+                    "depth": depth,
+                }
+            )
+            if node.get("nodes"):
+                _traverse(node["nodes"], depth + 1)
+
+    _traverse(structure)
+    return sections
+
+
+def _keyword_coarse_filter(sections: list[dict], query: str) -> list[dict]:
+    """关键词粗筛：快速过滤掉明显不相关的章节，缩小 LLM 评分范围。"""
     query_lower = query.lower()
-    # ATMR 相关关键词映射
+    query_words = set(query_lower.replace("，", " ").replace(",", " ").split())
+
+    # 保留原有的关键词映射作为粗筛辅助
     keyword_map = {
-        "a特质": ["欣赏", "appreciation", "欣赏型"],
-        "t特质": ["目标", "target", "目标型"],
-        "m特质": ["包容", "magnanimity", "包容型"],
-        "r特质": ["责任", "responsibility", "责任型"],
+        "欣赏": ["欣赏", "appreciation"],
+        "目标": ["目标", "target"],
+        "包容": ["包容", "magnanimity"],
+        "责任": ["责任", "responsibility"],
         "atmr": ["atmr", "特质", "性格", "测评"],
         "左右脑": ["左脑", "右脑", "左右脑", "理性", "感性"],
         "对冲": ["对冲", "冲突", "ar", "mt", "tm", "ra"],
@@ -103,44 +128,114 @@ def _find_relevant_sections(structure: list[dict], query: str) -> list[dict]:
         "教育": ["教育", "培养", "父母", "家长", "亲子"],
         "职业": ["职业", "探索", "发展"],
     }
-
-    # 展开查询关键词
-    search_terms = set()
-    search_terms.add(query_lower)
-    # 拆分查询为词
-    for word in query_lower.replace("，", " ").replace(",", " ").split():
-        search_terms.add(word)
+    all_keywords = query_words.copy()
+    for word in query_words:
         for key, synonyms in keyword_map.items():
             if word in synonyms or word in key:
-                search_terms.update(synonyms)
+                all_keywords.update(synonyms)
 
-    relevant = []
+    filtered = []
+    for section in sections:
+        match_text = (section["title"] + " " + section["summary"]).lower()
+        if any(kw in match_text for kw in all_keywords):
+            filtered.append(section)
 
-    def _traverse(nodes, depth=0):
-        for node in nodes:
-            title = node.get("title", "").lower()
-            summary = node.get("summary", "").lower()
-            match_text = title + " " + summary
-            score = sum(1 for term in search_terms if term in match_text)
-            if score > 0:
-                relevant.append(
-                    {
-                        "node_id": node.get("node_id"),
-                        "title": node.get("title"),
-                        "line_num": node.get("line_num"),
-                        "summary": node.get("summary", ""),
-                        "text": node.get("text", ""),  # 直接携带正文
-                        "score": score,
-                        "depth": depth,
-                    }
-                )
-            if node.get("nodes"):
-                _traverse(node["nodes"], depth + 1)
+    return filtered if filtered else sections[:20]  # 如果粗筛无结果，返回前 20 个章节兜底
 
-    _traverse(structure)
-    # 按匹配得分降序排列
-    relevant.sort(key=lambda x: (-x["score"], x["depth"]))
-    return relevant
+
+async def _llm_score_relevance(query: str, sections: list[dict]) -> list[dict]:
+    """使用 LLM 对章节进行语义相关性评分。
+
+    将所有章节标题和摘要打包成一次请求，让 LLM 批量评分，减少 API 调用次数。
+    返回格式: [{"section": section_dict, "score": float, "reason": str}, ...]
+    """
+    # 构建批量评分 prompt
+    sections_text = "\n".join(
+        f"[{i}] {s['title']} - {s['summary'][:100]}" for i, s in enumerate(sections)
+    )
+
+    prompt = f"""你是一个专业的心理学文档检索助手。请基于用户的查询问题，对以下文档章节标题和摘要进行语义相关性评分。
+
+【查询问题】
+{query}
+
+【待评分章节】（格式: [序号] 标题 - 摘要）
+{sections_text}
+
+【评分要求】
+1. 对每个章节给出 0.0 到 1.0 的相关性评分
+2. 评分标准:
+   - 0.8-1.0: 高度相关，直接回应查询核心
+   - 0.5-0.8: 中度相关，包含部分相关信息
+   - 0.3-0.5: 低度相关，仅有间接关联
+   - 0.0-0.3: 几乎不相关
+3. 用一行简短中文说明评分理由
+
+【输出格式】
+请严格按以下 JSON 格式输出，不要包含其他内容:
+{{"scores": [{{"index": 序号, "score": 分数, "reason": "理由"}}, ...]}}
+"""
+
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        # 无 API key 时回退到关键词评分
+        return _keyword_score_fallback(query, sections)
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            response = await http_client.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "deepseek-chat",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                    "max_tokens": 2000,
+                },
+            )
+            response.raise_for_status()
+            result = response.json()
+            content = result["choices"][0]["message"]["content"]
+
+            # 解析 JSON 响应
+            scores_data = json.loads(content)
+            scores_list = scores_data.get("scores", [])
+
+            scored_sections = []
+            for item in scores_list:
+                idx = item.get("index", -1)
+                if 0 <= idx < len(sections):
+                    scored_sections.append(
+                        {
+                            "section": sections[idx],
+                            "score": float(item.get("score", 0)),
+                            "reason": item.get("reason", ""),
+                        }
+                    )
+
+            return scored_sections
+
+    except Exception as e:
+        print(f"[RAG] LLM 语义评分失败: {e}，回退到关键词评分")
+        return _keyword_score_fallback(query, sections)
+
+
+def _keyword_score_fallback(query: str, sections: list[dict]) -> list[dict]:
+    """关键词评分兜底方案：当 LLM 不可用时使用。"""
+    query_lower = query.lower()
+    query_words = set(query_lower.replace("，", " ").replace(",", " ").split())
+
+    scored = []
+    for section in sections:
+        match_text = (section["title"] + " " + section["summary"]).lower()
+        match_count = sum(1 for w in query_words if w in match_text)
+        score = match_count / max(len(query_words), 1)
+        scored.append({"section": section, "score": score, "reason": "关键词匹配"})
+
+    return scored
 
 
 def _get_full_structure() -> list[dict]:
@@ -157,9 +252,10 @@ async def retrieve_knowledge(query: str, max_sections: int = 3, max_chars: int =
     """
     核心 RAG 检索函数：根据查询从 ATMR 知识库中检索相关知识。
 
-    两阶段检索：
-    1. 结构匹配 - 从文档目录树中找到相关章节
-    2. 内容提取 - 直接从匹配节点中获取正文内容
+    三阶段检索：
+    1. 关键词粗筛 - 快速过滤明显不相关的章节
+    2. LLM 语义评分 - 对候选章节进行语义相关性评分
+    3. 内容提取 - 从高评分节点中提取正文内容
 
     Args:
         query: 查询问题
@@ -179,18 +275,32 @@ async def retrieve_knowledge(query: str, max_sections: int = 3, max_chars: int =
         print(f"[RAG] 获取文档结构失败: {e}")
         return ""
 
-    # 阶段1: 找出相关章节
-    relevant_sections = _find_relevant_sections(structure, query)
+    # 阶段1: 关键词粗筛，缩小候选范围
+    all_sections = _collect_all_sections(structure)
+    candidate_sections = _keyword_coarse_filter(all_sections, query)
+
+    # 阶段2: LLM 语义评分精排
+    scored_sections = await _llm_score_relevance(query, candidate_sections[:MAX_SECTIONS_TO_SCORE])
+
+    # 按 LLM 评分降序排列，过滤低于阈值的章节
+    scored_sections.sort(key=lambda x: -x["score"])
+    relevant_sections = [
+        s for s in scored_sections if s["score"] >= RELEVANCE_THRESHOLD
+    ]
+
     if not relevant_sections:
-        print(f"[RAG] 未找到与 '{query}' 相关的章节")
+        print(f"[RAG] 未找到与 '{query}' 相关的章节（所有章节相关性均低于阈值 {RELEVANCE_THRESHOLD}）")
         return ""
 
-    # 阶段2: 从匹配节点直接提取 text 内容
+    # 阶段3: 从高评分章节中提取内容
     top_sections = relevant_sections[:max_sections]
     contents = []
     total_chars = 0
 
-    for section in top_sections:
+    for item in top_sections:
+        section = item["section"]
+        score = item["score"]
+
         # 优先使用节点自带的 text 字段
         content = section.get("text", "").strip()
 
@@ -218,7 +328,7 @@ async def retrieve_knowledge(query: str, max_sections: int = 3, max_chars: int =
             content = content[:remaining_budget].rsplit("\n", 1)[0]
 
         if content:
-            contents.append(f"【{section['title']}】\n{content}")
+            contents.append(f"【{section['title']}】（相关性: {score:.2f}）\n{content}")
             total_chars += len(content)
 
     if not contents:
