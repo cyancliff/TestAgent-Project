@@ -4,6 +4,22 @@
 
 ---
 
+## [2026-04-14] - 报告结构重构与后台任务修复
+
+### Feat
+- 前端报告页面重构：将「证据链溯源」和「模块专家辩论」合并为「分维度报告」，每个维度独立展示辩论结果与答题明细，新增等级标签与总分展示
+- 清理报告输出：移除「知识库引用」段落，知识库内容仅作为 LLM 内部参考，不再对外展示
+
+### Fix
+- 修复最后一个模块（R）不触发模块辩论的 bug：将 `submit-stage` 中模块辩论与最终报告生成的 `if/else` 互斥逻辑拆分为两个独立判断，确保所有 4 个模块（A/T/M/R）均正常触发辩论
+- 修复报告生成失败时前端永远显示「生成中」的问题：`generate_report_in_background` 在超时或出错时不再仅打印日志，改为向数据库写入错误提示，前端自动停止加载状态
+- 报告生成超时从 300 秒延长至 600 秒，适配 autogen 多轮辩论的 API 调用耗时
+
+### Chore
+- 清理项目根目录废弃文件：移除 `DEPLOY.md`、`README_ADAPTIVE_SYSTEM.md`、`deploy_adaptive_system.py`、`atmr_full_questions.json`、`check_feature_status.py`、`generate_feature_vectors.py`、`import_data.py`、`migrate_database.py`、`monitor_selection.py`、`run_atmr_rag.py`、`test_adaptive_selection.py` 等一次性脚本与旧文档
+
+---
+
 ## [2026-04-13] - RAG 检索策略升级
 
 ### Feat

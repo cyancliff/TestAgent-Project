@@ -68,24 +68,12 @@
             </div>
             <!-- 第二行：ATMR四个维度 -->
             <div class="stats-row-bottom">
-              <div class="stat-item">
-                <span class="stat-value dim-a">{{ getDimScore(s, 'A') }}分</span>
-                <span class="stat-label">A</span>
-              </div>
-              <div class="stat-divider"></div>
-              <div class="stat-item">
-                <span class="stat-value dim-t">{{ getDimScore(s, 'T') }}分</span>
-                <span class="stat-label">T</span>
-              </div>
-              <div class="stat-divider"></div>
-              <div class="stat-item">
-                <span class="stat-value dim-m">{{ getDimScore(s, 'M') }}分</span>
-                <span class="stat-label">M</span>
-              </div>
-              <div class="stat-divider"></div>
-              <div class="stat-item">
-                <span class="stat-value dim-r">{{ getDimScore(s, 'R') }}分</span>
-                <span class="stat-label">R</span>
+              <div v-for="dim in atmrDimensions" :key="dim.key" class="stat-item dim-stat">
+                <div class="dim-stat-top">
+                  <span class="stat-value" :class="'dim-' + dim.key.toLowerCase()">{{ getDimScore(s, dim.key) }}分</span>
+                  <span v-if="getDimLevel(s, dim.key)" class="dim-level-dot" :style="{ background: getDimLevelColor(s, dim.key) }" :title="getDimLevelLabel(s, dim.key)"></span>
+                </div>
+                <span class="stat-label">{{ dim.key }}</span>
               </div>
             </div>
           </div>
@@ -131,8 +119,14 @@ const atmrDimensions = [
 ]
 
 const getDimScore = (session, key) => {
-  return session.dim_scores?.[key] || 0
+  const ds = session.dim_scores?.[key]
+  if (typeof ds === 'object') return ds.score || 0
+  return ds || 0
 }
+
+const getDimLevel = (session, key) => session.dim_scores?.[key]?.level || ''
+const getDimLevelLabel = (session, key) => session.dim_scores?.[key]?.level_label || ''
+const getDimLevelColor = (session, key) => session.dim_scores?.[key]?.level_color || '#94a3b8'
 
 const fetchHistory = async () => {
   try {
@@ -448,6 +442,26 @@ onUnmounted(() => {
   color: var(--text-secondary);
   text-transform: uppercase;
   font-weight: 500;
+}
+
+/* 维度等级点 */
+.dim-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.dim-stat-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dim-level-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 4px rgba(0,0,0,0.15);
 }
 
 .stat-divider {

@@ -1,5 +1,5 @@
 """
-测评会话管理路由：创建、恢复、重新打开、删除
+测评会话管理路由：创建、恢复、重新开始、重新打开、删除
 """
 
 import os
@@ -9,11 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.constants import STAGES
 from app.models.question import (
     SessionLocal, Question, AssessmentSession, AnswerRecord,
     ModuleDebateResult, ChatSession, User,
 )
 from app.api.assessment.schemas import StartSessionRequest
+from app.services.stage_service import StageService
 
 router = APIRouter()
 
@@ -46,7 +48,12 @@ async def start_session(
         db.delete(old)
     db.commit()
 
-    new_session = AssessmentSession(user_id=current_user.id, status='active')
+    new_session = AssessmentSession(
+        user_id=current_user.id,
+        status='active',
+        current_stage='intro',
+        submitted_stages=[],
+    )
     db.add(new_session)
     db.commit()
     db.refresh(new_session)
@@ -67,10 +74,8 @@ async def resume_session(
     if not session:
         return {"has_active_session": False}
 
-    records = db.query(AnswerRecord).filter(
-        AnswerRecord.session_id == session.id,
-        AnswerRecord.user_id == current_user.id,
-    ).all()
+    stage_service = StageService(db, session.id, current_user.id)
+    records = stage_service.get_all_answer_records()
 
     if not records:
         return {"has_active_session": False}
@@ -101,12 +106,42 @@ async def resume_session(
                 "options": q.options,
             })
 
+    current_stage = stage_service.get_current_stage()
+
     return {
         "has_active_session": True,
         "session_id": session.id,
+        "current_stage": current_stage,
+        "submitted_stages": stage_service.get_submitted_stages(),
         "answered_count": len(records),
         "answers": answers_data,
         "questions": questions_data,
+    }
+
+
+@router.post("/restart-session")
+async def restart_session(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """重新作答：重置阶段到 intro，清理辩论结果，保留作答记录"""
+    session_id = payload.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="缺少 session_id")
+
+    session = ensure_session_owner(db, session_id, current_user.id)
+    if session.status != 'completed' and session.status != 'active':
+        raise HTTPException(status_code=400, detail="该会话不可重新开始")
+
+    stage_service = StageService(db, session_id, current_user.id)
+    stage_service.restart_session()
+
+    return {
+        "status": "success",
+        "session_id": session_id,
+        "current_stage": "intro",
+        "message": "已重置阶段，可重新作答",
     }
 
 
@@ -133,6 +168,8 @@ async def reopen_session(
         db.delete(old)
 
     session.status = 'active'
+    session.current_stage = 'intro'
+    session.submitted_stages = []
     session.finished_at = None
     session.report_content = None
     session.report_file_path = None

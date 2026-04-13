@@ -1,6 +1,5 @@
 """
 测评系统 Pydantic Schema 定义
-从 assessment.py 中提取，供各路由模块复用。
 """
 
 from pydantic import BaseModel, Field
@@ -11,9 +10,30 @@ class StartSessionRequest(BaseModel):
     pass  # user_id 从 JWT token 获取
 
 
-class SubmitModuleRequest(BaseModel):
+class StageAnswerItem(BaseModel):
+    """单题答案项"""
+    exam_no: str
+    selected_option: str
+    time_spent: float
+    user_explanation: Optional[str] = None
+
+
+class SubmitStageRequest(BaseModel):
+    """阶段提交请求"""
     session_id: int
-    module: str  # A/T/M/R
+    answers: list[StageAnswerItem]
+
+
+class StageInfo(BaseModel):
+    """阶段信息响应"""
+    current_stage: str
+    stage_name: str
+    stage_display_name: str
+    question_count: int
+    answered_count: int
+    can_submit: bool
+    is_stage_complete: bool
+    submitted_stages: list[str]
 
 
 class SaveAnswerRequest(BaseModel):
@@ -55,29 +75,11 @@ class CheckAnswerRequest(BaseModel):
     time_spent: float
 
 
-class BatchAnswerItem(BaseModel):
-    exam_no: str
-    selected_option: str
-    time_spent: float
-    user_explanation: Optional[str] = None
-
-
-class BatchSubmitRequest(BaseModel):
+class RestartSessionRequest(BaseModel):
     session_id: int
-    answers: list[BatchAnswerItem]
 
 
-class AdaptiveAnswerItem(BaseModel):
-    exam_no: str
-    selected_option: str
-    time_spent: float
-    score: float
-    status: str
-    user_explanation: Optional[str] = None
-
-
-class AdaptiveQuestionRequest(BaseModel):
-    """智能选题请求"""
-    session_id: int
-    module: Optional[str] = None  # 模块类型: A/T/M/R
-    answers: list[AdaptiveAnswerItem] = Field(default_factory=list)
+# 兼容旧代码的别名
+BatchAnswerItem = StageAnswerItem
+BatchSubmitRequest = SubmitStageRequest
+AdaptiveAnswerItem = StageAnswerItem

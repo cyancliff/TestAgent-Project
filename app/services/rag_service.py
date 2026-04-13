@@ -182,8 +182,9 @@ async def _llm_score_relevance(query: str, sections: list[dict]) -> list[dict]:
         return _keyword_score_fallback(query, sections)
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as http_client:
-            response = await http_client.post(
+        client = httpx.AsyncClient(timeout=30.0)
+        try:
+            response = await client.post(
                 "https://api.deepseek.com/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {api_key}",
@@ -217,6 +218,11 @@ async def _llm_score_relevance(query: str, sections: list[dict]) -> list[dict]:
                     )
 
             return scored_sections
+        finally:
+            try:
+                await client.aclose()
+            except RuntimeError:
+                pass  # Windows ProactorEventLoop: 事件循环已关闭时 aclose 会报错，连接已断开，可安全忽略
 
     except Exception as e:
         print(f"[RAG] LLM 语义评分失败: {e}，回退到关键词评分")
@@ -411,8 +417,9 @@ async def query_knowledge_base(question: str) -> dict:
 {question}"""
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as http_client:
-            response = await http_client.post(
+        client = httpx.AsyncClient(timeout=60.0)
+        try:
+            response = await client.post(
                 "https://api.deepseek.com/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {api_key}",
@@ -428,6 +435,11 @@ async def query_knowledge_base(question: str) -> dict:
             response.raise_for_status()
             result = response.json()
             answer = result["choices"][0]["message"]["content"]
+        finally:
+            try:
+                await client.aclose()
+            except RuntimeError:
+                pass  # Windows ProactorEventLoop 已知问题，可安全忽略
     except Exception as e:
         print(f"[RAG] LLM 生成回答失败: {e}")
         answer = f"以下是从知识库中检索到的相关内容：\n\n{knowledge}"

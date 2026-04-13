@@ -11,6 +11,29 @@ from sqlalchemy.orm import Session
 from app.models.question import AnswerRecord, ModuleDebateResult, Question, SessionLocal
 
 
+# 评分标准说明（注入到最终辩论 prompt 中）
+SCORING_STANDARD_PROMPT = """
+【ATMR 评分标准】
+本测评采用 1-5 分李克特量表（完全不符合=1分，比较不符合=2分，一般=3分，比较符合=4分，完全符合=5分）。
+4 大维度（A 欣赏型、T 目标型、M 包容型、R 责任型），每个维度 10 道题。
+单项基础满分为 50 分（10题 × 5分），最低 10 分（10题 × 1分）。
+
+等级划分（三分法）：
+  - 偏低（潜伏特质）：10-23 分 — 该维度特征在测试者身上表现不明显，在日常工作或生活中很少调用该特质
+  - 中等（情境特质）：24-37 分 — 测试者具备该维度的基础特征，但非本能首选，通常在特定环境或任务要求下才会展现
+  - 偏高（显性主导特质）：38-50 分 — 该特质是测试者的典型行为模式和舒适区，表现极为强烈且稳定
+
+前两题存在加权调节机制（破局与定调），根据第1题和第2题的组合对相应维度加 2 分：
+  - AC 组合（做事快+选项C）→ A特质 +2分
+  - BC 组合（靠分析+选项C）→ T特质 +2分
+  - AD 组合（做事快+选项D）→ M特质 +2分
+  - BD 组合（靠分析+选项D）→ R特质 +2分
+
+注意：对外展示时维度得分以 50 分为封顶，内部计算可能因加权超过 50 分。
+在撰写心理画像报告时，请明确标注各维度的等级（偏低/中等/偏高），并结合等级特征进行深入分析。
+"""
+
+
 class _DecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, Decimal):
@@ -105,6 +128,7 @@ def build_debate_context(user_id: str, db: Session, session_id: int = None) -> s
         f"以下是用户（ID: {user_id}）在 ATMR 心理测评中的作答记录（包含异常检测与用户的自我解释）。\n"
         f"请你们（正方、反方、裁决者）根据这些数据展开辩论，并生成最终的心理画像报告。\n"
         f"在分析中请引用 ATMR 理论知识库中的专业依据来支撑你的论点。\n"
+        f"{SCORING_STANDARD_PROMPT}"
         f"【作答数据】：\n{context_str}"
         f"{module_summary}"
         f"{rag_section}"

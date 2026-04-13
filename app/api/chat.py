@@ -186,7 +186,8 @@ async def generate_reply(messages: list[dict]) -> str:
         return "【错误】未配置 API 密钥"
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        client = httpx.AsyncClient(timeout=60.0)
+        try:
             response = await client.post(
                 f"{LLM_BASE_URL}/chat/completions",
                 headers={"Authorization": f"Bearer {LLM_API_KEY}", "Content-Type": "application/json"},
@@ -195,6 +196,11 @@ async def generate_reply(messages: list[dict]) -> str:
             response.raise_for_status()
             result = response.json()
             return result["choices"][0]["message"]["content"]
+        finally:
+            try:
+                await client.aclose()
+            except RuntimeError:
+                pass  # Windows ProactorEventLoop 已知问题，可安全忽略
     except httpx.HTTPStatusError as e:
         return f"【API错误】API 错误: {e.response.status_code}"
     except Exception as e:

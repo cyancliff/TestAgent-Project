@@ -17,27 +17,70 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db, SessionLocal
 from app.core.security import get_current_user
-from app.core.constants import MODULE_DIM_MAP, MODULE_DISPLAY_NAMES
+from app.core.constants import MODULE_DIM_MAP, MODULE_DISPLAY_NAMES, STAGE_NAMES
+from app.core.constants import SCORE_LEVELS, WEIGHT_BONUS_SCORE, DIMENSION_MAX_SCORE
 from app.models.question import (
     AssessmentSession, AnswerRecord, ModuleDebateResult, Question, User, ChatSession,
 )
 from app.services.report_service import build_debate_context, save_report_to_file
+from app.services.scoring import get_dimension_level, clamp_score, calculate_weight_bonus
 from agent.debate_manager import run_debate_streaming
+
+# 评分标准说明（注入到模块辩论 prompt 中）
+SCORING_STANDARD_TEXT = """
+【评分标准说明】
+本测评采用 1-5 分李克特量表（完全不符合=1分，比较不符合=2分，一般=3分，比较符合=4分，完全符合=5分）。
+每个维度（A/T/M/R）各 10 道题，单项基础满分为 50 分（10题 × 5分），最低 10 分。
+等级划分（三分法）：
+  - 偏低（潜伏特质）：10-23 分 — 该维度特征表现不明显，很少调用该特质
+  - 中等（情境特质）：24-37 分 — 具备基础特征，但非本能首选，特定环境下才展现
+  - 偏高（显性主导特质）：38-50 分 — 该特质是典型行为模式和舒适区，表现强烈且稳定
+前两题存在加权调节机制（+2分），请注意用户的实际得分可能包含加权成分。
+"""
+
 
 router = APIRouter()
 
 
-def trigger_module_debate(session_id: int, user_id: int, module: str):
-    """同步执行模块级专家辩论（用于 background_tasks 调用）"""
-    import asyncio
+def _compute_history_dimension_scores(records, questions):
+    """为历史记录计算维度分数（含等级和加权）"""
+    q_map = {q.exam_no: q for q in questions}
+    weight_bonus = calculate_weight_bonus(records, q_map)
+
+    dim_scores = {}
+    for m in ['A', 'T', 'M', 'R']:
+        target_dim = MODULE_DIM_MAP[m]
+        dim_records = [r for r in records if q_map.get(r.exam_no) and q_map[r.exam_no].dimension_id == target_dim]
+        raw_total = sum(float(r.score or 0) for r in dim_records)
+        weighted_total = raw_total + weight_bonus[m]
+        clamped_total = clamp_score(weighted_total)
+        level_info = get_dimension_level(clamped_total)
+
+        dim_scores[m] = {
+            "score": round(clamped_total, 1),
+            "raw_score": round(raw_total, 1),
+            "weighted_bonus": weight_bonus[m],
+            "level": level_info["level"],
+            "level_label": level_info["label"],
+            "level_color": level_info["color"],
+        }
+
+    return dim_scores
+
+
+def _run_debate_logic(session_id: int, user_id: int, module: str, result_holder: dict):
+    """内部辩论逻辑（可被超时线程调用）"""
     from openai import AsyncOpenAI
     from app.services.rag_service import retrieve_evidence_for_debate
 
     db = SessionLocal()
     try:
-        print(f"[模块辩论 {module}] 开始异步辩论分析...")
+        print(f"[模块辩论 {module}] 开始辩论分析...")
 
         target_dimension = MODULE_DIM_MAP.get(module)
+        if not target_dimension:
+            result_holder["error"] = "无效的模块"
+            return
 
         records = db.query(AnswerRecord).filter(
             AnswerRecord.session_id == session_id,
@@ -65,20 +108,26 @@ def trigger_module_debate(session_id: int, user_id: int, module: str):
                 })
 
         if not module_records:
-            print(f"[模块辩论 {module}] 未找到答题记录")
+            result_holder["error"] = "未找到答题记录"
             return
 
         total_score = sum(r["score"] for r in module_records)
         avg_score = total_score / len(module_records) if module_records else 0
         anomaly_count = sum(1 for r in module_records if r["is_anomaly"])
 
+        clamped_score = clamp_score(total_score)
+        level_info = get_dimension_level(clamped_score)
+
         module_data = {
             "module": module,
             "dimension_id": target_dimension,
             "question_count": len(module_records),
             "total_score": total_score,
+            "clamped_score": clamped_score,
             "average_score": round(avg_score, 2),
             "anomaly_count": anomaly_count,
+            "level": level_info["level"],
+            "level_label": level_info["label"],
             "records": module_records,
         }
 
@@ -88,11 +137,8 @@ def trigger_module_debate(session_id: int, user_id: int, module: str):
         user_traits = f"模块{module}, 总分{total_score}, 平均分{avg_score:.2f}"
         try:
             rag_evidence = asyncio.run(retrieve_evidence_for_debate(user_traits, module))
-            if rag_evidence:
-                print(f"[模块辩论 {module}] RAG 检索到 {len(rag_evidence)} 字符的证据")
-            else:
+            if not rag_evidence:
                 rag_evidence = ""
-                print(f"[模块辩论 {module}] RAG 未检索到相关证据")
         except Exception as e:
             rag_evidence = ""
             print(f"[模块辩论 {module}] RAG 检索失败: {e}")
@@ -111,7 +157,8 @@ def trigger_module_debate(session_id: int, user_id: int, module: str):
                 "name": "心理学专家",
                 "prompt": f"""你是一位资深心理学专家，专注于分析ATMR测评中的{module}模块（{'欣赏型' if module=='A' else '目标型' if module=='T' else '包容型' if module=='M' else '责任型'}）。
 
-请分析以下用户答题数据，从心理学角度：
+{SCORING_STANDARD_TEXT}
+请结合上述评分标准，分析用户在该维度的得分所处的等级（偏低/中等/偏高），并从心理学角度：
 1. 评估用户在该维度上的心理特质水平
 2. 分析答题模式（一致性、极端性、矛盾性）
 3. 识别潜在的心理优势和发展空间
@@ -126,7 +173,8 @@ def trigger_module_debate(session_id: int, user_id: int, module: str):
                 "name": "行为分析师",
                 "prompt": f"""你是一位行为分析师，专注于从行为数据中发现模式。
 
-请分析以下用户在{module}模块的答题行为：
+{SCORING_STANDARD_TEXT}
+请结合上述评分标准，从行为数据角度分析：
 1. 作答时间分布是否合理
 2. 是否存在异常作答模式（过快/过慢）
 3. 用户对异常追问的解释说明了什么
@@ -141,7 +189,8 @@ def trigger_module_debate(session_id: int, user_id: int, module: str):
                 "name": "批判性评估师",
                 "prompt": f"""你是一位批判性评估师，负责质疑和挑战初步结论。
 
-请对以下{module}模块的答题数据提出批判性观点：
+{SCORING_STANDARD_TEXT}
+请结合上述评分标准，对{module}模块的答题数据提出批判性观点：
 1. 数据是否存在矛盾或不可信之处
 2. 可能存在的测量误差或干扰因素
 3. 对高分/低分解释的替代假设
@@ -190,6 +239,9 @@ def trigger_module_debate(session_id: int, user_id: int, module: str):
         # 综合结论
         synthesis_prompt = f"""作为ATMR测评系统的主分析师，请综合以下三位专家的意见，生成{module}模块的最终评估结论。
 
+{SCORING_STANDARD_TEXT}
+请结合评分标准，在总结中明确指出用户在该模块的等级（偏低/中等/偏高），并说明依据。
+
 专家意见：
 """
         for result in expert_results:
@@ -222,11 +274,15 @@ def trigger_module_debate(session_id: int, user_id: int, module: str):
         except Exception as e:
             final_conclusion = f"模块{module}综合评估生成失败: {str(e)}"
 
+        clamped_score = clamp_score(total_score)
+        level_info = get_dimension_level(clamped_score)
+
         result_content = f"""# 模块 {module} 专家辩论结果
 
 ## 数据摘要
 - 题目数: {len(module_records)}
-- 总得分: {total_score:.2f}
+- 总得分: {total_score:.2f} / {DIMENSION_MAX_SCORE}（封顶后 {clamped_score:.2f}）
+- 等级评定: {level_info['label']}（{level_info['level']}）
 - 平均分: {avg_score:.2f}
 - 异常标记: {anomaly_count} 次
 
@@ -238,8 +294,11 @@ def trigger_module_debate(session_id: int, user_id: int, module: str):
 
         result_content += f"\n## 综合结论\n{final_conclusion}\n"
 
-        if rag_evidence:
-            result_content += f"\n## 知识库引用\n{rag_evidence[:500]}...\n"
+        # 先删除旧的辩论结果（覆盖）
+        db.query(ModuleDebateResult).filter(
+            ModuleDebateResult.session_id == session_id,
+            ModuleDebateResult.module == module,
+        ).delete()
 
         debate_result = ModuleDebateResult(
             session_id=session_id,
@@ -250,6 +309,7 @@ def trigger_module_debate(session_id: int, user_id: int, module: str):
         db.add(debate_result)
         db.commit()
 
+        result_holder["success"] = True
         print(f"[模块辩论 {module}] 辩论完成，结果已保存")
         print(f"[模块辩论 {module}] 综合结论: {final_conclusion[:100]}...")
 
@@ -257,32 +317,38 @@ def trigger_module_debate(session_id: int, user_id: int, module: str):
         print(f"[模块辩论 {module}] 失败: {e}")
         import traceback
         traceback.print_exc()
+        result_holder["error"] = str(e)
         db.rollback()
     finally:
         db.close()
 
 
-# 保持旧函数名兼容
-trigger_module_debate_async = trigger_module_debate
+def trigger_module_debate(session_id: int, user_id: int, module: str, timeout: int = 120):
+    """后台执行模块级专家辩论（带超时保护）"""
+    result_holder = {}
+    debate_thread = threading.Thread(
+        target=_run_debate_logic,
+        args=(session_id, user_id, module, result_holder),
+        daemon=True,
+    )
+    debate_thread.start()
+    debate_thread.join(timeout=timeout)
 
-
-def save_report_to_session(db: Session, session_id: int, report_content: str, file_path: str):
-    """将报告内容存入会话记录"""
-    session = db.query(AssessmentSession).filter(AssessmentSession.id == session_id).first()
-    if session:
-        session.report_content = report_content
-        session.report_file_path = file_path
-        session.status = 'completed'
-        db.commit()
+    if debate_thread.is_alive():
+        print(f"[模块辩论 {module}] 超时（{timeout}秒），辩论线程仍在运行")
+        result_holder["error"] = "辩论超时"
+    elif "error" in result_holder:
+        print(f"[模块辩论 {module}] 异常: {result_holder['error']}")
 
 
 def generate_report_in_background(session_id: int, user_id: int):
-    """后台生成最终辩论报告，无需前端 SSE 连接"""
+    """
+    后台生成最终辩论报告
+    此时所有模块辩论已在后台独立运行
+    """
     db = SessionLocal()
     try:
         print(f"[后台报告] 开始为 session {session_id} 生成报告...")
-
-        time.sleep(3)  # 等待模块辩论启动
 
         prompt = build_debate_context(str(user_id), db, session_id)
         print(f"[后台报告] 辩论上下文构建成功，长度: {len(prompt)}")
@@ -296,7 +362,7 @@ def generate_report_in_background(session_id: int, user_id: int):
         debate_thread.start()
 
         final_report = None
-        timeout_seconds = 300
+        timeout_seconds = 600
         start_time = time.time()
 
         while time.time() - start_time < timeout_seconds:
@@ -322,10 +388,25 @@ def generate_report_in_background(session_id: int, user_id: int):
 
         if final_report:
             file_path = save_report_to_file(str(user_id), final_report)
-            save_report_to_session(db, session_id, final_report, file_path)
+            session = db.query(AssessmentSession).filter(
+                AssessmentSession.id == session_id
+            ).first()
+            if session:
+                session.report_content = final_report
+                session.report_file_path = file_path
+                db.commit()
             print(f"[后台报告] session {session_id} 报告生成完成，长度: {len(final_report)}")
         else:
-            print(f"[后台报告] session {session_id} 报告生成失败或超时")
+            elapsed = time.time() - start_time
+            print(f"[后台报告] session {session_id} 报告生成失败或超时（耗时 {elapsed:.0f}s）")
+            # 写入失败标记，防止前端永远显示"生成中"
+            session = db.query(AssessmentSession).filter(
+                AssessmentSession.id == session_id
+            ).first()
+            if session:
+                session.report_content = "报告生成失败，请稍后重试。如果持续失败，请检查后端日志或 API 密钥配置。"
+                session.report_file_path = None
+                db.commit()
 
     except Exception as e:
         print(f"[后台报告] session {session_id} 生成失败: {e}")
@@ -393,7 +474,13 @@ async def finish_assessment_stream(session_id: int, token: str):
                                     yield f"event: agent_message\ndata: {data}\n\n"
                                 elif msg["type"] == "done":
                                     file_path = save_report_to_file(user_id, msg["content"])
-                                    save_report_to_session(db, session_id, msg["content"], file_path)
+                                    session = db.query(AssessmentSession).filter(
+                                        AssessmentSession.id == session_id
+                                    ).first()
+                                    if session:
+                                        session.report_content = msg["content"]
+                                        session.report_file_path = file_path
+                                        db.commit()
                                     data = json.dumps({"report": msg["content"]}, ensure_ascii=False)
                                     yield f"event: debate_complete\ndata: {data}\n\n"
                                     remaining_handled = True
@@ -413,7 +500,13 @@ async def finish_assessment_stream(session_id: int, token: str):
                     yield f"event: agent_message\ndata: {data}\n\n"
                 elif msg["type"] == "done":
                     file_path = save_report_to_file(user_id, msg["content"])
-                    save_report_to_session(db, session_id, msg["content"], file_path)
+                    session = db.query(AssessmentSession).filter(
+                        AssessmentSession.id == session_id
+                    ).first()
+                    if session:
+                        session.report_content = msg["content"]
+                        session.report_file_path = file_path
+                        db.commit()
                     data = json.dumps({"report": msg["content"]}, ensure_ascii=False)
                     yield f"event: debate_complete\ndata: {data}\n\n"
                     await asyncio.sleep(0.5)
@@ -452,12 +545,10 @@ async def get_history(
     ).all() if session_ids else []
 
     all_exam_nos = list(set(r.exam_no for r in all_history_records))
-    question_dim_map = {}
-    if all_exam_nos:
-        questions = db.query(Question.exam_no, Question.dimension_id).filter(
-            Question.exam_no.in_(all_exam_nos)
-        ).all()
-        question_dim_map = {q.exam_no: q.dimension_id for q in questions}
+    all_questions = db.query(Question).filter(
+        Question.exam_no.in_(all_exam_nos)
+    ).all() if all_exam_nos else []
+    question_map = {q.exam_no: q for q in all_questions}
 
     records_by_session = defaultdict(list)
     for r in all_history_records:
@@ -466,17 +557,11 @@ async def get_history(
     result = []
     for s in sessions:
         records = records_by_session.get(s.id, [])
+        session_questions = [q for q in all_questions if any(r.exam_no == q.exam_no for r in records)]
         total_score = sum(float(r.score or 0) for r in records)
         anomaly_count = sum(1 for r in records if r.is_anomaly == 1)
 
-        dim_scores = {}
-        for m in ['A', 'T', 'M', 'R']:
-            dim_records = [r for r in records if question_dim_map.get(r.exam_no) == MODULE_DIM_MAP[m]]
-            if dim_records:
-                dim_total = sum(float(r.score or 0) for r in dim_records)
-                dim_scores[m] = round(dim_total, 1)
-            else:
-                dim_scores[m] = 0
+        dim_scores = _compute_history_dimension_scores(records, session_questions)
 
         result.append({
             "session_id": s.id,
@@ -545,26 +630,44 @@ async def get_report(
             dimension_data[module_key]["scores"].append(r.score)
             dimension_data[module_key]["records"].append(answer_item)
 
+    # 计算各维度前两题加权分
+    all_exam_nos_for_bonus = [r.exam_no for r in records]
+    all_questions_for_bonus = db.query(Question).filter(Question.exam_no.in_(all_exam_nos_for_bonus)).all() if all_exam_nos_for_bonus else []
+    q_map_for_bonus = {q.exam_no: q for q in all_questions_for_bonus}
+    weight_bonus = calculate_weight_bonus(records, q_map_for_bonus)
+
     dimension_summary = {}
     for m in ['A', 'T', 'M', 'R']:
         scores = dimension_data[m]["scores"]
         if scores:
-            total = float(sum(float(s) for s in scores))
-            avg = total / len(scores)
+            raw_total = float(sum(float(s) for s in scores))
+            weighted_total = raw_total + weight_bonus[m]
+            clamped_total = clamp_score(weighted_total)
+            avg = raw_total / len(scores)
             max_possible = len(scores) * 5.0
-            percentage = (total / max_possible * 100) if max_possible > 0 else 0
+            percentage = (clamped_total / max_possible * 100) if max_possible > 0 else 0
         else:
-            total = avg = percentage = 0
+            raw_total = avg = percentage = 0
+            weighted_total = 0
+            clamped_total = 0
             max_possible = 0
+
+        level_info = get_dimension_level(clamped_total)
 
         dimension_summary[m] = {
             "name": MODULE_DISPLAY_NAMES[m],
-            "total_score": round(total, 2),
+            "raw_score": round(raw_total, 2),
+            "total_score": round(clamped_total, 2),
+            "weighted_score": round(weighted_total, 2),
+            "weighted_bonus": weight_bonus[m],
             "avg_score": round(avg, 2),
             "max_possible": max_possible,
             "percentage": round(percentage, 1),
             "question_count": len(scores),
             "anomaly_count": sum(1 for rec in dimension_data[m]["records"] if rec["is_anomaly"]),
+            "level": level_info["level"],
+            "level_label": level_info["label"],
+            "level_color": level_info["color"],
             "evidence_records": dimension_data[m]["records"],
         }
 

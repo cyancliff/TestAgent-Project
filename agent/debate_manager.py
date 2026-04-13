@@ -6,6 +6,15 @@ import time
 
 import autogen
 
+# 评分标准（注入到辩论专家 prompt 中）
+SCORING_STANDARD = """
+【评分标准参考】
+测评采用 1-5 分李克特量表，4大维度各10题，单项满分50分。
+等级划分：偏低（10-23分，潜伏特质）/ 中等（24-37分，情境特质）/ 偏高（38-50分，显性主导特质）。
+前两题存在加权调节机制（+2分）。对外展示以50分为封顶。
+请在分析中结合用户的维度得分等级进行解读。
+"""
+
 
 def _retrieve_rag_evidence(user_data_context: str) -> str:
     """同步包装：从 ATMR 知识库中检索与用户数据相关的证据。"""
@@ -77,7 +86,7 @@ def run_debate_streaming(user_data_context: str, message_queue: queue.Queue):
         ]
         config_list_zhipu = [
             {
-                "model": "glm-4",
+                "model": "glm-4.7",
                 "api_key": os.environ.get("ZHIPU_API_KEY"),
                 "base_url": "https://open.bigmodel.cn/api/paas/v4",
             }
@@ -97,20 +106,21 @@ def run_debate_streaming(user_data_context: str, message_queue: queue.Queue):
         )
         proponent = autogen.AssistantAgent(
             name="Proponent_DeepSeek",
-            system_message=f"你是正方心理学专家。请重点从积极的角度分析用户的作答数据（尤其是克服异常阻碍的追问回答），挖掘其内在潜力、自我效能感与抗压能力。{evidence_block}",
+            system_message=f"你是正方心理学专家。请重点从积极的角度分析用户的作答数据（尤其是克服异常阻碍的追问回答），挖掘其内在潜力、自我效能感与抗压能力。{evidence_block}{SCORING_STANDARD}",
             llm_config={"config_list": config_list_deepseek},
         )
         opponent = autogen.AssistantAgent(
             name="Opponent_Qwen",
-            system_message=f"你是反方风控专家。请用批判性的眼光审查用户的作答耗时和异常标记，挖掘其潜在的性格弱点、僵化归因或过度自信风险，并对正方的乐观估计进行反驳。{evidence_block}",
+            system_message=f"你是反方风控专家。请用批判性的眼光审查用户的作答耗时和异常标记，挖掘其潜在的性格弱点、僵化归因或过度自信风险，并对正方的乐观估计进行反驳。{evidence_block}{SCORING_STANDARD}",
             llm_config={"config_list": config_list_qwen},
         )
         judge = autogen.AssistantAgent(
-            name="Judge_GLM4",
-            system_message=f"""你是主裁决官（高级心理学教授）。负责控场并最终输出ATMR综合评估报告。{evidence_block}
+            name="Judge_GLM4.7",
+            system_message=f"""你是主裁决官（高级心理学教授）。负责控场并最终输出ATMR综合评估报告。{evidence_block}{SCORING_STANDARD}
 【强制思维链规则】：你每次发言的开头必须包含 `【内部记录：这是我第X次发言】`。
 - 第1次发言：简单总结正反方初步观点，并提出一个尖锐的问题引导他们深入。
-- 第2次发言：综合所有数据和辩论，输出一份极具专业度的结构化心理画像报告（包含认知、情感、行为、潜力四个维度），并必须在报告正文的最后一行输出 `TERMINATE`。""",
+- 第2次发言：综合所有数据和辩论，直接输出一份极具专业度的结构化心理画像报告（包含认知、情感、行为、潜力四个维度）。
+  **禁止要求**：不要在报告开头写任何关于"感谢正反方专家""辩论总结""各位专家"之类的开场白，不要提及"正方/反方/两位专家"。直接从报告标题开始输出。报告中必须明确标注各维度的等级（偏低/中等/偏高），并结合等级特征进行分析。必须在报告正文的最后一行输出 `TERMINATE`。""",
             llm_config={"config_list": config_list_zhipu},
         )
 
@@ -126,7 +136,9 @@ def run_debate_streaming(user_data_context: str, message_queue: queue.Queue):
 
         initial_message = f"""各位专家好，我是系统管理员。以下是某位用户在 ATMR 心理测评中的完整作答记录。
 包含了每道题的选项、作答耗时(毫秒)、是否触发 AI 异常拦截，以及拦截后用户的解释说明。
-请你们立即根据这些数据展开深度辩论，并最终由 Judge_GLM4 输出评估报告。
+请你们立即根据这些数据展开深度辩论，并最终由 Judge_GLM4.7 输出评估报告。
+
+{SCORING_STANDARD}
 
 【用户测评数据面板】：
 {user_data_context}
@@ -164,7 +176,7 @@ def run_debate_streaming(user_data_context: str, message_queue: queue.Queue):
         # 提取最终报告
         final_report = "生成报告失败，请检查模型 API 状态。"
         for msg in reversed(groupchat.messages):
-            if msg.get("name") == "Judge_GLM4" and "TERMINATE" in msg.get("content", ""):
+            if msg.get("name") == "Judge_GLM4.7" and "TERMINATE" in msg.get("content", ""):
                 final_report = msg["content"].replace("TERMINATE", "").strip()
                 break
 

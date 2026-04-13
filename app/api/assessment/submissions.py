@@ -1,32 +1,28 @@
 """
-测评作答提交路由：草稿保存、单题提交、批量提交、模块提交、异常检测
+测评作答提交路由：草稿保存、答案预检、阶段提交、异常解释
 """
 
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy.orm import Session
 
-from app.core.database import get_db, SessionLocal
+from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.constants import (
-    TOTAL_QUESTIONS, QUESTIONS_PER_MODULE, MODULES, MODULE_DIM_MAP, MODULE_COOLDOWN_SECONDS,
-)
+from app.core.constants import MODULE_DIM_MAP
 from app.models.question import (
-    AnswerRecord, AssessmentSession, ModuleDebateResult, Question, User,
+    AnswerRecord, AssessmentSession, Question, User,
 )
 from app.services.ai_detector import check_anomaly_and_generate_question
+from app.services.stage_service import StageService
 from app.api.assessment.schemas import (
-    SaveAnswerRequest, SubmitModuleRequest, AnswerSubmitRequest, AnswerSubmitResponse,
-    ExplanationSubmitRequest, CheckAnswerRequest, BatchAnswerItem, BatchSubmitRequest,
+    SaveAnswerRequest, AnswerSubmitRequest, AnswerSubmitResponse,
+    ExplanationSubmitRequest, CheckAnswerRequest, SubmitStageRequest,
 )
-from app.api.assessment.questions import get_current_module_and_stage
 
 router = APIRouter()
 
 
-def ensure_session_owner(db: Session, session_id: int, user_id: int) -> AssessmentSession:
+def ensure_session_owner(db, session_id: int, user_id: int) -> AssessmentSession:
     """校验会话属于当前用户"""
     session = db.query(AssessmentSession).filter(
         AssessmentSession.id == session_id,
@@ -65,64 +61,15 @@ async def analyze_answer(
     return score, detection_result
 
 
-def build_recent_answer_context(db: Session, session_id: int, user_id: int, limit: int = 5) -> list[dict]:
-    """获取最近作答记录用于异常检测上下文"""
-    records = db.query(AnswerRecord).filter(
-        AnswerRecord.session_id == session_id,
-        AnswerRecord.user_id == user_id,
-    ).order_by(AnswerRecord.created_at.asc()).all()
-    return [
-        {
-            "exam_no": record.exam_no,
-            "selected_option": record.selected_option,
-            "time_spent": float(record.time_spent or 0),
-            "score": float(record.score or 0),
-            "is_anomaly": int(record.is_anomaly or 0),
-        }
-        for record in records[-limit:]
-    ]
-
-
-def trigger_completed_module_debates(db: Session, session_id: int, user_id: int, background_tasks: BackgroundTasks):
-    """检测已完成模块并触发辩论"""
-    from app.api.assessment.streaming import trigger_module_debate
-
-    all_records = db.query(AnswerRecord).filter(
-        AnswerRecord.session_id == session_id,
-        AnswerRecord.user_id == user_id,
-    ).all()
-    if not all_records:
-        return
-
-    all_exam_nos = [rec.exam_no for rec in all_records]
-    all_questions = db.query(Question).filter(Question.exam_no.in_(all_exam_nos)).all() if all_exam_nos else []
-    all_q_map = {q.exam_no: q for q in all_questions}
-
-    existing_modules = {
-        r.module for r in db.query(ModuleDebateResult).filter(ModuleDebateResult.session_id == session_id).all()
-    }
-
-    for module, target_dimension in MODULE_DIM_MAP.items():
-        if module in existing_modules:
-            continue
-        module_questions_count = 0
-        for record in all_records:
-            question = all_q_map.get(record.exam_no)
-            if question and question.dimension_id == target_dimension:
-                module_questions_count += 1
-        if module_questions_count >= QUESTIONS_PER_MODULE:
-            background_tasks.add_task(trigger_module_debate, session_id, user_id, module)
-
-
 @router.post("/save-answer")
 async def save_answer(
     payload: SaveAnswerRequest,
-    db: Session = Depends(get_db),
+    db = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """实时保存单题答案（草稿）"""
     session = ensure_session_owner(db, payload.session_id, current_user.id)
-    if session.status == 'completed':
+    if session.status == "completed":
         raise HTTPException(status_code=400, detail="该测评已完成")
 
     existing = db.query(AnswerRecord).filter(
@@ -157,7 +104,7 @@ async def save_answer(
 @router.post("/check-answer", response_model=AnswerSubmitResponse)
 async def check_answer(
     payload: CheckAnswerRequest,
-    db: Session = Depends(get_db),
+    db = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """预检答案（不入库），用于前端实时反馈"""
@@ -182,57 +129,10 @@ async def check_answer(
     )
 
 
-@router.post("/submit", response_model=AnswerSubmitResponse)
-async def submit_answer(
-    payload: AnswerSubmitRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """单题提交（旧版兼容）"""
-    db_question = db.query(Question).filter(Question.exam_no == payload.exam_no).first()
-    if not db_question:
-        raise HTTPException(status_code=404, detail="题目不存在")
-
-    current_score, detection_result = await analyze_answer(
-        db_question,
-        payload.selected_option,
-        payload.time_spent,
-        recent_answers=build_recent_answer_context(db, payload.session_id, current_user.id),
-    )
-    is_anomaly_flag = 1 if detection_result["status"] == "anomaly" else 0
-    new_record = AnswerRecord(
-        session_id=payload.session_id,
-        user_id=current_user.id,
-        exam_no=payload.exam_no,
-        selected_option=payload.selected_option,
-        score=current_score,
-        time_spent=payload.time_spent,
-        is_anomaly=is_anomaly_flag,
-        ai_follow_up=detection_result.get("follow_up"),
-    )
-    db.add(new_record)
-    db.commit()
-
-    try:
-        trigger_completed_module_debates(db, payload.session_id, current_user.id, background_tasks)
-    except Exception as e:
-        print(f"模块完成检测出错: {e}")
-
-    return AnswerSubmitResponse(
-        status=detection_result["status"],
-        message="记录已成功存入数据库",
-        score=current_score,
-        follow_up_question=detection_result.get("follow_up"),
-        risk_score=detection_result.get("risk_score"),
-        risk_reasons=detection_result.get("reasons", []),
-    )
-
-
 @router.post("/submit_explanation")
 async def submit_explanation(
     payload: ExplanationSubmitRequest,
-    db: Session = Depends(get_db),
+    db = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """提交异常作答的补充解释"""
@@ -251,26 +151,42 @@ async def submit_explanation(
     raise HTTPException(status_code=404, detail="找不到对应的异常记录")
 
 
-@router.post("/submit-batch")
-async def submit_batch(
-    payload: BatchSubmitRequest,
+@router.post("/submit-stage")
+async def submit_stage(
+    payload: SubmitStageRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """批量提交答案（最终提交）"""
-    session = ensure_session_owner(db, payload.session_id, current_user.id)
-    if session.status == 'completed':
-        raise HTTPException(status_code=400, detail="该测评已提交，不能重复提交")
+    """
+    提交当前阶段所有答案
+    1. 校验当前阶段是否满题
+    2. upsert 作答记录
+    3. 后台调用模块辩论（不阻塞）
+    4. 推进到下一阶段
+    5. 全部完成后触发最终报告生成
+    """
+    from app.api.assessment.streaming import generate_report_in_background
 
-    # 去重
-    answer_map = {}
-    for item in payload.answers:
-        answer_map[item.exam_no] = item
+    stage_service = StageService(db, payload.session_id, current_user.id)
+    current_stage = stage_service.get_current_stage()
 
-    if len(answer_map) < TOTAL_QUESTIONS:
-        print(f"[submit-batch] 去重后题目数: {len(answer_map)}/{TOTAL_QUESTIONS}（原始: {len(payload.answers)}）")
+    # 校验：检查是否已提交
+    submitted = stage_service.get_submitted_stages()
+    if current_stage in submitted:
+        raise HTTPException(status_code=400, detail=f"阶段 {current_stage} 已提交，不能重复提交")
 
+    # 校验：满题检查
+    if not stage_service.is_stage_complete(current_stage):
+        answered = stage_service.get_stage_answered_count(current_stage)
+        required = stage_service.get_stage_question_count(current_stage)
+        raise HTTPException(
+            status_code=400,
+            detail=f"当前阶段还需作答 {required - answered} 题（已答 {answered}/{required}）",
+        )
+
+    # Upsert 作答记录
+    answer_map = {item.exam_no: item for item in payload.answers}
     exam_nos = list(answer_map.keys())
     questions = db.query(Question).filter(Question.exam_no.in_(exam_nos)).all()
     question_map = {q.exam_no: q for q in questions}
@@ -279,125 +195,63 @@ async def submit_batch(
     if invalid_nos:
         raise HTTPException(status_code=400, detail=f"存在无效题目编号: {invalid_nos}")
 
-    # 清理旧正式记录
-    db.query(AnswerRecord).filter(AnswerRecord.session_id == payload.session_id).delete()
-    db.query(ModuleDebateResult).filter(ModuleDebateResult.session_id == payload.session_id).delete()
+    # Upsert 答案（简单写入，不重新分析）
+    for exam_no, item in answer_map.items():
+        db_question = question_map[exam_no]
+        score = calculate_question_score(db_question, item.selected_option)
+
+        existing = db.query(AnswerRecord).filter(
+            AnswerRecord.session_id == payload.session_id,
+            AnswerRecord.user_id == current_user.id,
+            AnswerRecord.exam_no == exam_no,
+        ).first()
+
+        if existing:
+            existing.selected_option = item.selected_option
+            existing.time_spent = item.time_spent
+            existing.score = score
+            if item.user_explanation:
+                existing.user_explanation = item.user_explanation
+        else:
+            db.add(AnswerRecord(
+                session_id=payload.session_id,
+                user_id=current_user.id,
+                exam_no=exam_no,
+                selected_option=item.selected_option,
+                score=score,
+                time_spent=item.time_spent,
+                user_explanation=item.user_explanation if item.user_explanation else None,
+            ))
+
     db.commit()
 
-    recent_answers = []
-    for item in answer_map.values():
-        db_question = question_map[item.exam_no]
-        score, detection_result = await analyze_answer(
-            db_question, item.selected_option, item.time_spent, recent_answers=recent_answers,
+    # 推进到下一阶段
+    next_stage = stage_service.advance_to_next_stage()
+
+    # 后台触发当前模块的辩论（不阻塞响应）
+    if current_stage in MODULE_DIM_MAP:
+        from app.api.assessment.streaming import trigger_module_debate
+        background_tasks.add_task(
+            trigger_module_debate, payload.session_id, current_user.id, current_stage,
         )
-        is_anomaly_flag = 1 if detection_result["status"] == "anomaly" else 0
-        new_record = AnswerRecord(
-            session_id=payload.session_id,
-            user_id=current_user.id,
-            exam_no=item.exam_no,
-            selected_option=item.selected_option,
-            score=score,
-            time_spent=item.time_spent,
-            is_anomaly=is_anomaly_flag,
-            ai_follow_up=detection_result.get("follow_up"),
-            user_explanation=item.user_explanation if is_anomaly_flag else None,
-        )
-        db.add(new_record)
-        recent_answers.append({
-            "exam_no": item.exam_no,
-            "selected_option": item.selected_option,
-            "time_spent": item.time_spent,
-            "score": score,
-            "is_anomaly": is_anomaly_flag,
-        })
-        recent_answers = recent_answers[-5:]
 
-    session.status = 'completed'
-    session.finished_at = datetime.now()
-    db.commit()
-
-    try:
-        trigger_completed_module_debates(db, payload.session_id, current_user.id, background_tasks)
-    except Exception as e:
-        print(f"批量提交后模块辩论检测失败: {e}")
-
-    # 后台自动生成最终报告
-    from app.api.assessment.streaming import generate_report_in_background
-    background_tasks.add_task(
-        generate_report_in_background, payload.session_id, current_user.id,
-    )
-
-    return {
-        "status": "success",
-        "message": "答题记录已正式提交，报告将在后台自动生成",
-        "saved_count": len(answer_map),
-        "session_id": payload.session_id,
-    }
-
-
-@router.post("/finish")
-async def finish_assessment(
-    session_id: int,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """保留兼容：标记测评完成"""
-    session = ensure_session_owner(db, session_id, current_user.id)
-    session.status = 'completed'
-    session.finished_at = datetime.now()
-    db.commit()
-
-    return {
-        "status": "success",
-        "message": "测评已完成！请连接 /finish-stream 端点观看专家评审团的实时辩论并获取最终报告。",
-    }
-
-
-@router.post("/submit-module")
-async def submit_module(
-    payload: SubmitModuleRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """手动提交模块触发辩论"""
-    from app.api.assessment.streaming import trigger_module_debate
-
-    module = payload.module.upper()
-    if module not in MODULES:
-        raise HTTPException(status_code=400, detail=f"无效模块: {module}")
-
-    session = ensure_session_owner(db, payload.session_id, current_user.id)
-
-    target_dimension = MODULE_DIM_MAP[module]
-    records = db.query(AnswerRecord).filter(
-        AnswerRecord.session_id == payload.session_id,
-        AnswerRecord.user_id == current_user.id,
-    ).all()
-    exam_nos = [r.exam_no for r in records]
-    questions = db.query(Question).filter(Question.exam_no.in_(exam_nos)).all() if exam_nos else []
-    q_map = {q.exam_no: q for q in questions}
-
-    module_count = sum(1 for r in records if q_map.get(r.exam_no) and q_map[r.exam_no].dimension_id == target_dimension)
-    if module_count < QUESTIONS_PER_MODULE:
-        raise HTTPException(status_code=400, detail=f"模块 {module} 答题不足 {QUESTIONS_PER_MODULE} 题（当前 {module_count} 题）")
-
-    # 检查冷却时间
-    existing = db.query(ModuleDebateResult).filter(
-        ModuleDebateResult.session_id == payload.session_id,
-        ModuleDebateResult.module == module,
-    ).first()
-
-    if existing:
-        elapsed = (
-            datetime.now(existing.created_at.tzinfo) if existing.created_at.tzinfo else datetime.now()
-        ) - existing.created_at
-        if elapsed.total_seconds() < MODULE_COOLDOWN_SECONDS:
-            remaining = int(MODULE_COOLDOWN_SECONDS - elapsed.total_seconds())
-            raise HTTPException(status_code=429, detail=f"请等待 {remaining} 秒后再重新提交")
-        db.delete(existing)
+    # 全部阶段完成，标记并生成最终报告
+    all_completed = next_stage is None
+    if all_completed:
+        session = stage_service.session
+        session.status = "completed"
+        from datetime import datetime
+        session.finished_at = datetime.now()
         db.commit()
 
-    background_tasks.add_task(trigger_module_debate, payload.session_id, current_user.id, module)
-    return {"status": "success", "message": f"模块 {module} 辩论已启动"}
+        background_tasks.add_task(
+            generate_report_in_background, payload.session_id, current_user.id,
+        )
+
+    return {
+        "status": "success",
+        "message": f"阶段 {current_stage} 已提交",
+        "current_stage": current_stage,
+        "next_stage": next_stage,
+        "all_completed": all_completed,
+    }

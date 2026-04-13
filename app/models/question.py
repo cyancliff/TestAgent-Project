@@ -66,6 +66,8 @@ class AssessmentSession(Base):
     started_at = Column(DateTime(timezone=True), default=datetime.now, comment="开始时间")
     finished_at = Column(DateTime(timezone=True), nullable=True, comment="完成时间")
     status = Column(String(20), default="active", comment="状态: active/completed")
+    current_stage = Column(String(20), default="intro", comment="当前阶段: intro/A/T/M/R")
+    submitted_stages = Column(JSONB, default=list, comment="已提交的阶段列表")
     report_content = Column(Text, nullable=True, comment="报告内容")
     report_file_path = Column(String(255), nullable=True, comment="报告文件路径")
 
@@ -179,5 +181,13 @@ Base.metadata.create_all(bind=engine)
 # 自动为已有表补充新增列
 try:
     ensure_column("users", "avatar_url", "TEXT")
+except Exception:
+    pass
+try:
+    ensure_column("assessment_sessions", "current_stage", "VARCHAR(20)")
+except Exception:
+    pass
+try:
+    ensure_column("assessment_sessions", "submitted_stages", "JSONB")
 except Exception:
     pass

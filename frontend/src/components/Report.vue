@@ -28,12 +28,13 @@
               <div class="dim-header">
                 <span class="dim-badge" :style="{ background: m.color }">{{ m.key }}</span>
                 <span class="dim-name">{{ m.name }}</span>
+                <span class="dim-level-badge" :style="{ background: getDimLevelColor(m.key) }">{{ getDimLevelLabel(m.key) }}</span>
                 <span class="dim-pct">{{ getDimPercentage(m.key) }}%</span>
               </div>
               <div class="dim-bar-wrapper">
                 <div class="dim-bar" :style="{ width: getDimPercentage(m.key) + '%', background: m.color }"></div>
               </div>
-              <div class="dim-detail">{{ getDimTotal(m.key) }} / {{ getDimMax(m.key) }} 分 · {{ getEvidenceCount(m.key) }} 题 · {{ getDimAnomalyCount(m.key) }} 异常</div>
+              <div class="dim-detail">{{ getDimTotal(m.key) }} / {{ getDimMax(m.key) }} 分 · {{ getEvidenceCount(m.key) }} 题 · {{ getDimAnomalyCount(m.key) }} 异常<template v-if="getDimBonus(m.key) > 0"> · 加权+{{ getDimBonus(m.key) }}</template></div>
             </div>
           </div>
         </div>
@@ -48,78 +49,69 @@
         <div class="no-report-hint">该会话暂无报告内容</div>
       </div>
 
-      <!-- 证据链溯源 -->
+      <!-- 分维度报告 -->
       <div v-if="hasDimensionData" class="report-card">
-        <h2 class="section-title">证据链溯源</h2>
-        <p class="section-desc">展示大模型如何根据您的每一条回答得出各维度结论</p>
+        <h2 class="section-title">分维度报告</h2>
+        <p class="section-desc">展示各维度的辩论结果、数据分析与结论</p>
 
         <div class="evidence-modules">
-          <div v-for="m in modules" :key="'ev-' + m.key" class="evidence-module">
+          <div v-for="m in modules" :key="'dim-' + m.key" class="evidence-module">
             <div
               class="ev-module-header"
-              :class="{ expanded: expandedEvidence[m.key] }"
-              @click="toggleEvidence(m.key)"
+              :class="{ expanded: expandedDimension[m.key] }"
+              @click="toggleDimension(m.key)"
             >
               <div class="ev-module-left">
                 <span class="dim-badge" :style="{ background: m.color }">{{ m.key }}</span>
                 <span class="ev-module-name">{{ m.name }}</span>
-                <span class="ev-module-stat">{{ getEvidenceCount(m.key) }} 题 · 均分 {{ getDimAvg(m.key) }}</span>
+                <span class="dim-level-badge" :style="{ background: getDimLevelColor(m.key) }">{{ getDimLevelLabel(m.key) }}</span>
+                <span class="ev-module-stat">{{ getEvidenceCount(m.key) }} 题 · 总分 {{ getDimTotal(m.key) }} · 均分 {{ getDimAvg(m.key) }}</span>
               </div>
-              <span class="toggle-arrow" :class="{ open: expandedEvidence[m.key] }"></span>
+              <span class="toggle-arrow" :class="{ open: expandedDimension[m.key] }"></span>
             </div>
 
             <transition name="slide">
-              <div v-if="expandedEvidence[m.key]" class="ev-records-wrap">
-                <div
-                  v-for="(rec, idx) in getEvidenceRecords(m.key)"
-                  :key="idx"
-                  :class="['ev-record', { 'ev-anomaly': rec.is_anomaly }]"
-                >
-                  <div class="ev-top">
-                    <span class="ev-no">{{ rec.exam_no }}</span>
-                    <span v-if="rec.trait_label" class="ev-trait">{{ rec.trait_label }}</span>
-                    <span :class="['ev-score', scoreClass(rec.score)]">{{ rec.score }}分</span>
-                    <span class="ev-time">{{ rec.time_spent?.toFixed(1) }}s</span>
-                    <span v-if="rec.is_anomaly" class="badge badge-red">异常</span>
-                    <span v-if="rec.is_reverse" class="badge badge-cyan">反向</span>
-                  </div>
-                  <div class="ev-q">{{ rec.question }}</div>
-                  <div class="ev-a"><b>选择：</b>{{ rec.selected_option }}</div>
-                  <div v-if="rec.is_anomaly && rec.ai_follow_up" class="ev-followup"><b>AI 追问：</b>{{ rec.ai_follow_up }}</div>
-                  <div v-if="rec.user_explanation" class="ev-explain"><b>用户解释：</b>{{ rec.user_explanation }}</div>
-                  <div class="ev-chain">
-                    <span class="chain-icon"></span>
-                    用户在「{{ rec.trait_label || '该特质' }}」维度选择了「{{ rec.selected_option }}」，得分 {{ rec.score }}/5<template v-if="rec.is_reverse">（反向计分）</template><template v-if="rec.is_anomaly">，作答 {{ rec.time_spent?.toFixed(1) }}s 标记异常<template v-if="rec.user_explanation">，解释："{{ rec.user_explanation }}"</template></template>
-                    → {{ rec.score >= 4 ? '强烈支持' : rec.score >= 3 ? '适度支持' : rec.score >= 2 ? '弱支持' : '不支持' }}该维度特质
+              <div v-if="expandedDimension[m.key]" class="dimension-report-body">
+                <!-- 模块辩论结果 -->
+                <div v-if="reportData.module_debates?.[m.key]" class="debate-section">
+                  <h3 class="dim-subsection-title">专家辩论结果</h3>
+                  <div class="markdown-body" v-html="renderMarkdown(reportData.module_debates[m.key])"></div>
+                </div>
+                <div v-else class="debate-section loading-debate">
+                  <h3 class="dim-subsection-title">专家辩论结果</h3>
+                  <p class="no-debate-hint">该模块暂无辩论数据</p>
+                </div>
+
+                <!-- 答题明细 -->
+                <div class="records-section">
+                  <h3 class="dim-subsection-title">答题明细</h3>
+                  <div class="ev-records-wrap">
+                    <div
+                      v-for="(rec, idx) in getEvidenceRecords(m.key)"
+                      :key="idx"
+                      :class="['ev-record', { 'ev-anomaly': rec.is_anomaly }]"
+                    >
+                      <div class="ev-top">
+                        <span class="ev-no">{{ rec.exam_no }}</span>
+                        <span v-if="rec.trait_label" class="ev-trait">{{ rec.trait_label }}</span>
+                        <span :class="['ev-score', scoreClass(rec.score)]">{{ rec.score }}分</span>
+                        <span class="ev-time">{{ rec.time_spent?.toFixed(1) }}s</span>
+                        <span v-if="rec.is_anomaly" class="badge badge-red">异常</span>
+                        <span v-if="rec.is_reverse" class="badge badge-cyan">反向</span>
+                      </div>
+                      <div class="ev-q">{{ rec.question }}</div>
+                      <div class="ev-a"><b>选择：</b>{{ rec.selected_option }}</div>
+                      <div v-if="rec.is_anomaly && rec.ai_follow_up" class="ev-followup"><b>AI 追问：</b>{{ rec.ai_follow_up }}</div>
+                      <div v-if="rec.user_explanation" class="ev-explain"><b>用户解释：</b>{{ rec.user_explanation }}</div>
+                      <div class="ev-chain">
+                        <span class="chain-icon"></span>
+                        用户在「{{ rec.trait_label || '该特质' }}」维度选择了「{{ rec.selected_option }}」，得分 {{ rec.score }}/5<template v-if="rec.is_reverse">（反向计分）</template><template v-if="rec.is_anomaly">，作答 {{ rec.time_spent?.toFixed(1) }}s 标记异常<template v-if="rec.user_explanation">，解释："{{ rec.user_explanation }}"</template></template>
+                        → {{ rec.score >= 4 ? '强烈支持' : rec.score >= 3 ? '适度支持' : rec.score >= 2 ? '弱支持' : '不支持' }}该维度特质
+                      </div>
+                    </div>
+                    <div v-if="getEvidenceRecords(m.key).length === 0" class="ev-empty">该模块暂无答题记录</div>
                   </div>
                 </div>
-                <div v-if="getEvidenceRecords(m.key).length === 0" class="ev-empty">该模块暂无答题记录</div>
-              </div>
-            </transition>
-          </div>
-        </div>
-      </div>
-
-      <!-- 模块专家辩论 -->
-      <div v-if="hasDebateResults" class="report-card">
-        <h2 class="section-title">模块专家辩论</h2>
-        <div class="evidence-modules">
-          <div v-for="m in modules" :key="'db-' + m.key" class="evidence-module">
-            <div
-              class="ev-module-header"
-              :class="{ expanded: expandedDebates[m.key] }"
-              @click="toggleDebate(m.key)"
-            >
-              <div class="ev-module-left">
-                <span class="dim-badge" :style="{ background: m.color }">{{ m.key }}</span>
-                <span class="ev-module-name">{{ m.name }} 专家分析</span>
-              </div>
-              <span class="toggle-arrow" :class="{ open: expandedDebates[m.key] }"></span>
-            </div>
-            <transition name="slide">
-              <div v-if="expandedDebates[m.key]" class="debate-body">
-                <div v-if="reportData.module_debates?.[m.key]" class="markdown-body" v-html="renderMarkdown(reportData.module_debates[m.key])"></div>
-                <div v-else class="ev-empty">该模块暂无辩论数据</div>
               </div>
             </transition>
           </div>
@@ -182,8 +174,7 @@ const API_BASE = '/api/v1/assessment'
 const reportData = ref({})
 const loading = ref(true)
 const showAllAnswers = ref(false)
-const expandedDebates = reactive({ A: false, T: false, M: false, R: false })
-const expandedEvidence = reactive({ A: false, T: false, M: false, R: false })
+const expandedDimension = reactive({ A: false, T: false, M: false, R: false })
 
 const modules = [
   { key: 'A', name: '欣赏型', color: '#6366f1' },
@@ -212,6 +203,8 @@ const cleanReportText = (raw) => {
     .replace(/【内部记录[：:].*?】/g, '')
     // 移除 TERMINATE 标记
     .replace(/\s*TERMINATE\s*/g, '')
+    // 移除知识库引用段落
+    .replace(/## 知识库引用[\s\S]*?(?=##|\Z)/g, '')
     // 移除多余空行（3个以上换行合并为2个）
     .replace(/\n{3,}/g, '\n\n')
     .trim()
@@ -276,12 +269,14 @@ const getDimTotal = (k) => reportData.value.dimension_summary?.[k]?.total_score 
 const getDimMax = (k) => reportData.value.dimension_summary?.[k]?.max_possible || 0
 const getDimAvg = (k) => reportData.value.dimension_summary?.[k]?.avg_score || 0
 const getDimAnomalyCount = (k) => reportData.value.dimension_summary?.[k]?.anomaly_count || 0
+const getDimLevelLabel = (k) => reportData.value.dimension_summary?.[k]?.level_label || ''
+const getDimLevelColor = (k) => reportData.value.dimension_summary?.[k]?.level_color || '#94a3b8'
+const getDimBonus = (k) => reportData.value.dimension_summary?.[k]?.weighted_bonus || 0
 const getEvidenceCount = (k) => reportData.value.dimension_summary?.[k]?.question_count || 0
 const getEvidenceRecords = (k) => reportData.value.dimension_summary?.[k]?.evidence_records || []
 const getModuleColor = (k) => modules.find(m => m.key === k)?.color || '#94a3b8'
 const scoreClass = (s) => s >= 4 ? 'score-high' : s >= 3 ? 'score-mid' : 'score-low'
-const toggleDebate = (k) => { expandedDebates[k] = !expandedDebates[k] }
-const toggleEvidence = (k) => { expandedEvidence[k] = !expandedEvidence[k] }
+const toggleDimension = (k) => { expandedDimension[k] = !expandedDimension[k] }
 
 const formatTime = (iso) => {
   if (!iso) return ''
@@ -363,6 +358,11 @@ onMounted(fetchReport)
 .dim-badge-sm { width: 24px; height: 24px; font-size: 12px; border-radius: var(--radius-sm); }
 .dim-name { font-size: 20px; font-weight: 700; }
 .dim-pct { margin-left: auto; font-size: 24px; font-weight: 800; color: var(--primary); }
+.dim-level-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px 10px; border-radius: 12px;
+  color: #fff; font-size: 13px; font-weight: 700;
+}
 .dim-bar-wrapper { width: 100%; height: 8px; background: var(--bg-card); border-radius: var(--radius-sm); overflow: hidden; box-shadow: var(--shadow-inner); }
 .dim-bar { height: 100%; border-radius: var(--radius-sm); transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); position: relative; }
 .dim-bar::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmer 2s infinite; }
@@ -388,7 +388,26 @@ onMounted(fetchReport)
 }
 .markdown-body :deep(hr) { border: none; height: 2px; background: linear-gradient(90deg, var(--border), var(--primary), var(--border)); margin: 32px 0; }
 
-/* === 可折叠模块（证据链 & 辩论共用） === */
+/* === 分维度报告 === */
+.dimension-report-body {
+  border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 10px 10px; overflow: hidden;
+}
+.debate-section {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.debate-section:last-child { border-bottom: none; }
+.loading-debate { text-align: center; }
+.no-debate-hint { color: var(--text-muted); font-size: 15px; padding: 12px 0; }
+.records-section { padding: 0; }
+.dim-subsection-title {
+  font-size: 18px; font-weight: 700; color: var(--primary);
+  margin: 0 0 14px; padding-bottom: 8px;
+  border-bottom: 2px solid rgba(99, 102, 241, 0.15);
+}
+
+/* === 可折叠模块（分维度报告 & 答题明细共用） === */
 .evidence-modules { display: flex; flex-direction: column; gap: 6px; }
 .ev-module-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -410,12 +429,11 @@ onMounted(fetchReport)
 }
 .toggle-arrow.open { transform: rotate(45deg); }
 
-/* === 证据链记录 === */
-.ev-records-wrap, .debate-body {
+/* === 答题记录 === */
+.ev-records-wrap {
   border: 1px solid var(--border); border-top: none;
   border-radius: 0 0 10px 10px; overflow: hidden;
 }
-.debate-body { padding: 18px 20px; }
 .ev-record {
   padding: 14px 18px; border-bottom: 1px solid var(--border);
   transition: background 0.12s;
