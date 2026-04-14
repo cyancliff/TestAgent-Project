@@ -21,7 +21,13 @@ RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
 
 # 先复制依赖文件，利用 Docker 缓存
 COPY requirements_full.txt .
-RUN pip install --no-cache-dir --timeout=300 --extra-index-url https://download.pytorch.org/whl/cpu -r requirements_full.txt
+
+# 先安装 torch（需要额外源），再安装其余依赖
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
+    pip config set global.trusted-host mirrors.aliyun.com && \
+    pip install --no-cache-dir --timeout=300 torch==2.1.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu && \
+    grep -v '^torch==' requirements_full.txt > requirements.txt && \
+    pip install --no-cache-dir --timeout=300 -r requirements.txt
 
 # 复制应用代码
 COPY app/ ./app/
