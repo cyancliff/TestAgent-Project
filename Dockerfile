@@ -28,7 +28,6 @@ COPY app/ ./app/
 COPY scripts/ ./scripts/
 COPY data/ ./data/
 COPY PageIndex/ ./PageIndex/
-COPY agent/ ./agent/
 
 # 复制启动脚本
 COPY docker-entrypoint.sh .

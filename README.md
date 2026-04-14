@@ -176,13 +176,19 @@ TestAgent/
 │   │   ├── question_selection.py #   自适应选题算法
 │   │   ├── ai_detector.py        #   异常作答检测
 │   │   ├── report_service.py     #   测评报告生成
-│   │   └── rag_service.py        #   RAG 检索服务
+│   │   ├── rag_service.py        #   RAG 检索服务
+│   │   ├── stage_service.py      #   阶段管理服务
+│   │   ├── debate_manager.py     #   AutoGen 三方辩论编排
+│   │   └── scoring.py            #   评分计算服务
+│   ├── models/                   # ORM 模型
+│   │   ├── user.py               #   用户模型
+│   │   ├── assessment.py         #   测评相关模型
+│   │   └── chat.py               #   聊天相关模型
 │   └── core/                     # 配置与安全
 │       ├── config.py             #   环境变量与全局配置
-│       └── security.py           #   JWT 认证 + 密码加密
-│
-├── agent/                        # 多智能体辩论系统
-│   └── debate_manager.py         # AutoGen 三方辩论编排
+│       ├── security.py           #   JWT 认证 + 密码加密
+│       ├── database.py           #   数据库连接与会话管理
+│       └── limiter.py            #   API 限流
 │
 ├── PageIndex/                    # RAG 知识库检索引擎
 │   ├── pageindex/                # 核心模块
