@@ -1,8 +1,7 @@
 """
 数据库连接与会话管理
 """
-
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 
 from app.core.config import settings
@@ -26,11 +25,3 @@ def get_db():
         yield db
     finally:
         db.close()
-
-
-def ensure_column(table: str, column: str, column_type: str):
-    """检查并添加缺失的数据库列（用于平滑迁移）"""
-    inspector = inspect(engine)
-    if inspector.has_table(table) and column not in {c["name"] for c in inspector.get_columns(table)}:
-        with engine.begin() as conn:
-            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}"))

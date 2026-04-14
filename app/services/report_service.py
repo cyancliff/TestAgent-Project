@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.models.question import AnswerRecord, ModuleDebateResult, Question, SessionLocal
+from app.models.assessment import AnswerRecord, ModuleDebateResult, Question
 
 
 # 评分标准说明（注入到最终辩论 prompt 中）

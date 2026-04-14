@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.constants import STAGE_DIM_MAP, STAGE_QUESTION_COUNT, STAGE_NAMES
-from app.models.question import Question, User
+from app.models.assessment import Question
+from app.models.user import User
 from app.services.stage_service import StageService
 from app.api.assessment.schemas import StageInfo
 

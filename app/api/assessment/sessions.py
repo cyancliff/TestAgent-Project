@@ -7,13 +7,12 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 from app.core.security import get_current_user
 from app.core.constants import STAGES
-from app.models.question import (
-    SessionLocal, Question, AssessmentSession, AnswerRecord,
-    ModuleDebateResult, ChatSession, User,
-)
+from app.models.assessment import Question, AssessmentSession, AnswerRecord, ModuleDebateResult
+from app.models.chat import ChatSession
+from app.models.user import User
 from app.api.assessment.schemas import StartSessionRequest
 from app.services.stage_service import StageService
 

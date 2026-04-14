@@ -13,6 +13,7 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.database import get_db
 
 # OAuth2 Bearer Token 提取器
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -49,15 +50,6 @@ def create_access_token(user_id: int, username: str, expires_delta: timedelta | 
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
 
-def get_db():
-    """获取数据库会话"""
-    from app.models.question import SessionLocal
-
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 async def get_current_user(
@@ -82,7 +74,7 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    from app.models.question import User
+    from app.models.user import User
 
     user = db.query(User).filter(User.id == int(user_id)).first()
     if user is None:

@@ -9,9 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.constants import MODULE_DIM_MAP
-from app.models.question import (
-    AnswerRecord, AssessmentSession, Question, User,
-)
+from app.models.assessment import AnswerRecord, AssessmentSession, Question
+from app.models.user import User
 from app.services.ai_detector import check_anomaly_and_generate_question
 from app.services.stage_service import StageService
 from app.api.assessment.schemas import (

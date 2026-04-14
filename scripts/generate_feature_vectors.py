@@ -18,7 +18,8 @@ except ImportError as e:
     print("请安装所需依赖: pip install sentence-transformers scikit-learn numpy torch")
     sys.exit(1)
 
-from app.models.question import SessionLocal, Question
+from app.core.database import SessionLocal
+from app.models.assessment import Question
 
 
 class FeatureVectorGenerator:

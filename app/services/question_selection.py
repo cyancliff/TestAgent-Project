@@ -16,7 +16,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.core.constants import MODULE_DIM_MAP
-from app.models.question import AnswerRecord, Question
+from app.models.assessment import AnswerRecord, Question
 
 # 配置日志
 log_level = os.environ.get("QUESTION_SELECTION_LOG_LEVEL", "INFO").upper()

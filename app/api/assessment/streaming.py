@@ -19,12 +19,12 @@ from app.core.database import get_db, SessionLocal
 from app.core.security import get_current_user
 from app.core.constants import MODULE_DIM_MAP, MODULE_DISPLAY_NAMES, STAGE_NAMES
 from app.core.constants import SCORE_LEVELS, WEIGHT_BONUS_SCORE, DIMENSION_MAX_SCORE
-from app.models.question import (
-    AssessmentSession, AnswerRecord, ModuleDebateResult, Question, User, ChatSession,
-)
+from app.models.assessment import AssessmentSession, AnswerRecord, ModuleDebateResult, Question
+from app.models.chat import ChatSession
+from app.models.user import User
 from app.services.report_service import build_debate_context, save_report_to_file
 from app.services.scoring import get_dimension_level, clamp_score, calculate_weight_bonus
-from agent.debate_manager import run_debate_streaming
+from app.services.debate_manager import run_debate_streaming
 
 # 评分标准说明（注入到模块辩论 prompt 中）
 SCORING_STANDARD_TEXT = """

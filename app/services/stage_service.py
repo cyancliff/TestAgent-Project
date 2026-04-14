@@ -8,7 +8,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.core.constants import STAGES, STAGE_DIM_MAP, STAGE_QUESTION_COUNT
-from app.models.question import AnswerRecord, AssessmentSession, ModuleDebateResult, Question, User
+from app.models.assessment import AnswerRecord, AssessmentSession, ModuleDebateResult, Question
+from app.models.user import User
 
 
 class StageService:

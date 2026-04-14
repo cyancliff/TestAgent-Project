@@ -1,8 +1,8 @@
-import base64
 import os
+import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,9 @@ from app.core.security import (
     is_legacy_hash,
     verify_password,
 )
-from app.models.question import User
+from app.models.user import User
+
+from app.core.limiter import limiter
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 2MB
@@ -28,6 +30,8 @@ MIME_MAP = {
 }
 
 router = APIRouter()
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", "avatars")
 
 
 class AuthRequest(BaseModel):
@@ -44,7 +48,12 @@ class TokenResponse(BaseModel):
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register(payload: AuthRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+async def register(
+    request: Request,
+    payload: AuthRequest,
+    db: Session = Depends(get_db),
+):
     existing = db.query(User).filter(User.username == payload.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="用户名已存在")
@@ -59,12 +68,17 @@ async def register(payload: AuthRequest, db: Session = Depends(get_db)):
         access_token=token,
         user_id=user.id,
         username=user.username,
-        avatar_url=user.avatar_url,
+        avatar_url=_resolve_avatar_url(user),
     )
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(payload: AuthRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+async def login(
+    request: Request,
+    payload: AuthRequest,
+    db: Session = Depends(get_db),
+):
     user = db.query(User).filter(User.username == payload.username).first()
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
@@ -79,7 +93,7 @@ async def login(payload: AuthRequest, db: Session = Depends(get_db)):
         access_token=token,
         user_id=user.id,
         username=user.username,
-        avatar_url=user.avatar_url,
+        avatar_url=_resolve_avatar_url(user),
     )
 
 
@@ -89,7 +103,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
     return {
         "user_id": current_user.id,
         "username": current_user.username,
-        "avatar_url": current_user.avatar_url,
+        "avatar_url": _resolve_avatar_url(current_user),
         "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
     }
 
@@ -100,7 +114,7 @@ async def upload_avatar(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """上传用户头像（Base64 存入数据库）"""
+    """上传用户头像，文件存储到 uploads/avatars/"""
     # 校验文件扩展名
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -111,16 +125,46 @@ async def upload_avatar(
     if len(content) > MAX_AVATAR_SIZE:
         raise HTTPException(status_code=400, detail="图片大小不能超过 2MB")
 
-    # 转为 base64 数据 URI
-    mime = MIME_MAP.get(ext, "image/jpeg")
-    b64 = base64.b64encode(content).decode("ascii")
-    avatar_data = f"data:{mime};base64,{b64}"
-
-    # 重新从当前 db session 查询用户
+    # 删除旧头像文件（如果存在且是本地文件）
     user = db.query(User).filter(User.id == current_user.id).first()
+    _remove_old_avatar(user.avatar_url)
 
-    # 更新数据库
-    user.avatar_url = avatar_data
+    # 生成文件名：user_{id}_{timestamp}.{ext}
+    filename = f"user_{user.id}_{int(time.time())}{ext}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    # 数据库存相对路径
+    user.avatar_url = f"avatars/{filename}"
     db.commit()
 
-    return {"avatar_url": avatar_data}
+    return {"avatar_url": f"/uploads/avatars/{filename}"}
+
+
+def _resolve_avatar_url(user: User) -> Optional[str]:
+    """兼容旧版 base64 数据，新版返回 /uploads/avatars/ 路径"""
+    if not user.avatar_url:
+        return None
+    if user.avatar_url.startswith("data:"):
+        # 旧版 base64 数据，直接返回（前端需兼容）
+        return user.avatar_url
+    if user.avatar_url.startswith("avatars/"):
+        # 新版文件系统路径
+        return f"/uploads/{user.avatar_url}"
+    return user.avatar_url
+
+
+def _remove_old_avatar(avatar_url: Optional[str]):
+    """删除旧的头像文件"""
+    if not avatar_url or avatar_url.startswith("data:"):
+        return
+    if avatar_url.startswith("avatars/"):
+        filepath = os.path.join(UPLOAD_DIR, avatar_url)
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass

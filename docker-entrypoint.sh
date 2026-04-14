@@ -20,12 +20,13 @@ done
 
 # 自动建表（SQLAlchemy create_all 在模型导入时执行）
 echo "初始化数据库表..."
-python -c "from app.models.question import Base, engine; Base.metadata.create_all(bind=engine)"
+python -c "from app.models import Base, engine; Base.metadata.create_all(bind=engine)"
 
 # 检查是否需要导入题库
 echo "检查题库数据..."
 NEED_IMPORT=$(python -c "
-from app.models.question import SessionLocal, Question
+from app.core.database import SessionLocal
+from app.models.assessment import Question
 db = SessionLocal()
 count = db.query(Question).count()
 db.close()

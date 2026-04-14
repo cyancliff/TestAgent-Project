@@ -1,6 +1,7 @@
 import json
 import math
-from app.models.question import SessionLocal, Question
+from app.core.database import SessionLocal
+from app.models.assessment import Question
 
 
 def calculate_avg_time(question_text: str, options: list) -> float:
