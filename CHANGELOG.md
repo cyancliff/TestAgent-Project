@@ -6,6 +6,25 @@
 
 ---
 
+## [2026-04-15] - 构建修复、迁移增强与当前任务整理
+
+### 修复
+- **修复 Docker 依赖安装过慢与超时问题**：改为直接安装 PyTorch CPU 版 wheel，避免 `extra-index-url` 拖慢解析；补充 `pip install` 超时参数，提升镜像构建稳定性
+- **修复 Debian 安全源镜像替换问题**：分别处理 `http` / `https` 的 `deb.debian.org` 与 `security.debian.org/debian-security`，避免源地址替换错误导致 `apt` 更新失败
+- **修复完整依赖缺失**：为 `requirements_full.txt` 补充 `slowapi`，避免服务启动时报缺少限流依赖
+
+### 优化
+- **增强数据库迁移脚本兼容性**：迁移脚本启动时先探测现有表结构，支持 `atmr_questions` 字段补齐、`chat_messages.chat_session_id` 列补充，以及缺失时自动创建 `chat_sessions` 表
+- **切换辩论模型配置**：将智谱模型从 `glm-4.7` 调整为 `glm-4.7-flash`，降低调用成本并适配当前运行配置
+- **优化测评页移动端选项样式**：调整 `Assessment.vue` 中选项按钮、标签尺寸、行高与圆角，提升平板和手机端可读性
+
+### 文档
+- **补充 Agent 约束文档**：新增 `Agent.md`，明确中文回复、单作者提交、强推策略以及 Windows/PowerShell 终端约束
+- **清理旧文档命名**：移除 `claude.md`
+- **重写待完成任务文档**：基于当前代码库和本地测试结果重新梳理优先级，聚焦迁移体系、后台任务、前端渲染安全和自动化测试稳定性
+
+---
+
 ## [2026-04-14] - 报告结构重构与后台任务修复
 
 ### 重构

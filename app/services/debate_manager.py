@@ -86,7 +86,7 @@ def run_debate_streaming(user_data_context: str, message_queue: queue.Queue):
         ]
         config_list_zhipu = [
             {
-                "model": "glm-4.7",
+                "model": "glm-4.7-flash",
                 "api_key": os.environ.get("ZHIPU_API_KEY"),
                 "base_url": "https://open.bigmodel.cn/api/paas/v4",
             }

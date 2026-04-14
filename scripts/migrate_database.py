@@ -1,8 +1,8 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
 数据库迁移脚本
-为现有数据库表添加新字段（特征向量、难度、区分度等）
-适配 PostgreSQL 数据库
+适配 PostgreSQL 数据库（questions 字段迁移 + chat 表结构迁移）
 """
 
 import json
@@ -24,7 +24,12 @@ def check_and_add_columns():
     cursor = conn.cursor()
 
     try:
-        # 获取 atmr_questions 表的列信息
+        # 获取所有表
+        cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
+        tables = [row[0] for row in cursor.fetchall()]
+        print(f"[OK] 现有表: {tables}")
+
+        # 1. 检查 atmr_questions 表的列
         cursor.execute("""
             SELECT column_name FROM information_schema.columns
             WHERE table_name = 'atmr_questions'
@@ -32,45 +37,77 @@ def check_and_add_columns():
         """)
         columns = [row[0] for row in cursor.fetchall()]
 
-        if not columns:
-            print("[ERROR] 表 atmr_questions 不存在，请先启动应用创建表")
-            return False
+        if columns:
+            print(f"[OK] atmr_questions 现有列: {columns}")
 
-        print(f"[OK] 现有列: {columns}")
+            # 需要添加的列
+            new_columns = [
+                ("feature_vector", "JSONB"),
+                ("feature_dim", "INTEGER"),
+                ("discrimination", "DOUBLE PRECISION"),
+                ("difficulty", "DOUBLE PRECISION")
+            ]
 
-        # 需要添加的列
-        new_columns = [
-            ("feature_vector", "JSONB"),
-            ("feature_dim", "INTEGER"),
-            ("discrimination", "DOUBLE PRECISION"),
-            ("difficulty", "DOUBLE PRECISION")
-        ]
+            added_count = 0
+            for col_name, col_type in new_columns:
+                if col_name not in columns:
+                    print(f"  [ADD] 添加列: {col_name} ({col_type})")
+                    try:
+                        cursor.execute(f"ALTER TABLE atmr_questions ADD COLUMN {col_name} {col_type}")
+                        added_count += 1
+                    except Exception as e:
+                        print(f"  [ERROR] 添加列 {col_name} 失败: {e}")
+                        conn.rollback()
 
-        added_count = 0
-        for col_name, col_type in new_columns:
-            if col_name not in columns:
-                print(f"  [ADD] 添加列: {col_name} ({col_type})")
-                try:
-                    cursor.execute(f"ALTER TABLE atmr_questions ADD COLUMN {col_name} {col_type}")
-                    added_count += 1
-                except Exception as e:
-                    print(f"  [ERROR] 添加列 {col_name} 失败: {e}")
-                    conn.rollback()
-
-        if added_count > 0:
-            conn.commit()
-            print(f"[OK] 成功添加 {added_count} 个新列")
+            if added_count > 0:
+                conn.commit()
+                print(f"[OK] 成功添加 {added_count} 个新列到 atmr_questions")
+            else:
+                print("[OK] atmr_questions 表结构已是最新")
         else:
-            print("[OK] 表结构已是最新，无需迁移")
+            print("[WARN] 表 atmr_questions 不存在，跳过")
 
-        # 验证列已添加
-        cursor.execute("""
-            SELECT column_name FROM information_schema.columns
-            WHERE table_name = 'atmr_questions'
-            ORDER BY ordinal_position
-        """)
-        updated_columns = [row[0] for row in cursor.fetchall()]
-        print(f"[COLUMNS] 更新后列: {updated_columns}")
+        # 2. 检查 chat_messages 表
+        if "chat_messages" in tables:
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'chat_messages'
+                ORDER BY ordinal_position
+            """)
+            chat_msg_cols = [row[0] for row in cursor.fetchall()]
+            print(f"[OK] chat_messages 现有列: {chat_msg_cols}")
+
+            # 添加 chat_session_id 列（如果缺失）
+            if "chat_session_id" not in chat_msg_cols:
+                print("  [ADD] 添加列: chat_session_id (INTEGER)")
+                cursor.execute("""
+                    ALTER TABLE chat_messages
+                    ADD COLUMN chat_session_id INTEGER REFERENCES chat_sessions(id)
+                """)
+                conn.commit()
+                print("[OK] 成功添加 chat_session_id 列")
+            else:
+                print("[OK] chat_messages 表结构已是最新")
+        else:
+            print("[WARN] 表 chat_messages 不存在，可能需要启动应用创建表")
+
+        # 3. 检查 chat_sessions 表
+        if "chat_sessions" not in tables:
+            print("  [ADD] 创建表: chat_sessions")
+            cursor.execute("""
+                CREATE TABLE chat_sessions (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    assessment_session_id INTEGER REFERENCES assessment_sessions(id),
+                    title VARCHAR(100) DEFAULT '新对话',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            conn.commit()
+            print("[OK] 成功创建 chat_sessions 表")
+        else:
+            print("[OK] chat_sessions 表已存在")
 
         return True
 

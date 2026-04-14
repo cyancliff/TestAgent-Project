@@ -35,6 +35,7 @@ pyyaml==6.0.2
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 bcrypt
+slowapi>=0.1.9
 
 # AI 对话（DeepSeek API）
 openai

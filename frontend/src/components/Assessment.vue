@@ -920,8 +920,9 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
   .question-nav-grid { grid-template-columns: repeat(5, 1fr); }
   .progress-bar { height: 8px; }
   .adaptive-badge, .sequential-badge, .module-badge { padding: 7px 16px; font-size: 14px; }
-  .option-btn { padding: 18px 22px; }
-  .option-text { font-size: 16px; }
+  .option-btn { padding: 15px 18px; gap: 14px; border-radius: 14px; }
+  .option-label { width: 44px; height: 44px; font-size: 18px; }
+  .option-text { font-size: 15px; line-height: 1.5; }
   .anomaly-container { margin-top: 24px; }
   .warning-box { padding: 20px 24px; font-size: 15px; }
   textarea { padding: 16px 20px; font-size: 15px; }
@@ -946,9 +947,9 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
   .question-nav-grid { grid-template-columns: repeat(5, 1fr); }
   .progress-bar { height: 8px; }
   .progress-text { font-size: 14px; }
-  .option-btn { padding: 14px 16px; gap: 12px; }
-  .option-label { width: 40px; height: 40px; font-size: 18px; }
-  .option-text { font-size: 14px; }
+  .option-btn { padding: 12px 14px; gap: 10px; border-radius: 12px; }
+  .option-label { width: 36px; height: 36px; font-size: 16px; }
+  .option-text { font-size: 13px; line-height: 1.45; }
   .anomaly-container { margin-top: 20px; }
   .warning-box { padding: 16px 20px; font-size: 14px; }
   textarea { padding: 14px 16px; font-size: 14px; min-height: 80px; }
