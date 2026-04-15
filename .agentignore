@@ -1,43 +1,77 @@
-# Python 垃圾文件
+# Claude Code 忽略文件
+
+# 首先包含 .gitignore 的所有规则
+# 以下是来自 .gitignore 的内容：
 __pycache__/
 *.py[cod]
 .venv/
 env/
 
-# Java 编译文件
 target/
 *.class
 
-# 编辑器配置文件
 .idea/
 .vscode/
 
-# 敏感信息（重点！）
-.env
-api_key.txt
-config.json
 
-# 毕设数据大文件
 *.ogg
 *.mp4
 /models/
 
-# 额外屏蔽Obsidian的文件
-.obsidian/
-Obsidian Files/
 
-# 数据目录（数据库不提交，题库JSON提交）
-data/*.db
+frontend/node_modules/
 
-# 前端依赖包
-node_modules/
-frontend/dist/
-frontend/.vite/
-
-# 本地数据库和生成文件
 *.db
 .claude/
 reports/
+
+# 额外为 Claude 添加的忽略规则
+# 大型二进制文件和文档
+*.pdf
+*.docx
+*.doc
+*.xlsx
+*.xls
+*.pptx
+*.ppt
+*.zip
+*.tar.gz
+*.rar
+
+
+# 临时文件
+~$*
+*.tmp
+*.temp
+
+# 前端构建输出
+frontend/dist/
+frontend/build/
+
+# 后端生成文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 日志文件
+*.log
+logs/
+
+# 环境配置文件
+.env.*
+*.env
+
+# 备份文件
+*.bak
+*.backup
+
+# IDE 特定文件
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
 
 # Multimodal personality dataset and generated artifacts
 multimodal_personality/data/cfi_v2/train/videos/
@@ -63,3 +97,4 @@ multimodal_personality/checkpoints/
 uploads/multimodal_personality/videos/
 uploads/multimodal_personality/tasks/
 uploads/multimodal_personality/artifacts/
+

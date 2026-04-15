@@ -63,7 +63,7 @@
     </div>
 
     <!-- 答题页 -->
-    <div v-else-if="!isFinished" class="question-card">
+    <div v-else-if="!isFinished && !isStageReviewing" class="question-card">
       <!-- 阶段头部信息 -->
       <div class="header">
         <div class="progress-info">
@@ -141,6 +141,7 @@
         </div>
         <button
           class="module-submit-btn"
+          :class="{ 'is-loading': isSubmittingStage }"
           :disabled="isSubmittingStage"
           @click="submitCurrentStage"
         >
@@ -504,6 +505,7 @@ const jumpToQuestion = async (index) => {
 
 // 提交当前阶段
 const submitCurrentStage = async () => {
+  if (isSubmittingStage.value) return // 防抖，防止短时间多次点击
   if (!canSubmitStage.value) return
   isSubmittingStage.value = true
   isStageReviewing.value = true
@@ -519,11 +521,11 @@ const submitCurrentStage = async () => {
     reviewingStage.value = data.current_stage
     reviewStep.value = 1
 
-    // 模拟评审进度（极短动画，辩论已在后台运行）
-    setTimeout(() => { reviewStep.value = 2 }, 300)
-    setTimeout(() => { reviewStep.value = 3 }, 600)
+    // 模拟评审进度（加长动画时间让体验更加拟真）
+    setTimeout(() => { reviewStep.value = 2 }, 1500)
+    setTimeout(() => { reviewStep.value = 3 }, 3500)
 
-    // 1.5 秒后自动跳转下一阶段（辩论已在后台异步执行）
+    // 5 秒后自动跳转下一阶段（辩论已在后台异步执行）
     setTimeout(async () => {
       isStageReviewing.value = false
 
@@ -539,7 +541,7 @@ const submitCurrentStage = async () => {
         stageQuestions.value = []
         await loadNextQuestionInStage()
       }
-    }, 1500)
+    }, 5000)
 
   } catch (error) {
     isStageReviewing.value = false

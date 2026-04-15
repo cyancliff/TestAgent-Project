@@ -1,0 +1,16 @@
+dataset_name: cfi_v2
+root_dir: multimodal_personality/data/cfi_v2
+phases:
+  train:
+    video_dir: multimodal_personality/data/cfi_v2/train/videos
+    annotation_path: multimodal_personality/data/cfi_v2/train/annotation.pkl
+    transcription_path: multimodal_personality/data/cfi_v2/train/transcription.pkl
+  val:
+    video_dir: multimodal_personality/data/cfi_v2/val/videos
+    annotation_path: multimodal_personality/data/cfi_v2/val/annotation.pkl
+    transcription_path: multimodal_personality/data/cfi_v2/val/transcription.pkl
+  test:
+    video_dir: multimodal_personality/data/cfi_v2/test/videos
+    annotation_path: multimodal_personality/data/cfi_v2/test/annotation.pkl
+    transcription_path: multimodal_personality/data/cfi_v2/test/transcription.pkl
+output_manifest_dir: multimodal_personality/data/cfi_v2/manifests

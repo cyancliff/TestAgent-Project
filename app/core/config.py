@@ -31,6 +31,12 @@ class Settings(BaseSettings):
         if origin.strip()
     ]
 
+    # 多模态人格分析目录配置
+    MULTIMODAL_ROOT_DIR: str = os.environ.get("MULTIMODAL_ROOT_DIR", "uploads/multimodal_personality")
+    MULTIMODAL_VIDEO_DIR: str = os.environ.get("MULTIMODAL_VIDEO_DIR", "uploads/multimodal_personality/videos")
+    MULTIMODAL_TASK_DIR: str = os.environ.get("MULTIMODAL_TASK_DIR", "uploads/multimodal_personality/tasks")
+    MULTIMODAL_ARTIFACT_DIR: str = os.environ.get("MULTIMODAL_ARTIFACT_DIR", "uploads/multimodal_personality/artifacts")
+
     def check_security(self):
         """启动前安全检查"""
         default_key = "atmr-test-agent-secret-key-change-in-production"
