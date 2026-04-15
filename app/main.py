@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api import assessment, auth, chat, rag
+from app.api import assessment, auth, chat, multimodal_personality, rag
 from app.core.config import settings
 from app.core.limiter import limiter
 
@@ -35,6 +35,11 @@ app.include_router(assessment.router, prefix="/api/v1/assessment", tags=["实时
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["用户认证"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["心理专家对话"])
 app.include_router(rag.router, prefix="/api/v1/rag", tags=["RAG 知识库"])
+app.include_router(
+    multimodal_personality.router,
+    prefix="/api/v1/multimodal-personality",
+    tags=["多模态人格分析"],
+)
 
 # 挂载静态文件（头像等上传文件）
 uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")

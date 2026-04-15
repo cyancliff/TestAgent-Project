@@ -1,0 +1,41 @@
+请把 CFI-V2 数据按下面方式放置：
+
+1. 训练集视频：
+   D:\PythonCode\TestAgent\multimodal_personality\data\cfi_v2\train\videos\
+
+2. 训练集标注：
+   D:\PythonCode\TestAgent\multimodal_personality\data\cfi_v2\train\annotation.pkl
+
+3. 训练集转写：
+   D:\PythonCode\TestAgent\multimodal_personality\data\cfi_v2\train\transcription.pkl
+
+4. 验证集视频：
+   D:\PythonCode\TestAgent\multimodal_personality\data\cfi_v2\val\videos\
+
+5. 验证集标注：
+   D:\PythonCode\TestAgent\multimodal_personality\data\cfi_v2\val\annotation.pkl
+
+6. 验证集转写：
+   D:\PythonCode\TestAgent\multimodal_personality\data\cfi_v2\val\transcription.pkl
+
+7. 测试集视频：
+   D:\PythonCode\TestAgent\multimodal_personality\data\cfi_v2\test\videos\
+
+8. 测试集标注：
+   D:\PythonCode\TestAgent\multimodal_personality\data\cfi_v2\test\annotation.pkl
+
+9. 测试集转写：
+   D:\PythonCode\TestAgent\multimodal_personality\data\cfi_v2\test\transcription.pkl
+
+说明：
+
+1. 你截图中的 Training 对应 train
+2. 你截图中的 Validation 对应 val
+3. 你截图中的 Test 对应 test
+4. videos 目录里直接放视频文件，不要再额外套一层 Training 或 Validation 子目录
+5. annotation.pkl 和 transcription.pkl 必须分别重命名成上面的固定文件名
+6. manifests 目录不需要你手动放内容，脚本会自动生成
+
+放好之后运行：
+
+python scripts\build_cfi_v2_manifest.py --config multimodal_personality\configs\cfi_v2.example.yaml --phase all

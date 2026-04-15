@@ -1,0 +1,86 @@
+{
+  "manifest": "",
+  "sample_count": 10,
+  "jobs": [
+    {
+      "video_name": "--Ymqszjv54.001.mp4",
+      "video_path": "multimodal_personality\\data\\cfi_v2\\train\\videos\\--Ymqszjv54.001.mp4",
+      "transcript": "I like Tabasco sauce. I like Louisiana Hot Sauce, Frank's Red Hot Sauce, Seven Guys Sauce, Dave's Insanity Sauce. These are from my garden. Now these are Cayenne peppers. They're togashi peppers.",
+      "artifact_manifest_path": "uploads\\multimodal_personality\\artifacts\\c4838c5f80934a2f9a1a9b76d5534a33\\manifest.json",
+      "frames_dir": "uploads\\multimodal_personality\\artifacts\\c4838c5f80934a2f9a1a9b76d5534a33\\frames",
+      "ready_for_clip": true
+    },
+    {
+      "video_name": "--Ymqszjv54.003.mp4",
+      "video_path": "multimodal_personality\\data\\cfi_v2\\train\\videos\\--Ymqszjv54.003.mp4",
+      "transcript": "Lot more things there. Then the menus are a lot different. There's the teriyaki stuff and the soy sauce and the strange wasabi flavor, so those are really cool.",
+      "artifact_manifest_path": "uploads\\multimodal_personality\\artifacts\\37f12a3f6c894ff4aacd98f74e984968\\manifest.json",
+      "frames_dir": "uploads\\multimodal_personality\\artifacts\\37f12a3f6c894ff4aacd98f74e984968\\frames",
+      "ready_for_clip": true
+    },
+    {
+      "video_name": "--Ymqszjv54.004.mp4",
+      "video_path": "multimodal_personality\\data\\cfi_v2\\train\\videos\\--Ymqszjv54.004.mp4",
+      "transcript": "There you go and red. See? [yelling 00:00:04]. Because I missed a vlog and I feel bad about that plus I really wanted to try these, I decided to ...",
+      "artifact_manifest_path": "uploads\\multimodal_personality\\artifacts\\7ebf01013e5841e4831cfda4a06faf63\\manifest.json",
+      "frames_dir": "uploads\\multimodal_personality\\artifacts\\7ebf01013e5841e4831cfda4a06faf63\\frames",
+      "ready_for_clip": true
+    },
+    {
+      "video_name": "--Ymqszjv54.005.mp4",
+      "video_path": "multimodal_personality\\data\\cfi_v2\\train\\videos\\--Ymqszjv54.005.mp4",
+      "transcript": "This doesn't have a name on it. This is from OH. What's your name? My name is Austin [inaudible 00:00:14].",
+      "artifact_manifest_path": "",
+      "frames_dir": "",
+      "ready_for_clip": false
+    },
+    {
+      "video_name": "-2qsCrkXdWs.001.mp4",
+      "video_path": "multimodal_personality\\data\\cfi_v2\\train\\videos\\-2qsCrkXdWs.001.mp4",
+      "transcript": "I'm thinking with how much time and energy I'm spending on doing my [inaudible 00:00:04] play, I'm probably going to end up really liking to do [inaudible 00:00:11], which is from Assassin's Creed, because I really ...",
+      "artifact_manifest_path": "",
+      "frames_dir": "",
+      "ready_for_clip": false
+    },
+    {
+      "video_name": "-55DRRMTppE.000.mp4",
+      "video_path": "multimodal_personality\\data\\cfi_v2\\train\\videos\\-55DRRMTppE.000.mp4",
+      "transcript": "... goes with is the Canon 650D. It's not a great camera, but I would say it's pretty good for beginners. I bought it two years ago or something, a little over two years. It was really handy and still ...",
+      "artifact_manifest_path": "",
+      "frames_dir": "",
+      "ready_for_clip": false
+    },
+    {
+      "video_name": "-55DRRMTppE.005.mp4",
+      "video_path": "multimodal_personality\\data\\cfi_v2\\train\\videos\\-55DRRMTppE.005.mp4",
+      "transcript": "I had just reached the end of, I think, episode one in the TV series so I was like there's no way I'm going to finish the series, and I just kind of got bored with whole description. I know that that's not [inaudible 00:00:14]",
+      "artifact_manifest_path": "",
+      "frames_dir": "",
+      "ready_for_clip": false
+    },
+    {
+      "video_name": "-5riMLK-PgU.001.mp4",
+      "video_path": "multimodal_personality\\data\\cfi_v2\\train\\videos\\-5riMLK-PgU.001.mp4",
+      "transcript": "A long day. I'm just going to go here and push rock out. Finish the day off strong. It's late, 11? Gosh, a quarter past 11. It's going to be a really late one, crazy long day. See you in the gym.",
+      "artifact_manifest_path": "",
+      "frames_dir": "",
+      "ready_for_clip": false
+    },
+    {
+      "video_name": "-6otZ7M-Mro.000.mp4",
+      "video_path": "multimodal_personality\\data\\cfi_v2\\train\\videos\\-6otZ7M-Mro.000.mp4",
+      "transcript": "-seeing it from such a close perspective that you can understand the techniques that I'm doing. My eye shape, I think, is a lot more realistic because I don't have a lot of eyelid space. I don't have a lot of crease space. It's great if you have all those things. I'm not knocking it.",
+      "artifact_manifest_path": "",
+      "frames_dir": "",
+      "ready_for_clip": false
+    },
+    {
+      "video_name": "-6otZ7M-Mro.001.mp4",
+      "video_path": "multimodal_personality\\data\\cfi_v2\\train\\videos\\-6otZ7M-Mro.001.mp4",
+      "transcript": "... later time and this lady was just so unpleasant to her make up artist. I mean so unpleasant that it as a horrifying experience. It took all of my power to just not look up and say, \"Look, don't get funny, lady\", but ...",
+      "artifact_manifest_path": "",
+      "frames_dir": "",
+      "ready_for_clip": false
+    }
+  ]
+}

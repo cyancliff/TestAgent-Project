@@ -309,14 +309,19 @@ onMounted(fetchReport)
 /* === 卡片通用 === */
 .report-card {
   background: var(--bg-card);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
   padding: 48px 56px;
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
-  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg), inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.8);
   margin-bottom: 32px;
-  transition: all var(--transition-normal);
+  transition: all var(--transition-slow);
 }
-.report-card:hover { box-shadow: var(--shadow-xl), 0 0 60px rgba(99, 102, 241, 0.05); }
+.report-card:hover { 
+  box-shadow: var(--shadow-xl), var(--shadow-glow); 
+  border-color: rgba(255, 255, 255, 1);
+}
 
 /* === 头部 === */
 .header-card {
@@ -370,23 +375,22 @@ onMounted(fetchReport)
 
 /* === Markdown 报告渲染 === */
 .report-body { padding-top: 12px; text-align: left; }
-.markdown-body { line-height: 2; font-size: 22px; color: var(--text-secondary); text-align: left; }
-.markdown-body :deep(h1) { font-size: 36px; font-weight: 800; color: var(--text-primary); margin: 40px 0 20px; padding-bottom: 16px; border-bottom: 3px solid var(--border); text-align: left; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.markdown-body :deep(h2) { font-size: 32px; font-weight: 700; color: var(--text-primary); margin: 36px 0 18px; text-align: left; }
-.markdown-body :deep(h3) { font-size: 28px; font-weight: 700; color: var(--primary); margin: 32px 0 16px; text-align: left; }
-.markdown-body :deep(h4) { font-size: 24px; font-weight: 600; color: var(--text-primary); margin: 28px 0 14px; text-align: left; }
-.markdown-body :deep(p) { margin: 0 0 20px; text-align: left; }
-.markdown-body :deep(li) { margin-bottom: 12px; font-size: 21px; }
+.markdown-body { line-height: 1.8; font-size: 16px; color: var(--text-secondary); text-align: left; }
+.markdown-body :deep(h1) { font-size: 2.25em; font-weight: 800; color: var(--text-primary); margin: 1.5em 0 0.5em; padding-bottom: 0.3em; border-bottom: 3px solid rgba(99, 102, 241, 0.15); text-align: left; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.markdown-body :deep(h2) { font-size: 1.8em; font-weight: 700; color: var(--text-primary); margin: 1.5em 0 0.5em; text-align: left; }
+.markdown-body :deep(h3) { font-size: 1.5em; font-weight: 700; color: var(--primary); margin: 1.25em 0 0.5em; text-align: left; }
+.markdown-body :deep(h4) { font-size: 1.25em; font-weight: 600; color: var(--text-primary); margin: 1em 0 0.5em; text-align: left; }
+.markdown-body :deep(p) { margin: 0 0 1em; text-align: left; font-size: 1em; }
 .markdown-body :deep(strong) { color: var(--text-primary); font-weight: 700; }
-.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 32px; margin: 0 0 20px; }
-.markdown-body :deep(li) { margin-bottom: 10px; }
+.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 1.5em; margin: 0 0 1em; }
+.markdown-body :deep(li) { margin-bottom: 0.5em; font-size: 1em; }
 .markdown-body :deep(li)::marker { color: var(--primary); font-weight: 700; }
 .markdown-body :deep(blockquote) {
-  border-left: 5px solid var(--primary); padding: 20px 28px; margin: 24px 0;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.04), rgba(99, 102, 241, 0.08)); border-radius: 0 var(--radius-lg) var(--radius-lg) 0; color: var(--text-secondary);
-  font-style: italic;
+  border-left: 4px solid var(--primary); padding: 1em 1.25em; margin: 1em 0;
+  background: rgba(99, 102, 241, 0.05); border-radius: 0 var(--radius-lg) var(--radius-lg) 0; color: var(--text-secondary);
+  font-style: italic; font-size: 1.05em;
 }
-.markdown-body :deep(hr) { border: none; height: 2px; background: linear-gradient(90deg, var(--border), var(--primary), var(--border)); margin: 32px 0; }
+.markdown-body :deep(hr) { border: none; height: 1px; background: rgba(99, 102, 241, 0.2); margin: 2em 0; }
 
 /* === 分维度报告 === */
 .dimension-report-body {
@@ -511,6 +515,10 @@ onMounted(fetchReport)
 .slide-enter-to, .slide-leave-from { opacity: 1; max-height: 2000px; }
 
 /* === 响应式 === */
+@media (min-width: 1200px) {
+  .markdown-body { font-size: 18px; } /* 大屏基础稍微大一些 */
+}
+
 @media (max-width: 768px) {
   .report-container { padding: 32px 16px 60px; }
   .report-card { padding: 32px 24px; }
@@ -520,24 +528,18 @@ onMounted(fetchReport)
   .radar-chart-wrapper { flex: 0 0 auto; max-width: 320px; margin: 0 auto; }
   .dim-name { font-size: 18px; }
   .dim-pct { font-size: 20px; }
-  .markdown-body { font-size: 18px; }
-  .markdown-body :deep(h1) { font-size: 28px; }
-  .markdown-body :deep(h2) { font-size: 24px; }
-  .markdown-body :deep(h3) { font-size: 22px; }
+  .markdown-body { font-size: 15px; } /* 通过调整基础 font-size 自动控制里面的em字体大小 */
 }
 
 @media (max-width: 480px) {
   .report-container { padding: 24px 12px 48px; }
   .report-card { padding: 24px 20px; }
   .header-card { padding: 32px 20px; }
-  .report-title { font-size: 28px; }
-  .section-title { font-size: 24px; }
+  .report-title { font-size: 26px; }
+  .section-title { font-size: 22px; }
   .radar-chart-wrapper { max-width: 280px; }
   .dim-name { font-size: 16px; }
   .dim-pct { font-size: 18px; }
-  .markdown-body { font-size: 16px; }
-  .markdown-body :deep(h1) { font-size: 24px; }
-  .markdown-body :deep(h2) { font-size: 22px; }
-  .markdown-body :deep(h3) { font-size: 20px; }
+  .markdown-body { font-size: 14px; } /* 进一步缩小基础字体 */
 }
 </style>
