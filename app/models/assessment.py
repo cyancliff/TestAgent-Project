@@ -1,11 +1,13 @@
 """测评相关模型：题目、会话、作答记录、辩论结果"""
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+
+JSON_TYPE = JSON().with_variant(JSONB, "postgresql")
 
 
 class Question(Base):
@@ -15,8 +17,8 @@ class Question(Base):
     exam_no = Column(String(50), unique=True, index=True, comment="题目编号")
     dimension_id = Column(String(10), index=True, comment="维度ID")
     content = Column(Text, comment="题干内容")
-    options = Column(JSONB, comment="选项列表")
-    scores = Column(JSONB, comment="选项对应的分值")
+    options = Column(JSON_TYPE, comment="选项列表")
+    scores = Column(JSON_TYPE, comment="选项对应的分值")
 
     trait_label = Column(String(100), nullable=True, comment="特质标签")
     ai_analysis_prompt = Column(Text, nullable=True, comment="官方解析")
@@ -25,7 +27,7 @@ class Question(Base):
     avg_time = Column(Numeric(5, 2), default=8.0, comment="预估平均作答时间(秒)")
 
     # 题目特征向量 (用于智能选题)
-    feature_vector = Column(JSONB, nullable=True, comment="题目特征向量")
+    feature_vector = Column(JSON_TYPE, nullable=True, comment="题目特征向量")
     feature_dim = Column(Integer, nullable=True, comment="特征向量维度")
     discrimination = Column(Numeric(4, 3), nullable=True, comment="题目区分度(0-1)")
     difficulty = Column(Numeric(4, 3), nullable=True, comment="题目难度(0-1)")
@@ -48,7 +50,7 @@ class AssessmentSession(Base):
     finished_at = Column(DateTime(timezone=True), nullable=True, comment="完成时间")
     status = Column(String(20), default="active", comment="状态: active/completed")
     current_stage = Column(String(20), default="intro", comment="当前阶段: intro/A/T/M/R")
-    submitted_stages = Column(JSONB, default=list, comment="已提交的阶段列表")
+    submitted_stages = Column(JSON_TYPE, default=list, comment="已提交的阶段列表")
     report_content = Column(Text, nullable=True, comment="报告内容")
     report_file_path = Column(String(255), nullable=True, comment="报告文件路径")
 

@@ -1,14 +1,16 @@
 # app/api/chat.py
 
+import json
 import os
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.security import get_current_user
 from app.models.assessment import AnswerRecord, AssessmentSession
 from app.models.chat import ChatSession, ChatMessage as ChatMessageModel
@@ -71,9 +73,17 @@ def get_chat_messages(db: Session, chat_session_id: int, include_system: bool = 
     return query.all()
 
 
-def append_chat_message(db: Session, chat_session_id: int, user_id: int, role: str, content: str) -> ChatMessageModel:
+def append_chat_message(
+    db: Session,
+    chat_session_id: int,
+    user_id: int,
+    role: str,
+    content: str,
+    legacy_session_id: int | None = None,
+) -> ChatMessageModel:
     message = ChatMessageModel(
         chat_session_id=chat_session_id,
+        session_id=legacy_session_id,
         user_id=user_id,
         role=role,
         content=content,
@@ -162,7 +172,14 @@ def init_chat_with_context(db: Session, chat_session: ChatSession, user_id: int)
         assessment_context = get_assessment_context(chat_session.assessment_session_id, db)
 
     system_prompt = build_system_prompt(assessment_context)
-    append_chat_message(db, chat_session.id, user_id, "system", system_prompt)
+    append_chat_message(
+        db,
+        chat_session.id,
+        user_id,
+        "system",
+        system_prompt,
+        legacy_session_id=chat_session.assessment_session_id,
+    )
 
     # 如果没有任何可见消息，添加欢迎消息
     visible = get_chat_messages(db, chat_session.id, include_system=False)
@@ -171,7 +188,14 @@ def init_chat_with_context(db: Session, chat_session: ChatSession, user_id: int)
             welcome = "你好！我是你的AI心理顾问。我已经详细了解了你的测评结果，很高兴能和你交流。你可以问我关于测评结果的任何问题，或者聊聊你当前的心理状态。"
         else:
             welcome = "你好！我是你的AI心理顾问。目前没有关联测评结果，我可以基于心理学专业知识为你提供通用的心理咨询。你也可以在上方选择关联一份测评结果，获得更个性化的分析。"
-        append_chat_message(db, chat_session.id, user_id, "assistant", welcome)
+        append_chat_message(
+            db,
+            chat_session.id,
+            user_id,
+            "assistant",
+            welcome,
+            legacy_session_id=chat_session.assessment_session_id,
+        )
 
 
 async def generate_reply(messages: list[dict]) -> str:
@@ -201,8 +225,99 @@ async def generate_reply(messages: list[dict]) -> str:
         return f"【异常】调用 API 失败: {str(e)}"
 
 
-# ==================== 接口 ====================
+async def stream_reply_chunks(messages: list[dict]):
+    """调用 LLM API 并按增量片段流式返回回复内容。"""
+    if not LLM_API_KEY:
+        raise RuntimeError("未配置 API 密钥")
 
+    timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async with client.stream(
+            "POST",
+            f"{LLM_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {LLM_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": LLM_MODEL,
+                "messages": messages,
+                "temperature": 1,
+                "max_tokens": 2000,
+                "stream": True,
+            },
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+
+                payload = json.loads(data)
+                choices = payload.get("choices") or []
+                if not choices:
+                    continue
+
+                delta = choices[0].get("delta") or {}
+                content = delta.get("content")
+                if content:
+                    yield content
+
+
+async def prepare_chat_messages(
+    db: Session,
+    chat_session: ChatSession,
+    user_id: int,
+    message_text: str,
+) -> list[dict]:
+    """准备一次聊天调用所需上下文，并持久化用户消息。"""
+    all_msgs = get_chat_messages(db, chat_session.id, include_system=True)
+    if not all_msgs:
+        init_chat_with_context(db, chat_session, user_id)
+
+    rag_context = ""
+    try:
+        rag_context = await retrieve_knowledge(message_text, max_sections=3, max_chars=2000)
+    except Exception as e:
+        print(f"[Chat] RAG 检索失败: {e}")
+
+    append_chat_message(
+        db,
+        chat_session.id,
+        user_id,
+        "user",
+        message_text,
+        legacy_session_id=chat_session.assessment_session_id,
+    )
+
+    from datetime import datetime
+
+    chat_session.updated_at = datetime.now()
+    if chat_session.title in ("新对话", f"测评 #{chat_session.assessment_session_id} 咨询"):
+        chat_session.title = message_text[:20] + ("..." if len(message_text) > 20 else "")
+    db.commit()
+
+    persisted = serialize_messages(get_chat_messages(db, chat_session.id, include_system=True), include_system=True)
+    llm_messages = list(persisted)
+    if rag_context:
+        llm_messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "【ATMR 知识库参考资料】以下是与用户问题相关的 ATMR 心理学专业知识，"
+                    f"请结合这些资料回答用户问题，并在适当时引用理论依据：\n\n{rag_context}"
+                ),
+            }
+        )
+    return llm_messages
+
+
+def sse_event(event: str, data: dict) -> str:
+    """构造单条 SSE 消息。"""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+# ==================== API ====================
 
 @router.get("/sessions")
 async def list_chat_sessions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -387,6 +502,65 @@ async def get_messages(
     }
 
 
+@router.post("/sessions/{chat_session_id}/stream")
+async def stream_message(
+    chat_session_id: int,
+    payload: ChatSendRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """流式发送消息并返回增量回复。"""
+    user_id = current_user.id
+
+    async def event_generator():
+        db = SessionLocal()
+        reply_parts: list[str] = []
+        try:
+            chat_session = ensure_chat_session_owner(db, chat_session_id, user_id)
+            llm_messages = await prepare_chat_messages(db, chat_session, user_id, payload.message)
+
+            yield sse_event("start", {"chat_session_id": chat_session_id})
+            async for chunk in stream_reply_chunks(llm_messages):
+                reply_parts.append(chunk)
+                yield sse_event("delta", {"content": chunk})
+
+            reply = "".join(reply_parts).strip()
+            if not reply:
+                reply = "抱歉，这次我没有生成有效回复。请再试一次。"
+
+            append_chat_message(
+                db,
+                chat_session_id,
+                user_id,
+                "assistant",
+                reply,
+                legacy_session_id=chat_session.assessment_session_id,
+            )
+            yield sse_event(
+                "done",
+                {
+                    "reply": reply,
+                    "messages": serialize_messages(get_chat_messages(db, chat_session_id, include_system=False)),
+                },
+            )
+            yield ": stream-end\n\n"
+        except HTTPException as e:
+            yield sse_event("error", {"message": e.detail})
+        except httpx.HTTPStatusError as e:
+            print(f"[Chat] LLM API 错误: {e.response.status_code}")
+            yield sse_event("error", {"message": f"LLM API 错误: {e.response.status_code}"})
+        except Exception as e:
+            print(f"[Chat] 流式回复失败: {e}")
+            yield sse_event("error", {"message": f"流式回复失败: {str(e)}"})
+        finally:
+            db.close()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/sessions/{chat_session_id}/send")
 async def send_message(
     chat_session_id: int,
@@ -394,52 +568,24 @@ async def send_message(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """发送消息并获取回复"""
+    """发送消息并获取回复。"""
     chat_session = ensure_chat_session_owner(db, chat_session_id, current_user.id)
-
-    # 确保已初始化
-    all_msgs = get_chat_messages(db, chat_session_id, include_system=True)
-    if not all_msgs:
-        init_chat_with_context(db, chat_session, current_user.id)
-
-    # RAG 检索增强
-    rag_context = ""
-    try:
-        rag_context = await retrieve_knowledge(payload.message, max_sections=3, max_chars=2000)
-    except Exception as e:
-        print(f"[Chat] RAG 检索失败: {e}")
-
-    # 保存用户消息
-    append_chat_message(db, chat_session_id, current_user.id, "user", payload.message)
-
-    # 更新会话时间和标题
-    from datetime import datetime
-
-    chat_session.updated_at = datetime.now()
-    # 如果标题还是默认的，用第一条用户消息更新
-    if chat_session.title in ("新对话", f"测评 #{chat_session.assessment_session_id} 咨询"):
-        chat_session.title = payload.message[:20] + ("..." if len(payload.message) > 20 else "")
-    db.commit()
-
-    # 构建 LLM 消息
-    persisted = serialize_messages(get_chat_messages(db, chat_session_id, include_system=True), include_system=True)
-    llm_messages = list(persisted)
-    if rag_context:
-        llm_messages.append(
-            {
-                "role": "system",
-                "content": f"【ATMR 知识库参考资料】以下是与用户问题相关的 ATMR 心理学专业知识，请结合这些资料回答用户问题，并在适当时引用理论依据：\n\n{rag_context}",
-            }
-        )
+    llm_messages = await prepare_chat_messages(db, chat_session, current_user.id, payload.message)
 
     reply = await generate_reply(llm_messages)
-    append_chat_message(db, chat_session_id, current_user.id, "assistant", reply)
+    append_chat_message(
+        db,
+        chat_session_id,
+        current_user.id,
+        "assistant",
+        reply,
+        legacy_session_id=chat_session.assessment_session_id,
+    )
 
     return {
         "reply": reply,
         "messages": serialize_messages(get_chat_messages(db, chat_session_id, include_system=False)),
     }
-
 
 @router.post("/sessions/{chat_session_id}/clear")
 async def clear_chat(

@@ -11,7 +11,7 @@
     <nav v-if="showNav" class="navbar">
       <div class="nav-brand">
         <span class="logo">✨</span>
-        <span class="brand-text">ATMR 心理测评</span>
+        <span class="brand-text">ATMR</span>
       </div>
       <div class="nav-links">
         <router-link to="/history" :class="['nav-link', { active: $route.path === '/history' }]">
@@ -23,26 +23,46 @@
           开始测评
         </router-link>
       </div>
-      <div class="nav-user">
-        <div class="avatar-wrapper" @click="triggerAvatarUpload" title="点击更换头像">
-          <img v-if="avatarUrl" :src="avatarUrl" class="nav-avatar" alt="头像" />
-          <span v-else class="nav-avatar-fallback">{{ usernameInitial }}</span>
-          <div class="avatar-overlay">
-            <span>换</span>
+      <div class="nav-user" ref="userMenuRef">
+        <button class="user-menu-trigger" type="button" @click="toggleUserMenu" :aria-expanded="showUserMenu">
+          <div class="avatar-wrapper" title="用户菜单">
+            <img v-if="avatarUrl" :src="avatarUrl" class="nav-avatar" alt="头像" @error="handleAvatarLoadError" />
+            <span v-else class="nav-avatar-fallback">{{ usernameInitial }}</span>
           </div>
-          <input
-            ref="avatarInput"
-            type="file"
-            accept="image/jpeg,image/png,image/gif,image/webp"
-            style="display:none"
-            @change="handleAvatarUpload"
-          />
-        </div>
-        <span class="username">{{ username }}</span>
-        <button class="logout-btn" @click="logout">
-          <span class="nav-icon">🚪</span>
-          退出
+          <span class="user-menu-caret">{{ showUserMenu ? '▲' : '▼' }}</span>
         </button>
+
+        <transition name="menu-fade">
+          <div v-if="showUserMenu" class="user-menu-panel">
+            <div class="user-menu-card">
+              <div class="user-menu-avatar-shell" @click="triggerAvatarUpload">
+                <img v-if="avatarUrl" :src="avatarUrl" class="user-menu-avatar" alt="头像" @error="handleAvatarLoadError" />
+                <span v-else class="user-menu-avatar user-menu-avatar-fallback">{{ usernameInitial }}</span>
+              </div>
+              <div class="user-menu-name">{{ username }}</div>
+              <div class="user-menu-subtitle">{{ userSubtitle }}</div>
+            </div>
+
+            <div class="user-menu-list">
+              <button class="user-menu-item" type="button" @click="triggerAvatarUpload">
+                <span class="user-menu-icon">📷</span>
+                <span>更换头像</span>
+              </button>
+              <button class="user-menu-item user-menu-item-danger" type="button" @click="logout">
+                <span class="user-menu-icon">🚪</span>
+                <span>退出</span>
+              </button>
+            </div>
+
+            <input
+              ref="avatarInput"
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              style="display:none"
+              @change="handleAvatarUpload"
+            />
+          </div>
+        </transition>
       </div>
     </nav>
 
@@ -58,7 +78,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from './api'
 
@@ -66,12 +86,24 @@ const route = useRoute()
 const router = useRouter()
 
 const showNav = computed(() => route.path !== '/login')
-const username = computed(() => localStorage.getItem('username') || '用户')
+const username = ref(localStorage.getItem('username') || '用户')
 const avatarUrl = ref(localStorage.getItem('avatarUrl') || '')
 const usernameInitial = computed(() => (username.value || '?')[0].toUpperCase())
+const userSubtitle = computed(() => `@${username.value || 'user'}`)
 const avatarInput = ref(null)
+const showUserMenu = ref(false)
+const userMenuRef = ref(null)
+
+const closeUserMenu = () => {
+  showUserMenu.value = false
+}
+
+const toggleUserMenu = () => {
+  showUserMenu.value = !showUserMenu.value
+}
 
 const triggerAvatarUpload = () => {
+  closeUserMenu()
   avatarInput.value?.click()
 }
 
@@ -97,12 +129,55 @@ const handleAvatarUpload = async (e) => {
   e.target.value = ''
 }
 
+const handleAvatarLoadError = () => {
+  avatarUrl.value = ''
+  localStorage.removeItem('avatarUrl')
+}
+
+const syncCurrentUser = async () => {
+  const token = localStorage.getItem('token')
+  if (!token) return
+  try {
+    const res = await api.get('/auth/me')
+    if (res.data?.username) {
+      username.value = res.data.username
+      localStorage.setItem('username', res.data.username)
+    }
+    if (res.data?.avatar_url) {
+      avatarUrl.value = res.data.avatar_url
+      localStorage.setItem('avatarUrl', res.data.avatar_url)
+    } else {
+      handleAvatarLoadError()
+    }
+  } catch (err) {
+    console.error('同步用户信息失败:', err)
+  }
+}
+
 const logout = () => {
+  closeUserMenu()
   localStorage.removeItem('userId')
   localStorage.removeItem('username')
   localStorage.removeItem('avatarUrl')
+  username.value = '用户'
+  avatarUrl.value = ''
   router.push('/login')
 }
+
+const handleClickOutside = (event) => {
+  if (!userMenuRef.value?.contains(event.target)) {
+    closeUserMenu()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+  syncCurrentUser()
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
 </script>
 
 <style>
@@ -170,6 +245,7 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
 /* ========== 背景动态流光动画 ========== */
@@ -237,6 +313,7 @@ body {
 .app-wrapper {
   position: relative;
   min-height: 100vh;
+  overflow-x: clip;
 }
 
 /* ========== 导航栏 ========== */
@@ -264,6 +341,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .logo {
@@ -284,18 +362,23 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
   letter-spacing: -0.5px;
+  min-width: 0;
 }
 
 .nav-links {
   display: flex;
+  align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .nav-link {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
-  padding: 14px 28px;
+  height: 48px;
+  padding: 0 28px;
   border-radius: var(--radius-lg);
   color: var(--text-secondary);
   text-decoration: none;
@@ -332,7 +415,10 @@ body {
 .nav-user {
   display: flex;
   align-items: center;
-  gap: 16px;
+  position: relative;
+  justify-content: flex-end;
+  height: 48px;
+  flex-shrink: 0;
 }
 
 .avatar-wrapper {
@@ -368,52 +454,159 @@ body {
   border: 2px solid transparent;
 }
 
-.avatar-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  border-radius: 50%;
-  display: flex;
+.user-menu-trigger {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.2s;
-  color: white;
-  font-size: 13px;
-  font-weight: 600;
+  gap: 10px;
+  height: 48px;
+  padding: 0 12px 0 6px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
-.avatar-wrapper:hover .avatar-overlay {
-  opacity: 1;
+.user-menu-trigger:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
 }
 
 .avatar-wrapper:hover .nav-avatar {
   border-color: var(--primary);
 }
 
-.username {
+.user-menu-caret {
+  font-size: 11px;
   color: var(--text-secondary);
-  font-size: 17px;
+  line-height: 1;
 }
 
-.logout-btn {
+.user-menu-panel {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  width: min(248px, calc(100vw - 24px));
+  max-height: calc(100dvh - var(--nav-height) - 24px);
+  padding: 12px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text-primary);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  overflow-y: auto;
+}
+
+.user-menu-card {
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.07), rgba(255, 255, 255, 0.95));
+  border: 1px solid rgba(99, 102, 241, 0.08);
+  border-radius: 18px;
+  padding: 22px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.user-menu-avatar-shell {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 18px;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text-secondary);
-  font-size: 16px;
+  justify-content: center;
   cursor: pointer;
-  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(99, 102, 241, 0.12);
+  transition: transform var(--transition-normal);
 }
 
-.logout-btn:hover {
-  border-color: var(--error);
+.user-menu-avatar-shell:hover {
+  transform: scale(1.03);
+}
+
+.user-menu-avatar {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 2px solid rgba(99, 102, 241, 0.14);
+}
+
+.user-menu-avatar-fallback {
+  background: var(--gradient-primary);
+  color: white;
+  font-size: 28px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-menu-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.user-menu-subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.user-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.user-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 10px;
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  text-align: left;
+  transition: background var(--transition-normal), transform var(--transition-normal);
+}
+
+.user-menu-item:hover {
+  background: rgba(99, 102, 241, 0.08);
+  transform: translateX(2px);
+}
+
+.user-menu-item-danger {
   color: var(--error);
-  background: rgba(239, 68, 68, 0.1);
+}
+
+.user-menu-icon {
+  width: 20px;
+  text-align: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.menu-fade-enter-active,
+.menu-fade-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.menu-fade-enter-from,
+.menu-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 
 /* ========== 主内容区 ========== */
@@ -423,6 +616,7 @@ body {
   max-width: 2400px;
   margin: 0 auto;
   padding: 0 64px;
+  min-width: 0;
 }
 
 .main-content.with-nav {
@@ -532,6 +726,10 @@ body {
   gap: 28px;
   align-items: start;
   width: 100%;
+}
+
+.page-layout > * {
+  min-width: 0;
 }
 
 .page-layout--no-sidebar {
@@ -764,26 +962,27 @@ body {
 
 @media (max-width: 768px) {
   .navbar {
-    min-height: 60px;
-    --nav-height: calc(60px + var(--safe-area-inset-top));
+    min-height: 68px;
+    --nav-height: calc(68px + var(--safe-area-inset-top));
     padding: var(--safe-area-inset-top) 16px 0 16px;
   }
 
   .logo {
-    font-size: 26px;
+    font-size: 28px;
   }
 
   .brand-text {
-    font-size: 18px;
+    font-size: 24px;
   }
 
   .nav-link {
-    padding: 8px 14px;
-    font-size: 15px;
+    height: 44px;
+    padding: 0 16px;
+    font-size: 17px;
   }
 
   .nav-icon {
-    font-size: 16px;
+    font-size: 18px;
   }
 
   .main-content {
@@ -804,11 +1003,14 @@ body {
 
 @media (max-width: 480px) {
   .navbar {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    min-height: 72px;
     height: auto;
-    --nav-height: calc(100px + var(--safe-area-inset-top));
-    padding: calc(12px + var(--safe-area-inset-top)) 12px 12px 12px;
-    gap: 12px;
+    --nav-height: calc(72px + var(--safe-area-inset-top));
+    padding: calc(12px + var(--safe-area-inset-top)) 10px 12px;
+    gap: 6px;
   }
 
   .nav-brand,
@@ -818,7 +1020,130 @@ body {
   }
 
   .logo {
+    font-size: 20px;
+  }
+
+  .brand-text {
     font-size: 24px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .nav-brand {
+    grid-column: 1;
+    justify-self: start;
+    min-width: 0;
+    max-width: 100%;
+    gap: 4px;
+  }
+
+  .nav-links {
+    grid-column: 2;
+    justify-self: center;
+    width: max-content;
+    max-width: 100%;
+    flex: 0 1 auto;
+    justify-content: center;
+    flex-wrap: nowrap;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .nav-link {
+    flex: 0 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    height: 40px;
+    padding: 0 10px;
+    font-size: 14px;
+    gap: 4px;
+  }
+
+  .nav-icon {
+    font-size: 14px;
+  }
+
+  .nav-user {
+    grid-column: 3;
+    justify-self: end;
+    width: auto;
+    height: 40px;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+  }
+
+  .user-menu-trigger {
+    height: 40px;
+    padding: 0 8px 0 4px;
+  }
+
+  .avatar-wrapper {
+    width: 32px;
+    height: 32px;
+  }
+
+  .nav-avatar-fallback {
+    font-size: 14px;
+  }
+
+  .user-menu-caret {
+    font-size: 13px;
+  }
+
+  .user-menu-panel {
+    position: fixed;
+    top: calc(var(--nav-height) + 8px);
+    right: 12px;
+    left: auto;
+    width: min(220px, calc(100vw - 24px));
+    border-radius: 18px;
+    padding: 12px;
+  }
+
+  .user-menu-card {
+    padding: 18px 14px 14px;
+  }
+
+  .user-menu-avatar-shell {
+    width: 64px;
+    height: 64px;
+  }
+
+  .user-menu-avatar {
+    width: 52px;
+    height: 52px;
+  }
+
+  .user-menu-name {
+    font-size: 16px;
+  }
+
+  .user-menu-subtitle {
+    font-size: 12px;
+  }
+
+  .user-menu-item {
+    padding: 11px 9px;
+    font-size: 14px;
+  }
+
+  .main-content.with-nav {
+    padding-top: 18px;
+  }
+}
+
+@media (max-width: 360px) {
+  .navbar {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    padding: calc(12px + var(--safe-area-inset-top)) 8px 12px;
+    gap: 4px;
+  }
+
+  .logo {
+    font-size: 18px;
   }
 
   .brand-text {
@@ -826,45 +1151,16 @@ body {
   }
 
   .nav-links {
-    width: 100%;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 8px;
+    gap: 2px;
   }
 
   .nav-link {
-    white-space: nowrap;
-    overflow: visible;
-    max-width: 100%;
-    padding: 8px 12px;
+    padding: 0 8px;
     font-size: 14px;
   }
 
   .nav-icon {
-    font-size: 16px;
-  }
-
-  .nav-user {
-    width: 100%;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .username {
-    white-space: nowrap;
-    overflow: visible;
-    max-width: 100%;
-    font-size: 14px;
-  }
-
-  .logout-btn {
-    padding: 8px 12px;
-    font-size: 14px;
-  }
-
-  .main-content.with-nav {
-    padding-top: 20px;
+    display: none;
   }
 }
 </style>

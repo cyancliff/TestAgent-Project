@@ -492,7 +492,10 @@ onUnmounted(() => {
 .dim-stat-top {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .dim-level-dot {
@@ -681,6 +684,13 @@ onUnmounted(() => {
     gap: 14px;
   }
 
+  .stats-row-bottom {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+
   .stat-divider {
     display: none;
   }
@@ -689,12 +699,16 @@ onUnmounted(() => {
     width: 50%;
   }
 
-  .stats-row-bottom .stat-item {
-    width: 25%;
-  }
-
   .stat-value {
     font-size: 18px;
+  }
+
+  .stats-row-bottom .stat-value {
+    font-size: 17px;
+  }
+
+  .stats-row-bottom .stat-label {
+    font-size: 12px;
   }
 
   .card-footer {
@@ -766,8 +780,20 @@ onUnmounted(() => {
     gap: 10px;
   }
 
+  .stats-row-bottom {
+    gap: 6px;
+  }
+
   .stat-value {
     font-size: 16px;
+  }
+
+  .stats-row-bottom .stat-value {
+    font-size: 15px;
+  }
+
+  .dim-stat-top {
+    gap: 4px;
   }
 
   .card-footer {

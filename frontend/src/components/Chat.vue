@@ -1,7 +1,7 @@
 <template>
-  <div class="page-layout">
+  <div :class="['page-layout', 'chat-page-layout', { 'chat-page-layout--sidebar-open': mobileSidebarOpen }]">
     <!-- 左侧：咨询会话列表 -->
-    <aside class="page-sidebar">
+    <aside :class="['page-sidebar', 'chat-sidebar', { 'chat-sidebar--open': mobileSidebarOpen }]">
       <div class="sidebar-header">
         <h3>咨询会话</h3>
         <p>{{ chatSessions.length }} 个会话</p>
@@ -26,7 +26,20 @@
     </aside>
 
     <!-- 右侧：聊天主区域 -->
+    <button
+      v-if="mobileSidebarOpen"
+      class="chat-sidebar-backdrop"
+      type="button"
+      aria-label="close session list"
+      @click="closeMobileSidebar"
+    ></button>
+
     <div class="chat-main">
+      <div class="chat-mobile-toolbar">
+        <button class="btn-ghost chat-mobile-toggle" type="button" @click="toggleMobileSidebar">
+          {{ mobileSidebarOpen ? '收起会话' : '会话列表' }}
+        </button>
+      </div>
       <!-- 未选择会话 -->
       <div v-if="!activeChatId" class="chat-empty-state">
         <div class="empty-icon">💬</div>
@@ -79,7 +92,7 @@
             >
               <div class="chat-bubble-avatar">
                 <template v-if="msg.role === 'user'">
-                  <img v-if="userAvatarUrl" :src="userAvatarUrl" class="bubble-avatar-img" alt="" />
+                  <img v-if="userAvatarUrl" :src="userAvatarUrl" class="bubble-avatar-img" alt="" @error="handleAvatarError" />
                   <span v-else>{{ usernameInitial }}</span>
                 </template>
                 <template v-else>🧑‍⚕️</template>
@@ -89,7 +102,7 @@
               </div>
             </div>
 
-            <div v-if="sending" class="chat-bubble assistant typing">
+            <div v-if="sending && (!messages.length || messages[messages.length - 1].role !== 'assistant')" class="chat-bubble assistant typing">
               <div class="chat-bubble-avatar">🧑‍⚕️</div>
               <div class="chat-bubble-body">
                 <div class="typing-dots"><span></span><span></span><span></span></div>
@@ -122,12 +135,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
 import { marked } from 'marked'
-
-const props = defineProps({ chatId: { type: [String, Number], default: null } })
 
 const userAvatarUrl = ref(localStorage.getItem('avatarUrl') || '')
 const usernameInitial = computed(() => {
@@ -147,8 +158,12 @@ const loadingMessages = ref(false)
 const sending = ref(false)
 const messagesRef = ref(null)
 const inputRef = ref(null)
+const mobileSidebarOpen = ref(false)
+let previousBodyOverflow = ''
+let previousHtmlOverflow = ''
 
-// --- 会话列表 ---
+let activeStreamController = null
+
 const fetchSessions = async () => {
   try {
     const res = await api.get('/chat/sessions')
@@ -175,15 +190,51 @@ const createNewSession = async (assessmentSessionId = null) => {
     }
     const res = await api.post('/chat/sessions', payload)
     await fetchSessions()
+    mobileSidebarOpen.value = false
     router.push(`/chat/${res.data.id}`)
   } catch (err) {
     console.error('创建会话失败:', err)
-    alert('创建会话失败')
+    const detail = err.response?.data?.detail || err.message || '未知错误'
+
+    if (assessmentSessionId && typeof assessmentSessionId === 'number') {
+      try {
+        const fallback = await api.post('/chat/sessions', {})
+        await fetchSessions()
+        router.push(`/chat/${fallback.data.id}`)
+        alert(`关联测评失败，已为你创建普通咨询会话：${detail}`)
+        return
+      } catch (fallbackErr) {
+        console.error('普通咨询会话创建也失败:', fallbackErr)
+      }
+    }
+
+    alert(`创建会话失败：${detail}`)
   }
 }
 
 const switchSession = (id) => {
+  mobileSidebarOpen.value = false
   router.push(`/chat/${id}`)
+}
+
+const toggleMobileSidebar = () => {
+  mobileSidebarOpen.value = !mobileSidebarOpen.value
+}
+
+const closeMobileSidebar = () => {
+  mobileSidebarOpen.value = false
+}
+
+const lockPageScroll = () => {
+  previousBodyOverflow = document.body.style.overflow
+  previousHtmlOverflow = document.documentElement.style.overflow
+  document.body.style.overflow = 'hidden'
+  document.documentElement.style.overflow = 'hidden'
+}
+
+const unlockPageScroll = () => {
+  document.body.style.overflow = previousBodyOverflow
+  document.documentElement.style.overflow = previousHtmlOverflow
 }
 
 const deleteCurrentSession = async () => {
@@ -200,7 +251,6 @@ const deleteCurrentSession = async () => {
   }
 }
 
-// --- 消息 ---
 const loadMessages = async (chatId) => {
   if (!chatId) return
   loadingMessages.value = true
@@ -216,27 +266,186 @@ const loadMessages = async (chatId) => {
   }
 }
 
+const scrollMessagesToBottom = () => {
+  nextTick(() => {
+    if (messagesRef.value) {
+      messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+    }
+  })
+}
+
+const cancelActiveStream = () => {
+  if (activeStreamController) {
+    activeStreamController.abort()
+    activeStreamController = null
+  }
+}
+
+const buildApiUrl = (path) => {
+  const basePath = (api.defaults.baseURL || '/api/v1').replace(/\/$/, '')
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${window.location.origin}${basePath}${normalizedPath}`
+}
+
+const parseSSEEvents = (buffer) => {
+  const normalized = buffer.replace(/\r\n/g, '\n')
+  const parts = normalized.split('\n\n')
+  const rest = parts.pop() || ''
+  const events = []
+
+  for (const part of parts) {
+    const lines = part.split('\n')
+    let event = 'message'
+    const dataLines = []
+
+    for (const line of lines) {
+      if (!line || line.startsWith(':')) continue
+      if (line.startsWith('event:')) {
+        event = line.slice(6).trim()
+        continue
+      }
+      if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trimStart())
+      }
+    }
+
+    const rawData = dataLines.join('\n')
+    let data = null
+    if (rawData) {
+      try {
+        data = JSON.parse(rawData)
+      } catch {
+        data = { message: rawData }
+      }
+    }
+
+    events.push({ event, data })
+  }
+
+  return { events, rest }
+}
+
+const handleUnauthorized = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('userId')
+  localStorage.removeItem('username')
+  router.push('/login')
+}
+
+const readErrorResponse = async (response) => {
+  const text = await response.text()
+  if (!text) return `请求失败：${response.status}`
+
+  try {
+    const data = JSON.parse(text)
+    return data.detail || data.message || text
+  } catch {
+    return text
+  }
+}
+
 const sendMessage = async () => {
   const text = inputMessage.value.trim()
   if (!text || sending.value || !activeChatId.value) return
 
   const optimistic = [...messages.value, { role: 'user', content: text }]
-  messages.value = optimistic
+  const assistantMessage = { role: 'assistant', content: '' }
+  messages.value = [...optimistic, assistantMessage]
   inputMessage.value = ''
   sending.value = true
   resetTextarea()
+  scrollMessagesToBottom()
 
   try {
-    const res = await api.post(`/chat/sessions/${activeChatId.value}/send`, { message: text })
-    messages.value = res.data.messages?.length
-      ? res.data.messages
-      : [...optimistic, { role: 'assistant', content: res.data.reply }]
-    // 刷新侧边栏（标题可能更新了）
+    const token = localStorage.getItem('token')
+    activeStreamController = new AbortController()
+
+    const response = await fetch(buildApiUrl(`/chat/sessions/${activeChatId.value}/stream`), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ message: text }),
+      signal: activeStreamController.signal,
+    })
+
+    if (response.status === 401) {
+      handleUnauthorized()
+      return
+    }
+
+    if (!response.ok || !response.body) {
+      throw new Error(await readErrorResponse(response))
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let streamCompleted = false
+
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const parsed = parseSSEEvents(buffer)
+      buffer = parsed.rest
+
+      for (const event of parsed.events) {
+        if (event.event === 'delta') {
+          assistantMessage.content += event.data?.content || ''
+          scrollMessagesToBottom()
+          continue
+        }
+
+        if (event.event === 'done') {
+          streamCompleted = true
+          messages.value = event.data?.messages?.length
+            ? event.data.messages
+            : [...optimistic, { role: 'assistant', content: event.data?.reply || assistantMessage.content }]
+          break
+        }
+
+        if (event.event === 'error') {
+          throw new Error(event.data?.message || '流式回复失败')
+        }
+      }
+
+      if (streamCompleted) {
+        break
+      }
+    }
+
+    if (!streamCompleted) {
+      throw new Error('流式响应意外中断')
+    }
+
     await fetchSessions()
   } catch (err) {
+    if (err.name === 'AbortError') {
+      return
+    }
+
     console.error('发送消息失败:', err)
-    messages.value = [...optimistic, { role: 'assistant', content: '抱歉，我刚才走神了。能再说一遍吗？' }]
+    await loadMessages(activeChatId.value)
+    await fetchSessions()
+
+    if (messages.value.length > optimistic.length) {
+      return
+    }
+
+    const detail = err.message || '未知错误'
+    messages.value = [
+      ...optimistic,
+      {
+        role: 'assistant',
+        content: `本次回复失败：${detail}`,
+      },
+    ]
   } finally {
+    activeStreamController = null
     sending.value = false
   }
 }
@@ -252,7 +461,6 @@ const clearCurrentChat = async () => {
   }
 }
 
-// --- 关联测评切换 ---
 const changeAssessment = async (value) => {
   const newId = parseInt(value) || 0
   try {
@@ -260,7 +468,6 @@ const changeAssessment = async (value) => {
       assessment_session_id: newId,
     })
     currentAssessmentId.value = newId || null
-    // 重新加载消息（系统上下文已更新）
     await loadMessages(activeChatId.value)
     await fetchSessions()
   } catch (err) {
@@ -269,7 +476,6 @@ const changeAssessment = async (value) => {
   }
 }
 
-// --- 工具函数 ---
 const formatMessage = (text) => {
   if (!text) return ''
   return marked.parse(text.replace(/^[ \t]+/gm, ''), { breaks: true })
@@ -282,7 +488,10 @@ const formatDate = (isoStr) => {
 
 const autoResize = () => {
   const el = inputRef.value
-  if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px' }
+  if (el) {
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+  }
 }
 
 const resetTextarea = () => {
@@ -290,14 +499,20 @@ const resetTextarea = () => {
   if (el) el.style.height = 'auto'
 }
 
+const handleAvatarError = () => {
+  userAvatarUrl.value = ''
+  localStorage.removeItem('avatarUrl')
+}
+
 watch(() => messages.value.length, () => {
-  nextTick(() => { if (messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight })
+  scrollMessagesToBottom()
 })
 
-// 监听路由变化，切换活跃会话
 watch(
   () => route.params.chatId,
   async (newId) => {
+    cancelActiveStream()
+    closeMobileSidebar()
     if (newId) {
       activeChatId.value = parseInt(newId)
       await loadMessages(activeChatId.value)
@@ -310,17 +525,50 @@ watch(
 )
 
 onMounted(async () => {
+  lockPageScroll()
   await Promise.all([fetchSessions(), fetchAssessments()])
+  userAvatarUrl.value = localStorage.getItem('avatarUrl') || ''
 
-  // 如果 URL 带了 assessmentSessionId query 参数（从历史页跳转），自动创建会话
   const assessmentId = parseInt(route.query.assessmentSessionId)
   if (assessmentId && !route.params.chatId) {
     await createNewSession(assessmentId)
   }
 })
+
+onBeforeUnmount(() => {
+  cancelActiveStream()
+  unlockPageScroll()
+})
 </script>
 
 <style scoped>
+.chat-page-layout {
+  position: relative;
+  align-items: stretch;
+  height: calc(100dvh - var(--nav-height) - 24px);
+  max-height: calc(100dvh - var(--nav-height) - 24px);
+  overflow: hidden;
+}
+
+.chat-page-layout .page-sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  transition: transform 0.22s ease, opacity 0.22s ease, box-shadow 0.22s ease;
+}
+
+.chat-page-layout .sidebar-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+.chat-mobile-toolbar,
+.chat-sidebar-backdrop {
+  display: none;
+}
 /* 侧边栏 */
 .sidebar-item.active {
   background: rgba(99, 102, 241, 0.12);
@@ -353,7 +601,7 @@ onMounted(async () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: calc(100vh - 100px);
+  min-height: clamp(320px, 56vh, 640px);
   color: var(--text-secondary);
   text-align: center;
 }
@@ -385,6 +633,7 @@ onMounted(async () => {
   font-size: 13px;
   padding: 4px 8px;
   cursor: pointer;
+  width: 100%;
   max-width: 280px;
 }
 .assessment-select:focus {
@@ -395,13 +644,23 @@ onMounted(async () => {
 /* 主聊天区 */
 .chat-main {
   width: 100%;
-  height: calc(100vh - 100px);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-empty-state,
+.chat-container {
+  flex: 1;
 }
 
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: auto;
+  min-height: 0;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
@@ -416,12 +675,20 @@ onMounted(async () => {
   padding: 20px 28px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-card);
+  gap: 16px;
 }
 
 .chat-header-info {
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-header-info > div {
+  min-width: 0;
+  flex: 1;
 }
 
 .chat-avatar { font-size: 44px; }
@@ -445,17 +712,28 @@ onMounted(async () => {
 .chat-header-actions {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.chat-header-actions .btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* 消息区 */
 .chat-messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 28px;
   display: flex;
   flex-direction: column;
   gap: 18px;
   background: var(--bg-hover);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* 消息气泡 */
@@ -506,6 +784,7 @@ onMounted(async () => {
   font-size: 17px;
   line-height: 1.7;
   max-width: 100%;
+  min-width: 0;
   overflow-wrap: break-word;
   text-align: left;
 }
@@ -627,9 +906,55 @@ onMounted(async () => {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* 响应式 */
-@media (max-width: 768px) {
-  .chat-main { height: calc(100vh - 72px); }
-  .chat-header { padding: 16px 20px; }
+@media (max-width: 1200px) {
+  .chat-page-layout {
+    display: block;
+    height: calc(100dvh - var(--nav-height) - 16px);
+    max-height: calc(100dvh - var(--nav-height) - 16px);
+    min-height: 0;
+  }
+  .chat-page-layout .page-sidebar {
+    position: fixed;
+    top: calc(var(--nav-height) + 12px);
+    left: 12px;
+    right: 12px;
+    z-index: 30;
+    width: auto;
+    height: min(68dvh, 560px);
+    max-height: min(68dvh, 560px);
+    transform: translateY(-12px);
+    opacity: 0;
+    pointer-events: none;
+    box-shadow: var(--shadow-xl);
+  }
+  .chat-sidebar--open {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .chat-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    border: 0;
+    background: rgba(15, 23, 42, 0.32);
+    backdrop-filter: blur(2px);
+  }
+  .chat-main { height: 100%; }
+  .chat-mobile-toolbar {
+    display: flex;
+    flex-shrink: 0;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+  }
+  .chat-mobile-toggle {
+    min-height: 42px;
+    padding: 0 14px;
+  }
+  .chat-header { padding: 16px 20px; flex-direction: column; align-items: stretch; }
+  .chat-header-info { width: 100%; align-items: flex-start; }
+  .chat-header-actions { width: 100%; justify-content: flex-end; }
   .chat-avatar { font-size: 36px; }
   .chat-title { font-size: 20px; }
   .chat-messages { padding: 20px; gap: 14px; }
@@ -640,13 +965,30 @@ onMounted(async () => {
 }
 
 @media (max-width: 480px) {
-  .chat-main { height: calc(100vh - 64px); }
+  .chat-page-layout {
+    height: calc(100dvh - var(--nav-height) - 12px);
+    max-height: calc(100dvh - var(--nav-height) - 12px);
+  }
+  .chat-page-layout .page-sidebar {
+    top: calc(var(--nav-height) + 8px);
+    left: 8px;
+    right: 8px;
+    height: min(72dvh, 520px);
+    max-height: min(72dvh, 520px);
+  }
+  .chat-container { border-radius: 16px; }
   .chat-header { padding: 12px 16px; }
+  .chat-header-info { gap: 12px; }
+  .chat-header-actions .btn-ghost { flex: 1 1 calc(50% - 4px); justify-content: center; }
   .chat-avatar { font-size: 32px; }
   .chat-title { font-size: 18px; }
+  .assessment-select { max-width: 100%; }
+  .chat-empty-state { min-height: 280px; padding: 32px 16px; }
   .chat-messages { padding: 16px; gap: 12px; }
+  .chat-bubble { max-width: 100%; gap: 10px; }
   .chat-bubble-body { padding: 12px 14px; font-size: 14px; }
   .chat-input-area { padding: 12px 16px 16px; }
+  .chat-input-row { align-items: stretch; }
   .chat-input-row textarea { padding: 12px 14px; font-size: 14px; }
   .chat-send-btn { width: 40px; height: 40px; font-size: 18px; }
   .chat-bubble-avatar { width: 36px; height: 36px; font-size: 20px; }

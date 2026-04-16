@@ -1,200 +1,258 @@
-# TestAgent 部署教程（从零开始）
+# TestAgent 部署教程（当前版本）
 
-> 适合完全没有部署经验的同学，按步骤操作即可。
+本文基于仓库当前的 `docker-compose.yml`、`Dockerfile`、`docker-entrypoint.sh` 和前端 `nginx.conf` 编写，适用于把项目部署到一台 Linux 服务器上。
 
----
+## 1. 先看当前项目的部署方式
 
-## 总览
+当前项目默认通过 Docker Compose 启动 3 个服务：
 
-你需要做 3 件事：
-1. 把代码上传到 Gitee（码云）
-2. 在服务器上把代码拉下来
-3. 一键启动
+- `db`：PostgreSQL 15，数据保存在 Docker 卷 `pgdata`
+- `backend`：FastAPI，容器内监听 `8000`
+- `frontend`：Nginx + Vue 静态文件，对外暴露 `80`
 
-总耗时约 20-30 分钟。
+访问链路如下：
 
----
-
-## 第一步：把代码上传到 Gitee
-
-### 1.1 注册 Gitee 账号
-
-打开 https://gitee.com ，注册一个账号（如果已有跳过）。
-
-### 1.2 创建仓库
-
-1. 登录后，点右上角 **「+」→「新建仓库」**
-2. 仓库名填：`TestAgent`
-3. **不要勾选** "使用Readme文件初始化仓库"
-4. 选择 **私有**（你的代码不公开）
-5. 点 **创建**
-
-### 1.3 在本地电脑推送代码
-
-打开你电脑的终端（PowerShell 或 Git Bash），在项目目录下执行：
-
-```bash
-cd D:\PythonCode\TestAgent
-
-# 添加 Gitee 远程仓库（把下面的 你的用户名 替换成你的 Gitee 用户名）
-git remote add gitee https://gitee.com/你的用户名/TestAgent.git
-
-# 推送代码
-git add -A
-git commit -m "准备部署"
-git push gitee main
+```text
+浏览器
+  -> frontend (Nginx:80)
+  -> /api 反向代理到 backend:8000
+  -> backend 连接 db:5432
 ```
 
-系统会提示输入 Gitee 的用户名和密码，输入即可。
+这意味着：
 
-> 如果提示 `remote gitee already exists`，先执行 `git remote remove gitee` 再重试。
+- 服务器对外默认只开放 `80` 端口即可
+- 后端 `8000` 端口默认不会暴露到宿主机
+- 首次启动时，后端会自动等待数据库、自动建表、并在题库为空时自动导入 `data/atmr_full_questions.json`
+- 当前项目不会自动创建测试账号，首次使用请在登录页自行注册
 
----
+## 2. 当前版本的注意事项
 
-## 第二步：登录服务器并拉取代码
+这些是现在这份代码的真实行为，部署前建议先知道：
 
-### 2.1 登录服务器
+1. `.env.example` 里虽然还有 `APP_ENV`、`DATABASE_URL`、`ALLOWED_ORIGINS` 等变量，但按照当前 `docker-compose.yml`，默认部署时真正会被用到的主要是：
+   - `DB_PASSWORD`
+   - `SECRET_KEY`
+   - `DEEPSEEK_API_KEY`
+   - `DASHSCOPE_API_KEY`
+   - `ZHIPU_API_KEY`
+2. 不配置 AI Key 也能把系统启动起来，但依赖大模型的功能会不可用或降级，比如 AI 辩论、RAG、咨询对话。
+3. 数据库是持久化的，因为用了 Docker 卷 `pgdata`。
+4. `uploads/` 目录已经挂载到独立 Docker 卷 `uploads`，重建 `backend` 容器后，头像和上传文件会保留。
+5. 前端 Nginx 已经代理 `/api` 和 `/uploads`，上传文件可以通过前端入口统一访问。
 
-1. 打开阿里云控制台：https://ecs.console.aliyun.com
-2. 找到你的服务器实例，点击 **「远程连接」**
-3. 选择 **「通过Workbench远程连接」** → 输入密码 → 连接
+## 3. 服务器准备
 
-现在你已经进入服务器的终端了。
+建议准备一台 Linux 服务器，并确保：
 
-### 2.2 确认系统和 Docker
+- 已开放 SSH 端口（通常是 `22`）
+- 已开放 HTTP 端口 `80`
+- 已安装 Git
+- 已安装 Docker 和 Docker Compose v2
+
+下面以 Ubuntu / Debian 为例：
 
 ```bash
-# 看看是什么系统
-cat /etc/os-release
+sudo apt update
+sudo apt install -y git ca-certificates curl
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER
+newgrp docker
 
-# 确认 Docker 已安装
 docker --version
 docker compose version
 ```
 
-如果 `docker compose` 命令找不到，试试：
-```bash
-docker-compose --version
-```
+如果服务器里已经装好了 Docker 和 Git，可以直接跳到下一步。
 
-> 如果显示 `docker-compose` 但没有 `docker compose`（没有横杠），
-> 后面所有命令把 `docker compose` 替换成 `docker-compose` 即可。
+## 4. 让服务器拿到代码
 
-### 2.3 安装 Git（如果没有的话）
+最简单的方式是先把当前项目推到一个远程 Git 仓库，然后在服务器上拉取。
+
+如果你的代码已经在远程仓库中，直接执行：
 
 ```bash
-# Ubuntu/Debian 系统
-apt update && apt install -y git
-
-# CentOS/Alibaba Cloud Linux 系统
-yum install -y git
-```
-
-### 2.4 拉取代码到服务器
-
-```bash
-# 创建项目目录
-mkdir -p /opt
+sudo mkdir -p /opt
 cd /opt
-
-# 从 Gitee 拉取代码（替换为你的用户名）
-git clone https://gitee.com/你的用户名/TestAgent.git
-
-# 进入项目目录
-cd TestAgent
+sudo git clone <你的仓库地址> TestAgent
+sudo chown -R $USER:$USER /opt/TestAgent
+cd /opt/TestAgent
 ```
 
-系统会提示输入 Gitee 用户名和密码。
+例如：
 
-### 2.5 创建环境变量文件
+```bash
+git clone https://github.com/<your-name>/TestAgent.git
+```
+
+如果代码现在只在本地电脑，还没有远程仓库，先把它推到 GitHub、Gitee 或你自己的 Git 服务，再继续本教程。
+
+## 5. 配置环境变量
+
+在项目根目录执行：
 
 ```bash
 cp .env.example .env
+nano .env
 ```
 
-然后编辑 `.env` 文件：
+至少修改这几项：
+
+```env
+DB_PASSWORD=请改成你自己的数据库密码
+SECRET_KEY=请改成一串足够长的随机字符串
+DEEPSEEK_API_KEY=
+DASHSCOPE_API_KEY=
+ZHIPU_API_KEY=
+```
+
+说明：
+
+- `DB_PASSWORD`：PostgreSQL 的密码，必须修改
+- `SECRET_KEY`：JWT 签名密钥，必须修改
+- 三个 AI Key 都是可选项，但不填的话 AI 相关功能不可用
+- 使用当前自带的 `docker-compose.yml` 时，不需要手工填写 `DATABASE_URL`
+
+如果你想快速生成一个随机密钥，可以用：
+
 ```bash
-vi .env
+openssl rand -hex 32
 ```
 
-> **vi 编辑器极简用法：**
-> - 按 `i` 进入编辑模式
-> - 用方向键移动光标，修改内容
-> - 修改完按 `Esc`，然后输入 `:wq` 回车保存退出
+## 6. 启动服务
 
-需要改的内容：
-```
-DB_PASSWORD=设一个你自己的密码
-SECRET_KEY=随便打一串字符比如 abc123xyz456
-DEEPSEEK_API_KEY=你的key（没有就留空）
-```
-
----
-
-## 第三步：一键启动
+在项目根目录执行：
 
 ```bash
-cd /opt/TestAgent
 docker compose up -d --build
 ```
 
-**首次构建需要 5-15 分钟**（下载镜像 + 安装依赖），耐心等待。
+首次启动通常会比后续慢很多，原因包括：
 
-看到类似下面的输出就成功了：
-```
-✔ Container testagent-db-1        Started
-✔ Container testagent-backend-1   Started
-✔ Container testagent-frontend-1  Started
-```
+- 拉取 PostgreSQL、Nginx、Python、Node 镜像
+- 构建前端静态资源
+- 安装后端 Python 依赖
+- 下载 CPU 版 PyTorch wheel
 
-### 3.1 确认服务是否正常
+第一次部署时，等待 5 到 15 分钟都算正常。
+
+## 7. 启动后会自动做什么
+
+当前版本启动 `backend` 容器时，会自动完成下面这些动作：
+
+1. 等待数据库可连接
+2. 执行 `init_db()` 自动建表
+3. 检查题库是否为空
+4. 如果题库为空，自动运行 `scripts/import_data.py` 导入 `data/atmr_full_questions.json`
+5. 最后启动 `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+
+所以在默认部署流程里：
+
+- 不需要手工执行建表脚本
+- 不需要手工执行题库导入脚本
+
+## 8. 检查服务是否正常
+
+先看容器状态：
 
 ```bash
-# 查看容器状态（三个都应该是 Up）
 docker compose ps
-
-# 查看后端日志（确认题库导入成功）
-docker compose logs backend
 ```
 
-后端日志中看到 `导入完成` 和 `Uvicorn running` 就表示成功。
+正常情况下，应该看到：
 
-### 3.2 开放 80 端口（重要！）
+- `db` 已启动并通过健康检查
+- `backend` 为 `Up`
+- `frontend` 为 `Up`
 
-回到阿里云控制台：
+再看后端日志：
 
-1. 找到你的 ECS 实例
-2. 点击 **「安全组」** 标签
-3. 点击安全组 ID → **「手动添加」**
-4. 添加一条规则：
-   - 授权策略：**允许**
-   - 优先级：**1**
-   - 协议类型：**自定义TCP**
-   - 端口范围：**80/80**
-   - 授权对象：**0.0.0.0/0**
-5. 点 **保存**
-
-### 3.3 访问你的网站
-
-打开浏览器，输入：
-```
-http://你的服务器公网IP
+```bash
+docker compose logs --tail=100 backend
 ```
 
-> 公网 IP 在阿里云控制台的实例详情页可以看到。
+重点看这些信息：
 
-测试账号：
-- 用户名：`adaptive_test_user`
-- 密码：`test123456`
+- 数据库连接成功
+- 自动建表完成
+- 题库已导入，或显示题库已存在并跳过导入
+- `Uvicorn running on http://0.0.0.0:8000`
 
----
+再看前端日志：
 
-## 常用运维命令
+```bash
+docker compose logs --tail=50 frontend
+```
+
+## 9. 访问系统
+
+浏览器访问：
+
+```text
+http://你的服务器公网IP/
+```
+
+如果你绑定了域名，也可以直接访问：
+
+```text
+http://你的域名/
+```
+
+注意：
+
+- 当前项目默认没有预置账号
+- 第一次进入系统后，请直接在登录页注册一个新账号
+
+## 10. 可选：启用完整的自适应选题能力
+
+当前系统即使没有题目特征向量，也可以运行；这时自适应选题会回退为顺序选题。
+
+如果你想启用更完整的自适应选题逻辑，可以在部署完成后手工生成题目特征向量：
+
+```bash
+docker compose exec backend python scripts/generate_feature_vectors.py
+```
+
+这一步不是首启必需项，但要注意：
+
+- 会额外吃 CPU 和内存
+- 首次运行耗时可能较长
+- 更适合在服务器空闲时执行
+
+## 11. 可选：直接暴露后端 Swagger 文档
+
+按当前 `docker-compose.yml`，后端 `8000` 端口不会直接暴露，所以你默认不能从宿主机直接访问：
+
+```text
+http://服务器IP:8000/docs
+```
+
+如果你确实需要直接查看 Swagger，可以在 `docker-compose.yml` 的 `backend` 服务里增加：
+
+```yaml
+backend:
+  ports:
+    - "8000:8000"
+```
+
+然后重新部署：
+
+```bash
+docker compose up -d --build backend frontend
+```
+
+之后就可以访问：
+
+```text
+http://你的服务器IP:8000/docs
+```
+
+## 12. 常用运维命令
 
 ```bash
 cd /opt/TestAgent
 
-# 查看运行状态
+# 查看状态
 docker compose ps
 
 # 查看后端日志
@@ -203,45 +261,96 @@ docker compose logs -f backend
 # 查看前端日志
 docker compose logs -f frontend
 
-# 重启所有服务
+# 查看数据库日志
+docker compose logs -f db
+
+# 重启全部服务
 docker compose restart
 
-# 停止所有服务
+# 停止服务（保留数据库卷）
 docker compose down
 
-# 更新代码后重新部署
-git pull gitee main
+# 停止并删除数据库卷（会清空数据库）
+docker compose down -v
+
+# 拉取新代码后重新部署
+git pull
 docker compose up -d --build
-
-# 进入后端容器（调试用）
-docker compose exec backend bash
-
-# 手动生成特征向量（可选，占内存较大）
-docker compose exec backend python scripts/generate_feature_vectors.py
 ```
 
----
+如果执行了 `docker compose down -v`，下次再启动时，系统会重新建库并重新导入题库。
 
-## 常见问题
+## 13. 常见问题
 
-### Q: 浏览器访问白屏/无法连接？
-1. 确认安全组已放行 80 端口
-2. 检查容器是否都在运行：`docker compose ps`
-3. 检查后端日志有无报错：`docker compose logs backend`
+### 13.1 打不开首页
 
-### Q: 后端启动失败，数据库连不上？
+按这个顺序检查：
+
+1. 安全组或防火墙是否已放行 `80` 端口
+2. `docker compose ps` 里 `frontend` 是否为 `Up`
+3. `docker compose logs frontend` 是否有 Nginx 报错
+4. 服务器公网 IP 或域名是否正确
+
+### 13.2 后端一直重启
+
+先看日志：
+
 ```bash
-# 查看数据库容器日志
-docker compose logs db
-# 重启数据库
-docker compose restart db
+docker compose logs -f backend
 ```
 
-### Q: 如何更换域名？
-购买域名后，到域名解析处添加一条 A 记录，指向你的服务器公网 IP 即可。
+常见原因：
 
-### Q: AI 对话功能不工作？
-在 `.env` 文件中填入你的 DEEPSEEK_API_KEY，然后重启：
+- `.env` 里 `DB_PASSWORD` 配错
+- 本机 Docker 环境异常，数据库容器没起来
+- 首次安装依赖较慢，看起来像卡住，实际上仍在构建
+
+### 13.3 AI 功能不可用
+
+先确认 `.env` 已填写至少一个可用的 AI Key，例如：
+
+```env
+DEEPSEEK_API_KEY=你的真实密钥
+```
+
+然后重启后端：
+
 ```bash
 docker compose restart backend
 ```
+
+### 13.4 自适应选题没有生效
+
+这是当前版本的预期行为之一：如果题库还没有特征向量，系统会回退到顺序选题。
+
+手工补全特征向量：
+
+```bash
+docker compose exec backend python scripts/generate_feature_vectors.py
+```
+
+### 13.5 上传文件或头像访问异常
+
+当前版本已经支持通过前端 Nginx 转发 `/uploads`，如果访问异常，按这个顺序检查：
+
+1. `docker compose ps` 中 `frontend` 和 `backend` 是否都为 `Up`
+2. `docker compose logs frontend` 是否有 Nginx 报错
+3. `docker compose logs backend` 是否有静态文件或上传相关报错
+4. 访问路径是否以 `/uploads/...` 开头
+
+### 13.6 重建容器后头像或上传文件丢失
+
+当前版本已经通过 Docker 卷持久化 `uploads/`，正常重建 `backend` 容器不会丢失文件。
+
+只有在你执行 `docker compose down -v`，或者手工删除 `uploads` 卷时，这些文件才会被清空。
+
+## 14. 建议的部署完成检查清单
+
+部署结束后，至少确认下面几件事：
+
+- 可以正常打开首页
+- 可以注册新账号并登录
+- 可以开始测评并正常提交答案
+- `docker compose ps` 中三个服务都稳定运行
+- 后端日志里没有持续报错
+- 如果需要 AI 功能，确认对应模型密钥已生效

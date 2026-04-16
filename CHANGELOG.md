@@ -6,6 +6,27 @@
 
 ---
 
+## [2026-04-17] - 启动链路修复、环境兼容增强与前端布局收口
+
+### 新增
+- **新增环境与健康检查配置项**：`app/core/config.py` 支持自动加载 `.env`，新增 `AUTO_CREATE_TABLES`、`USE_SQLITE_DEV`、`SQLITE_PATH` 等配置，并提供基于 `DB_USER`、`DB_PASSWORD`、`DB_HOST`、`DB_PORT`、`DB_NAME` 组装数据库连接串与开发态 `SECRET_KEY` 兜底生成逻辑。
+- **新增项目健康检查测试**：添加 `tests/test_project_health.py`，覆盖模型导入不触发表结构创建、头像上传目录与静态资源挂载一致、旧头像删除路径不重复拼接，以及数据库连接串拼装使用 `DB_PASSWORD` 等关键行为。
+
+### 修复
+- **修复头像上传目录与旧文件清理路径错误**：`app/api/auth.py` 统一改为基于项目根目录定位 `uploads/avatars`，删除旧头像时先剥离已存在的 `avatars/` 前缀，避免拼出错误路径导致旧文件残留。
+- **修复跨数据库 JSON 字段兼容问题**：`app/models/assessment.py` 为测评相关 JSON 字段引入 PostgreSQL/SQLite 通用类型适配，解决本地 SQLite 开发环境下 `JSONB` 无法使用的问题。
+- **修复恢复答题后阶段内翻题失效问题**：`frontend/src/components/Assessment.vue` 在恢复会话时补齐当前阶段题目缓存，并移除“达到提交条件即禁止下一题”的硬拦截，允许在本阶段已答完后继续通过 `上一题`、`下一题` 浏览已答题目。
+- **修复窄屏页面块级区域相互挤压问题**：收敛 `Assessment.vue`、`Chat.vue`、`Report.vue` 与全局样式中的高度、换行与横向溢出规则，避免手机端题目区、聊天头部、报告操作区和底部按钮发生覆盖或挤压。
+
+### 优化
+- **优化应用启动与建表链路**：`app/main.py` 改用 FastAPI lifespan，在显式配置 `AUTO_CREATE_TABLES` 时统一执行 `init_db()`；`app/models/__init__.py` 不再在导入时隐式建表，`docker-entrypoint.sh` 同步复用同一初始化入口。
+- **优化数据库连接初始化兼容性**：`app/core/database.py` 根据数据库类型拆分引擎参数，SQLite 自动创建目录并设置 `check_same_thread=False`，PostgreSQL 连接池参数仅在非 SQLite 模式下启用。
+- **优化环境示例与启动脚本文案**：`.env.example` 补齐完整数据库环境变量、可选 `DATABASE_URL` 与自动建表说明，`docker-entrypoint.sh` 的输出与数据库连通性检测统一切到新的配置读取方式。
+- **优化桌面端答题页一屏展示能力**：压缩 `frontend/src/components/Assessment.vue` 桌面端头部、题干、选项区与底部操作区的间距和高度，在未展开题号列表时尽量保证常规答题内容可在电脑端不缩放状态下一屏显示。
+- **优化导航与各页面响应式布局**：`frontend/src/App.vue` 调整导航栏品牌、按钮与头像的单行布局及下拉菜单交互；`frontend/src/components/Chat.vue`、`frontend/src/components/Report.vue` 与 `frontend/src/style.css` 同步收紧字号、间距和媒体元素宽度限制，提升桌面端与移动端的显示稳定性。
+
+---
+
 ## [2026-04-16] - 前端视觉体验升级与关键 Bug 修复
 
 ### 优化
