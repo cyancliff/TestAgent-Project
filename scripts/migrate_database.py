@@ -67,31 +67,7 @@ def check_and_add_columns():
         else:
             print("[WARN] 表 atmr_questions 不存在，跳过")
 
-        # 2. 检查 chat_messages 表
-        if "chat_messages" in tables:
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name = 'chat_messages'
-                ORDER BY ordinal_position
-            """)
-            chat_msg_cols = [row[0] for row in cursor.fetchall()]
-            print(f"[OK] chat_messages 现有列: {chat_msg_cols}")
-
-            # 添加 chat_session_id 列（如果缺失）
-            if "chat_session_id" not in chat_msg_cols:
-                print("  [ADD] 添加列: chat_session_id (INTEGER)")
-                cursor.execute("""
-                    ALTER TABLE chat_messages
-                    ADD COLUMN chat_session_id INTEGER REFERENCES chat_sessions(id)
-                """)
-                conn.commit()
-                print("[OK] 成功添加 chat_session_id 列")
-            else:
-                print("[OK] chat_messages 表结构已是最新")
-        else:
-            print("[WARN] 表 chat_messages 不存在，可能需要启动应用创建表")
-
-        # 3. 检查 chat_sessions 表
+        # 2. 检查 chat_sessions 表
         if "chat_sessions" not in tables:
             print("  [ADD] 创建表: chat_sessions")
             cursor.execute("""
@@ -106,8 +82,47 @@ def check_and_add_columns():
             """)
             conn.commit()
             print("[OK] 成功创建 chat_sessions 表")
+            tables.append("chat_sessions")
         else:
             print("[OK] chat_sessions 表已存在")
+
+        # 3. 检查 chat_messages 表
+        if "chat_messages" in tables:
+            cursor.execute("""
+                SELECT column_name, is_nullable FROM information_schema.columns
+                WHERE table_name = 'chat_messages'
+                ORDER BY ordinal_position
+            """)
+            chat_msg_meta = cursor.fetchall()
+            chat_msg_cols = [row[0] for row in chat_msg_meta]
+            chat_msg_nullable = {row[0]: row[1] for row in chat_msg_meta}
+            print(f"[OK] chat_messages 现有列: {chat_msg_cols}")
+
+            # 添加 chat_session_id 列（如果缺失）
+            if "chat_session_id" not in chat_msg_cols:
+                print("  [ADD] 添加列: chat_session_id (INTEGER)")
+                cursor.execute("""
+                    ALTER TABLE chat_messages
+                    ADD COLUMN chat_session_id INTEGER REFERENCES chat_sessions(id)
+                """)
+                conn.commit()
+                print("[OK] 成功添加 chat_session_id 列")
+            else:
+                print("[OK] chat_messages.chat_session_id 列已存在")
+
+            # 放宽旧版 session_id 约束，兼容“普通咨询会话”
+            if chat_msg_nullable.get("session_id") == "NO":
+                print("  [ALTER] 放宽列: session_id DROP NOT NULL")
+                cursor.execute("""
+                    ALTER TABLE chat_messages
+                    ALTER COLUMN session_id DROP NOT NULL
+                """)
+                conn.commit()
+                print("[OK] 已移除 chat_messages.session_id 的 NOT NULL 约束")
+            else:
+                print("[OK] chat_messages.session_id 已允许 NULL")
+        else:
+            print("[WARN] 表 chat_messages 不存在，可能需要启动应用创建表")
 
         return True
 

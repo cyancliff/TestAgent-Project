@@ -88,49 +88,51 @@
         </div>
       </div>
 
-      <!-- 题目导航 -->
-      <div class="question-nav-toggle" @click="showQuestionNav = !showQuestionNav">
-        <span>{{ showQuestionNav ? '收起题目列表' : '展开题目列表' }}</span>
-        <span class="toggle-arrow">{{ showQuestionNav ? '▲' : '▼' }}</span>
-      </div>
-      <div v-if="showQuestionNav" class="question-nav-grid">
-        <button
-          v-for="i in stageQuestionCount" :key="i"
-          :class="['qnav-item', {
-            current: currentIndex === i - 1,
-            answered: stageQuestions[i - 1] && answersMap[stageQuestions[i - 1]?.id],
-          }]"
-          @click="jumpToQuestion(i - 1)"
-        >{{ i }}</button>
-      </div>
-
-      <!-- 题目内容 -->
-      <div class="question-content">
-        <h2 class="question-title">{{ currentQuestion.content }}</h2>
-      </div>
-
-      <!-- 选项 -->
-      <div v-if="!anomalyTriggered" class="options-container">
-        <button
-          v-for="(option, index) in currentQuestion.options"
-          :key="index"
-          class="option-btn"
-          :class="{ selected: currentAnswer?.selected_option === option }"
-          @click="selectOption(option)"
-        >
-          <span class="option-label">{{ String.fromCharCode(65 + index) }}</span>
-          <span class="option-text">{{ option }}</span>
-        </button>
-      </div>
-
-      <!-- 异常追问 -->
-      <div v-else class="anomaly-container">
-        <div class="warning-box">
-          <span class="warning-icon">&#9888;</span>
-          <span>{{ currentAnswer?.follow_up_question || '系统检测到您的作答时间极短，请问您是如何快速得出这个选择的？' }}</span>
+      <div class="question-main">
+        <!-- 题目导航 -->
+        <div class="question-nav-toggle" @click="showQuestionNav = !showQuestionNav">
+          <span>{{ showQuestionNav ? '收起题目列表' : '展开题目列表' }}</span>
+          <span class="toggle-arrow">{{ showQuestionNav ? '▲' : '▼' }}</span>
         </div>
-        <textarea v-model="userExplanation" placeholder="请输入您的思考过程..." rows="4"></textarea>
-        <button class="submit-explanation-btn" @click="submitExplanation">保存解释</button>
+        <div v-if="showQuestionNav" class="question-nav-grid">
+          <button
+            v-for="i in stageQuestionCount" :key="i"
+            :class="['qnav-item', {
+              current: currentIndex === i - 1,
+              answered: stageQuestions[i - 1] && answersMap[stageQuestions[i - 1]?.id],
+            }]"
+            @click="jumpToQuestion(i - 1)"
+          >{{ i }}</button>
+        </div>
+
+        <!-- 题目内容 -->
+        <div class="question-content">
+          <h2 class="question-title">{{ currentQuestion.content }}</h2>
+        </div>
+
+        <!-- 选项 -->
+        <div v-if="!anomalyTriggered" class="options-container">
+          <button
+            v-for="(option, index) in currentQuestion.options"
+            :key="index"
+            class="option-btn"
+            :class="{ selected: currentAnswer?.selected_option === option }"
+            @click="selectOption(option)"
+          >
+            <span class="option-label">{{ String.fromCharCode(65 + index) }}</span>
+            <span class="option-text">{{ option }}</span>
+          </button>
+        </div>
+
+        <!-- 异常追问 -->
+        <div v-else class="anomaly-container">
+          <div class="warning-box">
+            <span class="warning-icon">&#9888;</span>
+            <span>{{ currentAnswer?.follow_up_question || '系统检测到您的作答时间极短，请问您是如何快速得出这个选择的？' }}</span>
+          </div>
+          <textarea v-model="userExplanation" placeholder="请输入您的思考过程..." rows="4"></textarea>
+          <button class="submit-explanation-btn" @click="submitExplanation">保存解释</button>
+        </div>
       </div>
 
       <!-- 阶段提交按钮 -->
@@ -483,11 +485,28 @@ const submitExplanation = () => {
   }).catch(err => console.warn('解释保存失败:', err))
 }
 
+const hydrateStageQuestionsFromResume = (resumeData) => {
+  const answeredInStage = stageInfo.value?.answered_count || 0
+  if (!answeredInStage || !resumeData?.questions?.length) {
+    stageQuestions.value = []
+    return
+  }
+
+  const currentStageQuestions = resumeData.questions
+    .slice(-answeredInStage)
+    .map((q) => ({
+      id: q.examNo,
+      content: q.exam,
+      options: q.options,
+    }))
+
+  stageQuestions.value = currentStageQuestions
+}
+
 const nextQuestion = async () => {
   if (!canGoNext.value) return
-  // 同步边界检查，不依赖异步更新的 canSubmitStage
+  // 只做边界检查，允许在本阶段已答完后继续查看已答题目
   if (currentIndex.value + 1 >= stageQuestionCount.value) return
-  if (canSubmitStage.value) return
   currentIndex.value++
   await loadNextQuestionInStage()
 }
@@ -630,6 +649,7 @@ const resumeSession = async () => {
 
     // 加载当前阶段信息
     await loadStageInfo()
+    hydrateStageQuestionsFromResume(data)
 
     // currentIndex 应为当前阶段已答数（不超过本阶段最大题目数）
     currentIndex.value = Math.min(stageInfo.value?.answered_count || 0, stageQuestionCount.value - 1)
@@ -762,6 +782,7 @@ onMounted(async () => {
   display: flex; flex-direction: column; transition: all var(--transition-normal);
 }
 .question-card:hover { box-shadow: var(--shadow-xl), 0 0 60px rgba(99, 102, 241, 0.05); }
+.question-main { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 
 /* === 头部 === */
 .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 48px; gap: 32px; }
@@ -807,7 +828,7 @@ onMounted(async () => {
 .question-title { font-size: 36px; font-weight: 800; color: var(--text-primary); line-height: 1.6; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); }
 
 /* === 选项 === */
-.options-container { display: flex; flex-direction: column; gap: 20px; flex: 1; }
+.options-container { display: flex; flex-direction: column; gap: 20px; flex: 1; min-height: 0; }
 .option-btn {
   display: flex; align-items: center; gap: 24px; width: 100%;
   padding: 28px 32px; background: var(--bg-card); border: 2px solid var(--border);
@@ -908,6 +929,148 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ========== 响应式设计 ========== */
+@media (min-width: 1024px) {
+  .assessment-container {
+    padding: 12px 0 20px;
+  }
+
+  .question-card {
+    padding: 28px 36px 24px;
+    min-height: calc(100dvh - var(--nav-height) - 56px);
+    max-height: calc(100dvh - var(--nav-height) - 56px);
+    overflow: hidden;
+  }
+
+  .header {
+    margin-bottom: 20px;
+    gap: 20px;
+  }
+
+  .stage-title {
+    margin-bottom: 8px;
+  }
+
+  .stage-badge {
+    padding: 8px 18px;
+    font-size: 15px;
+  }
+
+  .progress-text {
+    font-size: 17px;
+    margin-bottom: 10px;
+  }
+
+  .progress-bar {
+    height: 10px;
+    margin-top: 10px;
+  }
+
+  .progress-percent,
+  .total-progress-text {
+    font-size: 14px;
+  }
+
+  .question-main {
+    gap: 10px;
+  }
+
+  .question-nav-toggle {
+    padding: 12px 18px;
+    margin-bottom: 12px;
+    font-size: 15px;
+  }
+
+  .question-nav-grid {
+    padding: 16px;
+    margin-bottom: 16px;
+    gap: 8px;
+  }
+
+  .qnav-item {
+    font-size: 14px;
+  }
+
+  .question-content {
+    margin-bottom: 18px;
+  }
+
+  .question-title {
+    font-size: 28px;
+    line-height: 1.4;
+  }
+
+  .options-container {
+    gap: 12px;
+  }
+
+  .option-btn {
+    padding: 16px 20px;
+    gap: 16px;
+  }
+
+  .option-label {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+  }
+
+  .option-text {
+    font-size: 17px;
+    line-height: 1.45;
+  }
+
+  .anomaly-container {
+    margin-top: 12px;
+  }
+
+  .warning-box {
+    padding: 18px 20px;
+    margin-bottom: 16px;
+    font-size: 16px;
+  }
+
+  textarea {
+    padding: 16px 18px;
+    font-size: 16px;
+    min-height: 100px;
+  }
+
+  .submit-explanation-btn {
+    margin-top: 14px;
+    padding: 14px 24px;
+    font-size: 16px;
+  }
+
+  .module-submit-bar {
+    padding: 16px 20px;
+    margin-top: 16px;
+    gap: 16px;
+  }
+
+  .module-submit-label {
+    font-size: 16px;
+  }
+
+  .module-submit-status {
+    font-size: 14px;
+  }
+
+  .module-submit-btn {
+    padding: 14px 24px;
+    font-size: 15px;
+  }
+
+  .navigation-actions {
+    margin-top: 18px;
+    gap: 14px;
+  }
+
+  .nav-btn {
+    padding: 14px 26px;
+    font-size: 16px;
+  }
+}
+
 @media (max-width: 768px) {
   .assessment-container { padding: 28px 14px; }
   .start-card { padding: 40px 28px; }
@@ -916,23 +1079,47 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
   .start-features { flex-direction: column; gap: 16px; }
   .feature-item { padding: 14px 20px; font-size: 15px; }
   .feature-icon { font-size: 34px; }
-  .question-card { padding: 28px 20px; min-height: auto; }
+  .question-card { padding: 20px 16px 18px; min-height: auto; overflow: visible; }
+  .question-main { gap: 12px; overflow: visible; }
   .question-title { font-size: 24px; }
   .question-nav-toggle { padding: 14px 20px; font-size: 15px; }
-  .question-nav-grid { grid-template-columns: repeat(5, 1fr); }
+  .question-nav-grid { grid-template-columns: repeat(5, 1fr); padding: 14px; margin-bottom: 4px; max-height: none; overflow: visible; }
   .progress-bar { height: 8px; }
   .adaptive-badge, .sequential-badge, .module-badge { padding: 7px 16px; font-size: 14px; }
+  .question-content { position: static; margin-bottom: 4px; padding: 0; background: transparent; }
+  .options-container { gap: 12px; padding-right: 0; overflow: visible; }
   .option-btn { padding: 15px 18px; gap: 14px; border-radius: 14px; }
   .option-label { width: 44px; height: 44px; font-size: 18px; }
   .option-text { font-size: 15px; line-height: 1.5; }
-  .anomaly-container { margin-top: 24px; }
+  .anomaly-container { margin-top: 0; overflow: visible; padding-right: 0; min-height: 0; }
   .warning-box { padding: 20px 24px; font-size: 15px; }
   textarea { padding: 16px 20px; font-size: 15px; }
-  .module-submit-bar { flex-direction: column; align-items: flex-start; gap: 16px; padding: 20px 24px; }
+  .module-submit-bar { flex-direction: column; align-items: flex-start; gap: 16px; padding: 18px 20px; margin-top: 16px; flex-shrink: 0; }
   .module-submit-btn { width: 100%; padding: 16px 28px; font-size: 15px; }
-  .nav-btn { padding: 16px 28px; font-size: 16px; }
+  .nav-btn { padding: 14px 24px; font-size: 15px; }
   .header { flex-direction: column; align-items: flex-start; gap: 14px; }
-  .progress-text { font-size: 16px; }
+  .progress-text { font-size: 16px; margin-bottom: 10px; }
+  .stage-title { margin-bottom: 8px; }
+  .stage-badge { padding: 8px 16px; font-size: 14px; }
+  .progress-percent, .total-progress-text { font-size: 14px; }
+  .navigation-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 16px;
+    padding-top: 0;
+    background: transparent;
+    flex-shrink: 0;
+    gap: 12px;
+    width: 100%;
+  }
+  .nav-btn {
+    width: 100%;
+    min-width: 0;
+  }
+  .report-header { padding: 28px 24px; }
+  .report-content { padding: 28px 24px; font-size: 16px; line-height: 1.8; }
+  .report-actions { flex-direction: column; padding: 0 24px 24px; }
+  .restart-btn { width: 100%; padding: 16px 20px; font-size: 16px; }
 }
 
 @media (max-width: 480px) {
@@ -943,23 +1130,34 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
   .start-features { flex-direction: column; gap: 12px; }
   .feature-item { padding: 12px 16px; font-size: 14px; }
   .feature-icon { font-size: 32px; }
-  .question-card { padding: 20px 16px; }
-  .question-title { font-size: 20px; }
+  .question-card { padding: 16px 12px 14px; min-height: auto; }
+  .question-title { font-size: 19px; line-height: 1.45; }
   .question-nav-toggle { padding: 12px 16px; font-size: 14px; }
-  .question-nav-grid { grid-template-columns: repeat(5, 1fr); }
+  .question-nav-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .progress-bar { height: 8px; }
   .progress-text { font-size: 14px; }
+  .question-content { padding-bottom: 0; }
+  .options-container { gap: 10px; }
   .option-btn { padding: 12px 14px; gap: 10px; border-radius: 12px; }
   .option-label { width: 36px; height: 36px; font-size: 16px; }
   .option-text { font-size: 13px; line-height: 1.45; }
-  .anomaly-container { margin-top: 20px; }
-  .warning-box { padding: 16px 20px; font-size: 14px; }
+  .anomaly-container { margin-top: 0; }
+  .warning-box { padding: 16px 20px; font-size: 14px; flex-direction: column; gap: 10px; }
   textarea { padding: 14px 16px; font-size: 14px; min-height: 80px; }
-  .submit-explanation-btn { padding: 14px 24px; font-size: 14px; }
-  .module-submit-bar { flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px 20px; }
+  .submit-explanation-btn { width: 100%; padding: 14px 24px; font-size: 14px; }
+  .module-submit-bar { flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px; }
+  .module-submit-label { font-size: 16px; }
+  .module-submit-status { font-size: 14px; }
   .module-submit-btn { width: 100%; padding: 14px 24px; font-size: 14px; }
   .nav-btn { padding: 14px 20px; font-size: 14px; }
-  .navigation-actions { flex-direction: column; gap: 10px; }
-  .nav-btn { width: 100%; }
+  .navigation-actions { grid-template-columns: 1fr; gap: 10px; }
+  .header { gap: 10px; margin-bottom: 14px; }
+  .progress-bar { margin-top: 10px; }
+  .report-header { padding: 24px 20px; }
+  .report-title { font-size: 24px; }
+  .report-subtitle { font-size: 15px; }
+  .report-content { padding: 24px 20px; font-size: 15px; }
+  .report-actions { padding: 0 20px 20px; }
+  .restart-btn { padding: 14px 16px; font-size: 15px; }
 }
 </style>

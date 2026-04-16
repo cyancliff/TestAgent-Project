@@ -353,7 +353,7 @@ onMounted(fetchReport)
 .dimension-scores { flex: 1; display: flex; flex-direction: column; gap: 16px; }
 .dim-score-item { display: flex; flex-direction: column; gap: 6px; padding: 16px 20px; border-radius: var(--radius-md); background: var(--bg-hover); transition: all var(--transition-normal); }
 .dim-score-item:hover { background: var(--border); transform: translateX(8px); }
-.dim-header { display: flex; align-items: center; gap: 12px; }
+.dim-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .dim-badge {
   display: inline-flex; align-items: center; justify-content: center;
   width: 32px; height: 32px; border-radius: var(--radius-md);
@@ -417,15 +417,17 @@ onMounted(fetchReport)
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px; background: var(--bg-hover); border-radius: 10px;
   cursor: pointer; transition: background 0.15s; user-select: none;
+  gap: 12px;
 }
 .ev-module-header:hover { background: var(--border); }
 .ev-module-header.expanded { border-radius: 10px 10px 0 0; }
-.ev-module-left { display: flex; align-items: center; gap: 10px; }
+.ev-module-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; flex-wrap: wrap; }
 .ev-module-name { font-size: 16px; font-weight: 500; }
 .ev-module-stat { font-size: 14px; color: var(--text-muted); }
 .collapsible-header {
   display: flex; justify-content: space-between; align-items: center;
   cursor: pointer; user-select: none;
+  gap: 12px;
 }
 .toggle-arrow {
   width: 8px; height: 8px; border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted);
@@ -500,6 +502,11 @@ onMounted(fetchReport)
   margin-top: 24px;
 }
 
+.back-btn,
+.delete-btn {
+  width: min(100%, 320px);
+}
+
 /* === 加载 === */
 .loading-hint { text-align: center; padding: 80px 20px; color: var(--text-muted); }
 .loader-spinner {
@@ -524,10 +531,14 @@ onMounted(fetchReport)
   .report-card { padding: 32px 24px; }
   .header-card { padding: 40px 24px; }
   .report-title { font-size: 32px; }
+  .report-meta { font-size: 16px; line-height: 1.6; }
   .radar-layout { flex-direction: column; gap: 24px; }
-  .radar-chart-wrapper { flex: 0 0 auto; max-width: 320px; margin: 0 auto; }
+  .radar-chart-wrapper { flex: 0 0 auto; width: 100%; max-width: 320px; margin: 0 auto; }
   .dim-name { font-size: 18px; }
   .dim-pct { font-size: 20px; }
+  .dim-detail { line-height: 1.6; }
+  .ev-module-header { align-items: flex-start; }
+  .ev-module-stat { flex-basis: 100%; }
   .markdown-body { font-size: 15px; } /* 通过调整基础 font-size 自动控制里面的em字体大小 */
 }
 
@@ -536,10 +547,26 @@ onMounted(fetchReport)
   .report-card { padding: 24px 20px; }
   .header-card { padding: 32px 20px; }
   .report-title { font-size: 26px; }
+  .report-meta { font-size: 14px; }
   .section-title { font-size: 22px; }
-  .radar-chart-wrapper { max-width: 280px; }
+  .radar-chart-wrapper { max-width: 100%; padding: 16px; }
+  .dim-header { gap: 8px; }
   .dim-name { font-size: 16px; }
-  .dim-pct { font-size: 18px; }
+  .dim-pct { margin-left: 0; width: 100%; font-size: 18px; }
+  .dim-level-badge { font-size: 12px; }
+  .dim-detail { font-size: 13px; }
+  .ev-module-header { padding: 12px; }
+  .ev-module-name { font-size: 15px; }
+  .ev-module-stat { font-size: 13px; line-height: 1.5; }
+  .ev-record { padding: 12px; }
+  .ev-q { font-size: 15px; }
+  .ev-a,
+  .ev-followup,
+  .ev-explain,
+  .ev-chain { font-size: 14px; }
+  .report-bottom-actions { align-items: stretch; }
+  .back-btn,
+  .delete-btn { width: 100%; }
   .markdown-body { font-size: 14px; } /* 进一步缩小基础字体 */
 }
 </style>

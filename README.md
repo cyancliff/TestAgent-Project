@@ -101,12 +101,35 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
+启动后会自动完成：
+- 等待 PostgreSQL 就绪
+- 自动建表
+- 题库为空时自动导入 `data/atmr_full_questions.json`
+
 启动后访问：
 - 前端：<http://localhost>
+- 上传文件：`/uploads/...` 将通过前端 Nginx 反向代理到后端
+
+默认情况下，后端 `8000` 端口不会暴露到宿主机，所以不能直接访问 Swagger。
+如果你需要直接查看 API 文档，请在 `docker-compose.yml` 的 `backend` 服务中添加：
+
+```yaml
+ports:
+  - "8000:8000"
+```
+
+然后重新执行：
+
+```bash
+docker compose up -d --build backend frontend
+```
+
+此时可访问：
 - 后端 API 文档：<http://localhost:8000/docs>
-- 后端健康检查：<http://localhost:8000/>
+- 后端健康检查：<http://localhost:8000/health>
 
 > 首次构建需要 5-15 分钟（下载镜像 + 安装依赖），请耐心等待。
+> 当前项目没有预置测试账号，首次使用请在登录页自行注册。
 
 ### 本地开发
 
@@ -114,18 +137,24 @@ docker compose up -d --build
 # 1. 安装后端依赖
 pip install -r requirements_full.txt
 
-# 2. 初始化数据库（确保 PostgreSQL 已启动）
-# 设置环境变量或使用 .env 文件
-python scripts/import_data.py              # 导入题库
-python scripts/generate_feature_vectors.py # 生成特征向量（可选，耗时较长）
+# 2. 准备环境变量
+cp .env.example .env
 
 # 3. 启动后端
+# 默认开发环境会使用 SQLite：data/testagent_dev.db
+# 如果题库为空，后端启动后会自动建表并导入题库
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # 4. 新终端中启动前端
 cd frontend
 npm install
 npm run dev
+```
+
+如需启用更完整的自适应选题能力，可在项目根目录额外执行：
+
+```bash
+python scripts/generate_feature_vectors.py
 ```
 
 开发环境地址：
@@ -156,6 +185,12 @@ ZHIPU_API_KEY=
 | `DEEPSEEK_API_KEY` | 否 | DeepSeek API 密钥，用于多智能体辩论和 AI 咨询 |
 | `DASHSCOPE_API_KEY` | 否 | 阿里云通义千问密钥（备选模型） |
 | `ZHIPU_API_KEY` | 否 | 智谱 AI 密钥（备选模型） |
+
+补充说明：
+
+- 默认 Docker 部署不需要手工填写 `DATABASE_URL`，`docker-compose.yml` 会自动注入容器内连接串
+- 默认本地开发环境会走 SQLite，数据库文件位于 `data/testagent_dev.db`
+- `uploads/` 在 Docker 部署中已通过独立卷持久化，重建 `backend` 容器后仍会保留上传文件
 
 ## 项目结构
 
@@ -241,7 +276,7 @@ TestAgent/
 ├── requirements_feature.txt      # Python 特征向量依赖
 │
 ├── Dockerfile                    # 后端 Docker 镜像
-├── docker-compose.yml            # 服务编排 (db + backend + frontend)
+├── docker-compose.yml            # 服务编排 (db + backend + frontend + uploads 卷)
 ├── docker-entrypoint.sh          # 后端容器启动脚本
 ├── README.md                     # 本文件
 └── LICENSE                       # MIT 许可证
@@ -261,7 +296,7 @@ TestAgent/
 | 对话 | `POST /api/v1/chat/message` | AI 心理咨询对话 |
 | 知识库 | `POST /api/v1/rag/query` | RAG 语义检索查询 |
 
-> 完整 API 文档：启动后端后访问 <http://localhost:8000/docs>
+> 完整 API 文档：仅在后端 `8000` 端口已暴露时访问 <http://localhost:8000/docs>
 
 ## 评分机制
 
@@ -281,7 +316,7 @@ TestAgent/
 
 ## 部署教程
 
-详细的服务器部署步骤（Gitee 推送 → 服务器拉取 → Docker 启动）请参阅 [docs/DEPLOY.md](docs/DEPLOY.md)。
+当前版本的服务器部署说明、端口暴露策略、自动初始化行为和运维命令，请参阅 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ## License
 

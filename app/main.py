@@ -1,5 +1,6 @@
 import os
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,9 +8,9 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api import assessment, auth, chat, multimodal_personality, rag
 from app.core.config import settings
 from app.core.limiter import limiter
+from app.models import init_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,7 +18,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title=settings.PROJECT_NAME)
+from app.api import assessment, auth, chat, rag
+
+try:
+    from app.api import multimodal_personality
+except Exception:
+    multimodal_personality = None
+    logger.exception("多模态人格分析模块加载失败，已跳过相关路由注册")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if settings.AUTO_CREATE_TABLES:
+        init_db()
+    yield
+
+
+app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 
 # API 限流
 app.state.limiter = limiter
@@ -35,18 +52,17 @@ app.include_router(assessment.router, prefix="/api/v1/assessment", tags=["实时
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["用户认证"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["心理专家对话"])
 app.include_router(rag.router, prefix="/api/v1/rag", tags=["RAG 知识库"])
-app.include_router(
-    multimodal_personality.router,
-    prefix="/api/v1/multimodal-personality",
-    tags=["多模态人格分析"],
-)
+if multimodal_personality is not None:
+    app.include_router(
+        multimodal_personality.router,
+        prefix="/api/v1/multimodal-personality",
+        tags=["多模态人格分析"],
+    )
 
 # 挂载静态文件（头像等上传文件）
 uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
 os.makedirs(uploads_dir, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
-
-
 @app.get("/")
 def read_root():
     return {"message": "TestAgent 核心后端服务已启动！"}

@@ -1,29 +1,30 @@
 #!/bin/bash
 set -e
 
-echo "=== TestAgent 后端启动 ==="
+export PYTHONPATH="/app"
+echo "=== TestAgent backend startup ==="
 
-# 等待 PostgreSQL 就绪
-echo "等待数据库就绪..."
+echo "Waiting for database..."
 for i in $(seq 1 30); do
     python -c "
 from sqlalchemy import create_engine, text
-import os
-engine = create_engine(os.environ.get('DATABASE_URL', 'postgresql://postgres:123456@db:5432/atmr_db'))
+from app.core.config import settings
+engine = create_engine(settings.DATABASE_URL)
 with engine.connect() as conn:
     conn.execute(text('SELECT 1'))
-print('数据库连接成功')
+print('database ok')
 " 2>/dev/null && break
-    echo "  等待中... ($i/30)"
+    echo "  retrying... ($i/30)"
     sleep 2
 done
 
-# 自动建表（SQLAlchemy create_all 在模型导入时执行）
-echo "初始化数据库表..."
-python -c "from app.models import Base, engine; Base.metadata.create_all(bind=engine)"
+echo "Initializing database tables..."
+python -c "from app.models import init_db; init_db()"
 
-# 检查是否需要导入题库
-echo "检查题库数据..."
+echo "Running database compatibility migrations..."
+python scripts/migrate_database.py
+
+echo "Checking question bank..."
 NEED_IMPORT=$(python -c "
 from app.core.database import SessionLocal
 from app.models.assessment import Question
@@ -34,11 +35,11 @@ print(count)
 ")
 
 if [ "$NEED_IMPORT" = "0" ]; then
-    echo "题库为空，开始导入数据..."
+    echo "Question bank is empty, importing data..."
     python scripts/import_data.py
 else
-    echo "题库已有 $NEED_IMPORT 道题目，跳过导入"
+    echo "Question bank already has $NEED_IMPORT items, skipping import"
 fi
 
-echo "=== 启动 FastAPI 服务 ==="
+echo "=== Starting FastAPI ==="
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000
