@@ -60,6 +60,7 @@ class AssessmentSession(Base):
     debate_results = relationship("ModuleDebateResult", back_populates="session")
     chat_sessions = relationship("ChatSession", back_populates="assessment_session")
     chat_messages = relationship("ChatMessage", back_populates="session")
+    title = Column(String(100), nullable=True, comment="assessment session title")
 
     __table_args__ = (Index("idx_session_user_started", "user_id", started_at.desc()),)
 

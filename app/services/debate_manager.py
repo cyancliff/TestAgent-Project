@@ -81,12 +81,12 @@ def run_debate_streaming(user_data_context: str, message_queue: queue.Queue):
             {
                 "model": "qwen3.5-flash",
                 "api_key": os.environ.get("DASHSCOPE_API_KEY"),
-                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "base_url": "https://coding.dashscope.aliyuncs.com/v1",
             }
         ]
         config_list_zhipu = [
             {
-                "model": "glm-4.7-flash",
+                "model": "glm-4.6-flash",
                 "api_key": os.environ.get("ZHIPU_API_KEY"),
                 "base_url": "https://open.bigmodel.cn/api/paas/v4",
             }

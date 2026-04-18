@@ -145,7 +145,7 @@ def _remove_old_avatar(avatar_url: Optional[str]):
     relative_path = _normalize_avatar_relative_path(avatar_url)
     if not relative_path or not relative_path.startswith("avatars/"):
         return
-    filepath = os.path.join(PROJECT_ROOT, "uploads", relative_path)
+    filepath = os.path.join(UPLOAD_DIR, relative_path.removeprefix("avatars/"))
     if os.path.exists(filepath):
         try:
             os.remove(filepath)

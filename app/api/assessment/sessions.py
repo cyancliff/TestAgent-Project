@@ -3,17 +3,17 @@
 """
 
 import os
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db, SessionLocal
+from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.constants import STAGES
 from app.models.assessment import Question, AssessmentSession, AnswerRecord, ModuleDebateResult
 from app.models.chat import ChatSession
 from app.models.user import User
-from app.api.assessment.schemas import StartSessionRequest
+from app.api.assessment.schemas import StartSessionRequest, UpdateSessionRequest
 from app.services.stage_service import StageService
 
 router = APIRouter()
@@ -28,6 +28,17 @@ def ensure_session_owner(db: Session, session_id: int, user_id: int) -> Assessme
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在或无权访问")
     return session
+
+
+def build_assessment_session_title(started_at: datetime | None, session_id: int | None = None) -> str:
+    if started_at is not None:
+        try:
+            return started_at.astimezone().strftime("%Y.%m.%d %H:%M")
+        except Exception:
+            return started_at.strftime("%Y.%m.%d %H:%M")
+    if session_id is not None:
+        return f"测评 #{session_id}"
+    return "未命名测评"
 
 
 @router.post("/start-session")
@@ -56,6 +67,8 @@ async def start_session(
     db.add(new_session)
     db.commit()
     db.refresh(new_session)
+    new_session.title = build_assessment_session_title(new_session.started_at, new_session.id)
+    db.commit()
     return {"session_id": new_session.id, "status": "success"}
 
 
@@ -176,6 +189,28 @@ async def reopen_session(
     db.commit()
 
     return {"status": "success", "session_id": session_id}
+
+
+@router.put("/session/{session_id}")
+async def update_session(
+    session_id: int,
+    payload: UpdateSessionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    session = ensure_session_owner(db, session_id, current_user.id)
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="标题不能为空")
+
+    session.title = title
+    db.commit()
+
+    return {
+        "status": "success",
+        "session_id": session.id,
+        "title": session.title,
+    }
 
 
 @router.delete("/session/{session_id}")

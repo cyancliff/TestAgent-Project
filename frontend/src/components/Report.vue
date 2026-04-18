@@ -9,7 +9,8 @@
     <template v-else>
       <!-- 报告头部 -->
       <div class="report-card header-card">
-        <h1 class="report-title">ATMR 深度心理测评报告</h1>
+        <span class="report-kicker">ATMR 深度心理测评报告</span>
+        <h1 class="report-title">{{ reportTitle }}</h1>
         <p class="report-meta">
           会话 #{{ sessionId }} | {{ formatTime(reportData.started_at) }}
           <span v-if="reportData.finished_at"> — {{ formatTime(reportData.finished_at) }}</span>
@@ -170,8 +171,6 @@ ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, 
 
 const props = defineProps({ sessionId: String })
 const router = useRouter()
-const API_BASE = '/api/v1/assessment'
-
 const reportData = ref({})
 const loading = ref(true)
 const showAllAnswers = ref(false)
@@ -223,6 +222,10 @@ const hasDebateResults = computed(() => {
   return d && Object.keys(d).length > 0
 })
 const formattedReport = computed(() => renderMarkdown(reportData.value.report))
+const reportTitle = computed(() => {
+  const title = (reportData.value.title || '').trim()
+  return title || formatTime(reportData.value.started_at) || '未命名测评'
+})
 
 // --- 雷达图 ---
 const radarData = computed(() => {
@@ -339,6 +342,17 @@ onMounted(fetchReport)
   background: linear-gradient(135deg, rgba(17, 17, 17, 0.03), rgba(17, 17, 17, 0.08));
   padding: 56px 48px;
   border: 2px solid rgba(17, 17, 17, 0.08);
+}
+.report-kicker {
+  display: inline-flex;
+  margin-bottom: 14px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(17, 17, 17, 0.06);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 .report-title {
   font-size: 42px;

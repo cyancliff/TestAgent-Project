@@ -18,9 +18,9 @@
           <span class="nav-icon">📋</span>
           历史记录
         </router-link>
-        <router-link to="/assessment" :class="['nav-link', { active: $route.path === '/assessment' }]">
-          <span class="nav-icon">📝</span>
-          开始测评
+        <router-link to="/chat" :class="['nav-link', { active: isChatRoute }]">
+          <span class="nav-icon">AI</span>
+          {{ chatNavLabel }}
         </router-link>
       </div>
       <div class="nav-user" ref="userMenuRef">
@@ -29,7 +29,7 @@
             <img v-if="avatarUrl" :src="avatarUrl" class="nav-avatar" alt="头像" @error="handleAvatarLoadError" />
             <span v-else class="nav-avatar-fallback">{{ usernameInitial }}</span>
           </div>
-          <span class="user-menu-caret">{{ showUserMenu ? '▲' : '▼' }}</span>
+          <span class="user-menu-caret">{{ showUserMenu ? menuCaretOpen : menuCaretClosed }}</span>
         </button>
 
         <transition name="menu-fade">
@@ -109,6 +109,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from './api'
+import { resolveBackendUrl } from './config'
 import atmrLogo from './assets/atmr-logo.png'
 import AppDialog from './components/AppDialog.vue'
 import {
@@ -121,12 +122,16 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const chatNavLabel = '\u667A\u80FD\u54A8\u8BE2'
+const menuCaretOpen = '\u25B2'
+const menuCaretClosed = '\u25BC'
 
 const isChatRoute = computed(() => route.path.startsWith('/chat'))
 const isAssessmentRoute = computed(() => route.path.startsWith('/assessment'))
 const showNav = computed(() => route.path !== '/login')
 const username = ref(localStorage.getItem('username') || '用户')
-const avatarUrl = ref(localStorage.getItem('avatarUrl') || '')
+const readStoredAvatarUrl = () => resolveBackendUrl(localStorage.getItem('avatarUrl') || '')
+const avatarUrl = ref(readStoredAvatarUrl())
 const usernameInitial = computed(() => (username.value || '?')[0].toUpperCase())
 const userSubtitle = computed(() => `@${username.value || 'user'}`)
 const avatarInput = ref(null)
@@ -167,7 +172,7 @@ const handleAvatarUpload = async (e) => {
     const res = await api.post('/auth/avatar', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
-    avatarUrl.value = res.data.avatar_url
+    avatarUrl.value = resolveBackendUrl(res.data.avatar_url)
     localStorage.setItem('avatarUrl', res.data.avatar_url)
     emitUserProfileUpdated()
   } catch (err) {
@@ -189,6 +194,7 @@ const handleAvatarLoadError = () => {
 const syncCurrentUser = async () => {
   const token = localStorage.getItem('token')
   if (!token) return
+  avatarUrl.value = readStoredAvatarUrl()
   try {
     const res = await api.get('/auth/me')
     if (res.data?.username) {
@@ -196,7 +202,7 @@ const syncCurrentUser = async () => {
       localStorage.setItem('username', res.data.username)
     }
     if (res.data?.avatar_url) {
-      avatarUrl.value = res.data.avatar_url
+      avatarUrl.value = resolveBackendUrl(res.data.avatar_url)
       localStorage.setItem('avatarUrl', res.data.avatar_url)
     } else {
       handleAvatarLoadError()
