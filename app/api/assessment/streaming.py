@@ -10,6 +10,7 @@ import asyncio
 import time
 from datetime import datetime
 from collections import defaultdict
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -40,6 +41,17 @@ SCORING_STANDARD_TEXT = """
 
 
 router = APIRouter()
+
+
+def build_assessment_session_title(started_at: datetime | None, session_id: int | None = None) -> str:
+    if started_at is not None:
+        try:
+            return started_at.astimezone().strftime("%Y.%m.%d %H:%M")
+        except Exception:
+            return started_at.strftime("%Y.%m.%d %H:%M")
+    if session_id is not None:
+        return f"测评 #{session_id}"
+    return "未命名测评"
 
 
 def _compute_history_dimension_scores(records, questions):
@@ -565,6 +577,7 @@ async def get_history(
 
         result.append({
             "session_id": s.id,
+            "title": s.title or build_assessment_session_title(s.started_at, s.id),
             "started_at": s.started_at.isoformat() if s.started_at else None,
             "finished_at": s.finished_at.isoformat() if s.finished_at else None,
             "status": s.status,
@@ -678,6 +691,7 @@ async def get_report(
 
     return {
         "session_id": session.id,
+        "title": session.title or build_assessment_session_title(session.started_at, session.id),
         "user_id": session.user_id,
         "status": session.status,
         "started_at": session.started_at.isoformat() if session.started_at else None,

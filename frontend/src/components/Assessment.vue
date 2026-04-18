@@ -273,7 +273,6 @@ import api from '../api'
 import { marked } from 'marked'
 import { showAlertDialog, showPromptDialog } from '../composables/useAppDialog'
 
-const API_BASE = '/api/v1/assessment'
 const route = useRoute()
 const router = useRouter()
 const sessionId = ref(parseInt(route.query.sessionId) || 0)

@@ -242,6 +242,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { marked } from 'marked'
 import api from '../api'
+import { buildApiUrl, resolveBackendUrl } from '../config'
 import atmrLogo from '../assets/atmr-logo.png'
 import { showAlertDialog, showConfirmDialog, showPromptDialog } from '../composables/useAppDialog'
 
@@ -249,7 +250,8 @@ const route = useRoute()
 const router = useRouter()
 
 const username = ref(localStorage.getItem('username') || '用户')
-const userAvatarUrl = ref(localStorage.getItem('avatarUrl') || '')
+const readStoredAvatarUrl = () => resolveBackendUrl(localStorage.getItem('avatarUrl') || '')
+const userAvatarUrl = ref(readStoredAvatarUrl())
 const usernameInitial = computed(() => (username.value || '?')[0].toUpperCase())
 const userHandle = computed(() => `@${username.value || 'user'}`)
 
@@ -333,7 +335,7 @@ const activeSessionDescription = computed(() => {
 
 const syncLocalUser = () => {
   username.value = localStorage.getItem('username') || '用户'
-  userAvatarUrl.value = localStorage.getItem('avatarUrl') || ''
+  userAvatarUrl.value = readStoredAvatarUrl()
 }
 
 const fetchSessions = async () => {
@@ -546,12 +548,6 @@ const isPendingAssistantMessage = (msg, index) => (
   && index === messages.value.length - 1
   && !String(msg.content || '').trim()
 )
-
-const buildApiUrl = (path) => {
-  const basePath = (api.defaults.baseURL || '/api/v1').replace(/\/$/, '')
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`
-  return `${window.location.origin}${basePath}${normalizedPath}`
-}
 
 const parseSSEEvents = (buffer) => {
   const normalized = buffer.replace(/\r\n/g, '\n')

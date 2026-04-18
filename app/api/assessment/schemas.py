@@ -80,6 +80,10 @@ class RestartSessionRequest(BaseModel):
 
 
 # 兼容旧代码的别名
+class UpdateSessionRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=100)
+
+
 BatchAnswerItem = StageAnswerItem
 BatchSubmitRequest = SubmitStageRequest
 AdaptiveAnswerItem = StageAnswerItem
