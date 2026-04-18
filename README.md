@@ -100,6 +100,11 @@ cp .env.example .env
 # 3. 启动服务
 docker compose up -d --build
 ```
+Note: Docker now defaults to `requirements_full.txt`, then installs
+`requirements_feature.txt` in a second step. This keeps general packages
+on the main mirror and only lets Torch CPU use the PyTorch extra index.
+
+如果你的服务器拉取 `postgres:15-alpine` 很慢，可在 `.env` 中把 `POSTGRES_IMAGE` 改成你自己的镜像仓库地址。当前 Docker 默认先安装 `requirements_full.txt`，再单独安装 `requirements_feature.txt`，这样普通依赖仍走主镜像，`torch` 才会使用 PyTorch CPU 额外索引。
 
 启动后会自动完成：
 - 等待 PostgreSQL 就绪
@@ -135,7 +140,13 @@ docker compose up -d --build backend frontend
 
 ```bash
 # 1. 安装后端依赖
-pip install -r requirements_full.txt
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -r requirements_full.txt
+python -m pip install -r requirements_feature.txt
+
+# `requirements_feature.txt` 这一层会补充 `sentence-transformers` 和 `torch==...+cpu`
+# 并把 PyTorch 额外索引限制在这一步，避免常规依赖解析到非主镜像
+python -m pip install -r requirements_feature.txt
 
 # 2. 准备环境变量
 cp .env.example .env
@@ -169,6 +180,12 @@ python scripts/generate_feature_vectors.py
 # === 数据库密码（必填）===
 DB_PASSWORD=your_secure_password
 
+# === Docker 镜像与依赖源（可选）===
+POSTGRES_IMAGE=postgres:15-alpine
+PYTHON_IMAGE=python:3.10-slim
+PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+REQUIREMENTS_FILE=requirements_full.txt
+
 # === JWT 签名密钥（必填）===
 SECRET_KEY=your_random_secret_key
 
@@ -185,12 +202,18 @@ ZHIPU_API_KEY=
 | `DEEPSEEK_API_KEY` | 否 | DeepSeek API 密钥，用于多智能体辩论和 AI 咨询 |
 | `DASHSCOPE_API_KEY` | 否 | 阿里云通义千问密钥（备选模型） |
 | `ZHIPU_API_KEY` | 否 | 智谱 AI 密钥（备选模型） |
+| `POSTGRES_IMAGE` | 否 | 覆盖 PostgreSQL 镜像地址，适合替换成自建或内网镜像仓库 |
+| `PYTHON_IMAGE` | 否 | 覆盖后端基础镜像地址，适合替换成自建或内网镜像仓库 |
+| `PIP_INDEX_URL` | 否 | 普通 Python 依赖使用的索引地址 |
+| `REQUIREMENTS_FILE` | 否 | Docker 后端镜像安装的依赖文件，默认 `requirements_full.txt` |
 
 补充说明：
 
 - 默认 Docker 部署不需要手工填写 `DATABASE_URL`，`docker-compose.yml` 会自动注入容器内连接串
 - 默认本地开发环境会走 SQLite，数据库文件位于 `data/testagent_dev.db`
 - `uploads/` 在 Docker 部署中已通过独立卷持久化，重建 `backend` 容器后仍会保留上传文件
+- `REQUIREMENTS_FILE` 默认是 `requirements_full.txt`，包含当前后端启动所需的完整依赖
+- `requirements_feature.txt` 单独承载 `sentence-transformers` 与 `torch==...+cpu`，用于避免常规依赖解析到 PyTorch 额外索引
 
 ## 项目结构
 

@@ -93,7 +93,7 @@ git clone https://github.com/<your-name>/TestAgent.git
 
 ```bash
 cp .env.example .env
-nano .env
+vi .env
 ```
 
 至少修改这几项：
@@ -104,6 +104,12 @@ SECRET_KEY=请改成一串足够长的随机字符串
 DEEPSEEK_API_KEY=
 DASHSCOPE_API_KEY=
 ZHIPU_API_KEY=
+
+# 可选：网络慢时覆盖镜像或依赖源
+POSTGRES_IMAGE=postgres:15-alpine
+PYTHON_IMAGE=python:3.10-slim
+PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+REQUIREMENTS_FILE=requirements_server.txt
 ```
 
 说明：
@@ -112,6 +118,8 @@ ZHIPU_API_KEY=
 - `SECRET_KEY`：JWT 签名密钥，必须修改
 - 三个 AI Key 都是可选项，但不填的话 AI 相关功能不可用
 - 使用当前自带的 `docker-compose.yml` 时，不需要手工填写 `DATABASE_URL`
+- 如果 Docker Hub 拉取 `postgres:15-alpine` 很慢，可以在 `.env` 里把 `POSTGRES_IMAGE` 改成你自己的镜像仓库地址
+- Docker 默认使用 `requirements_server.txt` 构建后端镜像，不会在首次部署时安装 `torch/sentence-transformers`
 
 如果你想快速生成一个随机密钥，可以用：
 
@@ -132,9 +140,10 @@ docker compose up -d --build
 - 拉取 PostgreSQL、Nginx、Python、Node 镜像
 - 构建前端静态资源
 - 安装后端 Python 依赖
-- 下载 CPU 版 PyTorch wheel
 
 第一次部署时，等待 5 到 15 分钟都算正常。
+
+当前仓库默认不会在 Docker 首次构建时安装 `torch==2.1.0+cpu`。只有你明确把 `REQUIREMENTS_FILE` 改成 `requirements_full.txt`，或者手工安装 `requirements_feature.txt / requirements_full.txt` 时，才会进入这条依赖链。
 
 ## 7. 启动后会自动做什么
 
@@ -281,6 +290,15 @@ docker compose up -d --build
 如果执行了 `docker compose down -v`，下次再启动时，系统会重新建库并重新导入题库。
 
 ## 13. 常见问题
+
+### 13.0 首次构建卡在 `postgres:15-alpine` 或大模型 / ML 依赖安装
+
+按这个顺序处理：
+
+1. 如果卡在 `postgres:15-alpine`，优先判断是不是 Docker Hub 链路慢；必要时在 `.env` 里覆盖 `POSTGRES_IMAGE`
+2. 如果只是部署后端服务，不要把 `REQUIREMENTS_FILE` 改成 `requirements_full.txt`；保持默认的 `requirements_server.txt`
+3. 只有在你确实要在服务器上运行 `python scripts/generate_feature_vectors.py` 时，才额外安装 `requirements_feature.txt`
+4. 调整完 `.env` 后重新执行 `docker compose up -d --build`
 
 ### 13.1 打不开首页
 

@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:15-alpine
+    image: ${POSTGRES_IMAGE:-postgres:15-alpine}
     restart: always
     environment:
       POSTGRES_DB: atmr_db
@@ -15,7 +15,14 @@ services:
       retries: 10
 
   backend:
-    build: .
+    build:
+      context: .
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.10-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+        PIP_DEFAULT_TIMEOUT: ${PIP_DEFAULT_TIMEOUT:-300}
+        PIP_RETRIES: ${PIP_RETRIES:-10}
+        REQUIREMENTS_FILE: ${REQUIREMENTS_FILE:-requirements_full.txt}
     restart: always
     depends_on:
       db:

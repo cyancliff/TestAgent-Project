@@ -1,6 +1,6 @@
 <template>
   <div class="history-workspace">
-    <aside v-if="!loading && sessions.length" :class="['history-sidebar', { 'history-sidebar--open': mobileSidebarOpen }]">
+    <aside :class="['history-sidebar', { 'history-sidebar--open': mobileSidebarOpen }]">
       <div class="history-sidebar-top">
         <div class="history-sidebar-home">
           <img :src="atmrLogo" class="history-sidebar-mark" alt="ATMR logo" />
@@ -17,7 +17,18 @@
       <div class="history-sidebar-section">
         <div class="history-sidebar-label">测评档案</div>
         <div class="history-session-list">
+          <div v-if="loading" class="history-session-list-state">
+            <div v-for="n in 3" :key="`history-loading-${n}`" class="history-session-skeleton">
+              <span class="history-session-skeleton-line history-session-skeleton-line--title"></span>
+              <span class="history-session-skeleton-line"></span>
+            </div>
+          </div>
+          <div v-else-if="sessions.length === 0" class="history-session-list-state history-session-list-state--empty">
+            <strong>{{ sidebarEmptyTitle }}</strong>
+            <span>{{ sidebarEmptyNote }}</span>
+          </div>
           <div
+            v-else
             v-for="session in sessions"
             :key="session.session_id"
             :class="[
@@ -63,7 +74,7 @@
     </aside>
 
     <button
-      v-if="mobileSidebarOpen && sessions.length"
+      v-if="mobileSidebarOpen"
       class="history-sidebar-backdrop"
       type="button"
       aria-label="关闭测评档案"
@@ -76,7 +87,6 @@
           <header class="history-stage-header">
             <div class="history-stage-heading">
               <button
-                v-if="!loading && sessions.length"
                 class="history-mobile-trigger"
                 type="button"
                 aria-label="打开测评档案"
@@ -245,6 +255,8 @@ const completedCount = computed(() => sessions.value.filter((session) => session
 const reportReadyCount = computed(() => sessions.value.filter((session) => session.has_report).length)
 const generatingCount = computed(() => sessions.value.filter((session) => session.report_generating).length)
 const latestSession = computed(() => sessions.value[0] || null)
+const sidebarEmptyTitle = '\u6682\u65e0\u8bb0\u5f55'
+const sidebarEmptyNote = '\u5b8c\u6210\u6d4b\u8bc4\u540e\uff0c\u5de6\u4fa7\u4f1a\u5728\u8fd9\u91cc\u5c55\u793a\u5386\u53f2\u5217\u8868'
 const archiveCodeMap = computed(() => {
   const total = sessions.value.length
   return new Map(
@@ -368,9 +380,6 @@ const applySessions = (items) => {
   sessions.value = items || []
   if (!sessions.value.some((session) => session.session_id === openSessionMenuId.value)) {
     closeSessionMenu()
-  }
-  if (!sessions.value.length) {
-    closeMobileSidebar()
   }
   syncActiveHistorySession()
   syncPollingState()
@@ -658,6 +667,56 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 8px;
   padding-right: 4px;
+}
+
+.history-session-list-state {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-session-list-state--empty {
+  padding: 18px 16px;
+  border: 1px dashed var(--history-border-strong);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.history-session-list-state--empty strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--history-copy);
+}
+
+.history-session-list-state--empty span {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--history-muted);
+}
+
+.history-session-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 12px;
+  border: 1px solid rgba(229, 231, 235, 0.9);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.history-session-skeleton-line {
+  display: block;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(226, 232, 240, 0.9), rgba(241, 245, 249, 1), rgba(226, 232, 240, 0.9));
+  background-size: 200% 100%;
+  animation: history-shimmer 1.2s ease-in-out infinite;
+}
+
+.history-session-skeleton-line--title {
+  width: 68%;
+  height: 12px;
 }
 
 .history-session-item {
@@ -1280,6 +1339,16 @@ onUnmounted(() => {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes history-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
   }
 }
 

@@ -49,14 +49,17 @@ def install_dependencies():
     print_header("安装依赖")
 
     # 检查requirements文件
-    requirements_files = ["requirements_full.txt", "requirements_feature.txt"]
+    requirements_files = ["requirements_server.txt"]
 
     for req_file in requirements_files:
         if Path(req_file).exists():
             print(f"📦 安装 {req_file} 中的依赖...")
             try:
-                result = subprocess.run([sys.executable, "-m", "pip", "install", "-r", req_file],
-                                      capture_output=True, text=True)
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "--timeout", "300", "--retries", "10", "-r", req_file],
+                    capture_output=True,
+                    text=True,
+                )
                 if result.returncode == 0:
                     print(f"✅ {req_file} 依赖安装成功")
                 else:

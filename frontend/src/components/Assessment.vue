@@ -350,6 +350,36 @@ const canGoNext = computed(() => {
   return !!currentAnswer.value
 })
 const canNavigateToQuestion = (index) => !!stageQuestions.value[index]
+const STAGE_REVIEW_DURATION_MS = 3000
+const STAGE_REVIEW_STEP_DURATION_MS = 1000
+const FINAL_GENERATING_REDIRECT_MS = 10000
+const REPORT_POLL_INITIAL_DELAY_MS = 5000
+const REPORT_POLL_INTERVAL_MS = 3000
+const stageReviewTimers = []
+let reportPollTimer = null
+let finalGeneratingRedirectTimer = null
+const clearStageReviewTimers = () => {
+  while (stageReviewTimers.length) {
+    clearTimeout(stageReviewTimers.pop())
+  }
+}
+const clearReportPollTimer = () => {
+  if (reportPollTimer) {
+    clearTimeout(reportPollTimer)
+    reportPollTimer = null
+  }
+}
+const clearFinalGeneratingRedirectTimer = () => {
+  if (finalGeneratingRedirectTimer) {
+    clearTimeout(finalGeneratingRedirectTimer)
+    finalGeneratingRedirectTimer = null
+  }
+}
+const clearAsyncTimers = () => {
+  clearStageReviewTimers()
+  clearReportPollTimer()
+  clearFinalGeneratingRedirectTimer()
+}
 
 const submitStageSnapshot = computed(() => {
   // 构建当前阶段所有答案的快照用于提交
@@ -375,6 +405,18 @@ watch(() => debateMessages.value.length, () => {
 })
 
 // 加载阶段信息
+watch(isGenerating, (generating) => {
+  clearFinalGeneratingRedirectTimer()
+  if (!generating) return
+
+  finalGeneratingRedirectTimer = setTimeout(() => {
+    finalGeneratingRedirectTimer = null
+    if (isGenerating.value && isFinished.value) {
+      router.replace('/history')
+    }
+  }, FINAL_GENERATING_REDIRECT_MS)
+})
+
 const loadStageInfo = async () => {
   try {
     const res = await api.get('/assessment/stage-info', {
@@ -656,40 +698,50 @@ const submitCurrentStage = async () => {
   isSubmittingStage.value = true
   isStageReviewing.value = true
   reviewStep.value = 0
+  reviewingStage.value = currentStage.value
+  debateError.value = ''
 
   try {
-    const res = await api.post('/assessment/submit-stage', {
+    clearStageReviewTimers()
+    const reviewProgress = new Promise((resolve) => {
+      stageReviewTimers.push(setTimeout(() => {
+        reviewStep.value = 1
+      }, STAGE_REVIEW_STEP_DURATION_MS))
+      stageReviewTimers.push(setTimeout(() => {
+        reviewStep.value = 2
+      }, STAGE_REVIEW_STEP_DURATION_MS * 2))
+      stageReviewTimers.push(setTimeout(resolve, STAGE_REVIEW_DURATION_MS))
+    })
+
+    const submitRequest = api.post('/assessment/submit-stage', {
       session_id: sessionId.value,
       answers: submitStageSnapshot.value,
     })
+    const submitResult = submitRequest.then((res) => {
+      reviewingStage.value = res.data.current_stage || reviewingStage.value
+      return res.data
+    })
 
-    const data = res.data
-    reviewingStage.value = data.current_stage
-    reviewStep.value = 1
+    const [data] = await Promise.all([submitResult, reviewProgress])
+    clearStageReviewTimers()
 
-    // 模拟评审进度（加长动画时间让体验更加拟真）
-    setTimeout(() => { reviewStep.value = 2 }, 1500)
-    setTimeout(() => { reviewStep.value = 3 }, 3500)
+    isStageReviewing.value = false
 
-    // 5 秒后自动跳转下一阶段（辩论已在后台异步执行）
-    setTimeout(async () => {
-      isStageReviewing.value = false
-
-      if (data.all_completed) {
-        // 全部完成，进入最终报告页
-        isFinished.value = true
-        isGenerating.value = true
-        pollForReport()
-      } else if (data.next_stage) {
-        // 进入下一阶段
-        await loadStageInfo()
-        currentIndex.value = 0
-        stageQuestions.value = []
-        await loadNextQuestionInStage()
-      }
-    }, 5000)
+    if (data.all_completed) {
+      // 全部完成，进入最终报告页
+      isFinished.value = true
+      isGenerating.value = true
+      pollForReport()
+    } else if (data.next_stage) {
+      // 进入下一阶段
+      await loadStageInfo()
+      currentIndex.value = 0
+      stageQuestions.value = []
+      await loadNextQuestionInStage()
+    }
 
   } catch (error) {
+    clearStageReviewTimers()
     isStageReviewing.value = false
     const detail = error.response?.data?.detail
     await showAlertDialog(detail || '阶段提交失败，请稍后重试', {
@@ -705,7 +757,9 @@ const submitCurrentStage = async () => {
 const pollForReport = async () => {
   const maxAttempts = 60
   let attempts = 0
+  clearReportPollTimer()
   const poll = async () => {
+    reportPollTimer = null
     try {
       const res = await api.get(`/assessment/report/${sessionId.value}`)
       if (res.data.report) {
@@ -718,14 +772,14 @@ const pollForReport = async () => {
     }
     attempts++
     if (attempts < maxAttempts) {
-      setTimeout(poll, 3000)
+      reportPollTimer = setTimeout(poll, REPORT_POLL_INTERVAL_MS)
     } else {
       // 超时，跳转到历史页
       isGenerating.value = false
       debateError.value = '报告生成超时，请查看历史记录'
     }
   }
-  setTimeout(poll, 5000)
+  reportPollTimer = setTimeout(poll, REPORT_POLL_INITIAL_DELAY_MS)
 }
 
 const startNewSession = async () => {
@@ -879,6 +933,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearAsyncTimers()
   window.removeEventListener('keydown', handleGlobalKeydown)
   document.removeEventListener('click', handleDocumentClick)
 })
@@ -1142,8 +1197,8 @@ onBeforeUnmount(() => {
 .orbit-dot.dot-2 { background: var(--secondary, #3f3f46); top: 50%; right: 10px; animation: orbit-spin 2.5s linear infinite reverse; transform-origin: -54px 50%; }
 .orbit-dot.dot-3 { background: var(--warning); bottom: 26px; left: 26px; animation: orbit-spin 2s linear infinite; transform-origin: 54px -22px; }
 .orbit-center-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 48px; animation: pulse-glow 2s ease-in-out infinite; }
-.debate-loading-steps { display: flex; flex-direction: column; gap: 16px; align-items: flex-start; margin: 0 auto; max-width: 240px; }
-.step-item { display: flex; align-items: center; gap: 14px; font-size: 16px; color: var(--text-secondary); font-weight: 500; transition: all 0.3s; }
+.debate-loading-steps { display: flex; flex-direction: column; gap: 16px; align-items: center; margin: 0 auto; width: fit-content; max-width: 100%; }
+.step-item { display: inline-flex; align-items: center; justify-content: center; gap: 14px; font-size: 16px; color: var(--text-secondary); font-weight: 500; transition: all 0.3s; text-align: center; }
 .step-item.active { color: var(--primary-light); font-weight: 700; }
 .step-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); flex-shrink: 0; transition: all 0.3s; }
 .step-item.active .step-dot { background: var(--primary); box-shadow: 0 0 12px rgba(17, 17, 17, 0.4); animation: pulse-dot 1.5s ease-in-out infinite; }

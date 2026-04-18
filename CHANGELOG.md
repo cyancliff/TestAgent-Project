@@ -8,6 +8,29 @@
 
 ---
 
+## [2026-04-19] - 部署依赖拆分、测评阶段优化与历史页空态修复
+
+### 新增
+- 在 `.env.example` 中补充 `POSTGRES_IMAGE`、`PYTHON_IMAGE`、`PIP_INDEX_URL`、`PIP_DEFAULT_TIMEOUT`、`PIP_RETRIES` 与 `REQUIREMENTS_FILE` 等构建参数，支持按环境覆盖 PostgreSQL 镜像、Python 基础镜像、PyPI 源和后端依赖集合。
+- 为 `requirements_feature.txt` 单独声明 PyTorch CPU 额外索引，并把 `sentence-transformers`、`torch==2.1.0+cpu` 与特征向量生成相关依赖集中到独立文件，便于部署时按需启用机器学习能力。
+
+### 变更
+- 重构 `Dockerfile` 与 `docker-compose.yml` 的后端构建流程：支持从 Compose 透传镜像与 pip 参数、统一在镜像构建阶段升级 `pip/setuptools/wheel`，并通过 `REQUIREMENTS_FILE` 切换容器安装的依赖集合。
+- 调整 `requirements_full.txt` 与 `requirements_server.txt` 的职责边界，将常规后端依赖、限流组件和特征向量大包拆开管理，减少普通部署被 PyTorch 额外索引拖慢或拉取失败的概率。
+- 优化 `frontend/src/components/Assessment.vue` 的阶段提交流程，使用可清理的异步定时器驱动评审动画、报告轮询和最终跳转，避免重复进入页面后残留计时器影响状态。
+- 更新 `app/services/debate_manager.py` 的模型配置，切换到 `qwen3.5-flash-2026-02-23`、`glm-4.7-flash`，并改用 DashScope 兼容模式接口地址。
+
+### 修复
+- 修复 `frontend/src/components/History.vue` 在加载中或无会话时直接隐藏侧栏的问题，保留左侧档案栏、移动端入口、骨架屏和空列表提示，避免主内容区布局突变。
+- 为测评完成后的报告生成流程补充超时重定向、轮询句柄清理和页面卸载清理逻辑，降低重复轮询、跳转卡死和离页后状态泄漏的风险。
+- 调整 `scripts/deploy_adaptive_system.py` 的依赖安装策略与 pip 超时/重试参数，使一键部署脚本默认使用轻量服务器依赖，并增强弱网络环境下的安装成功率。
+
+### 文档
+- 详细更新 `README.md` 与 `docs/DEPLOY.md`，补充 Docker 镜像覆盖、依赖拆分策略、首次部署建议使用的依赖集合，以及首次构建卡在基础镜像或 ML 依赖时的排查步骤。
+- 将本批自 `d75ac30` 之后的部署与前端交互收口内容合并归档到同一条 `CHANGELOG` 记录，便于后续按发布日期追踪问题来源与交付范围。
+
+---
+
 ## [2026-04-18] - 测评标题持久化、档案页重构与毕设文档重写
 
 ### 新增

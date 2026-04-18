@@ -1,5 +1,5 @@
-# TestAgent 完整依赖列表
-# 基础后端依赖
+# TestAgent full Python dependencies
+# Core backend framework
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
@@ -7,38 +7,37 @@ pydantic==2.5.0
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
 
-# 数据库 (PostgreSQL)
+# Database
 psycopg2-binary==2.9.9
 
-# HTTP客户端
+# HTTP clients
 httpx==0.25.1
 requests==2.31.0
 
-# 数据处理
+# Data processing
 numpy==1.24.3
 scikit-learn==1.3.2
 
-# 特征向量生成（智能选题）
-sentence-transformers==2.2.2
-torch==2.1.0+cpu
+# Feature-vector and Torch CPU dependencies are installed separately
+# from requirements_feature.txt so general packages stay on the main mirror.
 
-# 多智能体框架
+# Multi-agent framework
 pyautogen==0.2.14
 
-# PageIndex RAG依赖
+# PageIndex / RAG
 litellm==1.82.0
 pymupdf==1.26.4
 PyPDF2==3.0.1
 pyyaml==6.0.2
 
-# 认证与安全
+# Auth and security
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 bcrypt
 slowapi>=0.1.9
 
-# AI 对话（DeepSeek API）
+# AI chat
 openai
 
-# 其他工具
+# Misc
 python-multipart==0.0.6
