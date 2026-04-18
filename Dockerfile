@@ -1,9 +1,20 @@
-FROM python:3.10-slim
+ARG PYTHON_IMAGE=python:3.10-slim
+FROM ${PYTHON_IMAGE}
 
 WORKDIR /app
-ENV PYTHONPATH=/app
 
-# 替换 apt 源为阿里云镜像
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ARG PIP_DEFAULT_TIMEOUT=300
+ARG PIP_RETRIES=10
+ARG REQUIREMENTS_FILE=requirements_full.txt
+
+ENV PYTHONPATH=/app \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_INDEX_URL=${PIP_INDEX_URL} \
+    PIP_DEFAULT_TIMEOUT=${PIP_DEFAULT_TIMEOUT} \
+    PIP_RETRIES=${PIP_RETRIES}
+
+# Switch Debian package sources to a closer mirror when available.
 RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
         sed -i 's|https://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources; \
         sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources; \
@@ -16,25 +27,19 @@ RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
         sed -i 's|http://security.debian.org/debian-security|http://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list; \
     fi
 
-# 安装系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 配置 pip 使用阿里云镜像
-RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
-    pip config set global.trusted-host mirrors.aliyun.com
+COPY requirements_server.txt requirements_full.txt requirements_feature.txt ./
 
-# 先复制依赖文件，利用 Docker 缓存
-COPY requirements_full.txt .
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    python -m pip install --no-cache-dir -r ${REQUIREMENTS_FILE} && \
+    if [ "${REQUIREMENTS_FILE}" = "requirements_full.txt" ]; then \
+        python -m pip install --no-cache-dir -r requirements_feature.txt; \
+    fi
 
-# 先直接下载 torch CPU 版 wheel 安装，再装其余依赖（全部走阿里云镜像）
-RUN pip install --no-cache-dir --timeout=300 https://download.pytorch.org/whl/cpu/torch-2.1.0%2Bcpu-cp310-cp310-linux_x86_64.whl && \
-    grep -v '^torch==' requirements_full.txt > requirements.txt && \
-    pip install --no-cache-dir --timeout=300 -r requirements.txt
-
-# 复制应用代码
 COPY app/ ./app/
 COPY scripts/ ./scripts/
 COPY data/ ./data/
@@ -42,8 +47,7 @@ COPY PageIndex/ ./PageIndex/
 COPY multimodal_personality/__init__.py ./multimodal_personality/__init__.py
 COPY multimodal_personality/inference/ ./multimodal_personality/inference/
 
-# 复制启动脚本
-COPY docker-entrypoint.sh .
+COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
 EXPOSE 8000
