@@ -4,8 +4,11 @@ RAG 服务模块 - 基于 PageIndex 的 ATMR 心理学知识库检索
 提供知识库初始化、查询、证据检索等功能，供聊天和辩论系统使用。
 """
 
+import asyncio
 import json
+import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -23,13 +26,18 @@ from pageindex import PageIndexClient  # noqa: E402
 
 _client: PageIndexClient | None = None
 _doc_id: str | None = None
+logger = logging.getLogger(__name__)
 
 WORKSPACE = PAGEINDEX_DIR / "results"
 ATMR_DOC_NAME = "MinerU_markdown_ATMR_Longtext"
 
 # LLM 语义评分检索配置
 RELEVANCE_THRESHOLD = 0.3  # 相关性阈值，低于此分数视为不相关
-MAX_SECTIONS_TO_SCORE = 30  # 最多评分的章节数（先粗筛后精排）
+MAX_SECTIONS_TO_SCORE = 18  # 最多评分的章节数（先粗筛后精排）
+LLM_SCORE_MAX_SUMMARY_CHARS = 80
+LLM_SCORE_MAX_RETRIES = 1
+LLM_SCORE_RETRY_DELAY_SECONDS = 0.6
+LLM_SCORE_TIMEOUT = httpx.Timeout(45.0, connect=10.0)
 
 
 def get_rag_client() -> tuple[PageIndexClient, str]:
@@ -143,15 +151,57 @@ def _keyword_coarse_filter(sections: list[dict], query: str) -> list[dict]:
     return filtered if filtered else sections[:20]  # 如果粗筛无结果，返回前 20 个章节兜底
 
 
+def _describe_exception(exc: Exception) -> str:
+    detail = str(exc).strip()
+    return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+
+
+def _extract_json_payload(content: str) -> dict:
+    cleaned = (content or "").strip()
+    if not cleaned:
+        raise ValueError("LLM returned empty content")
+
+    match = re.search(r"\{[\s\S]*\}", cleaned)
+    if not match:
+        raise ValueError("LLM response did not contain a JSON object")
+
+    return json.loads(match.group(0))
+
+
+def _parse_llm_scores(content: str, sections: list[dict]) -> list[dict]:
+    payload = _extract_json_payload(content)
+    scores_list = payload.get("scores", [])
+    if not isinstance(scores_list, list):
+        raise ValueError("LLM response did not contain a valid scores list")
+
+    scored_sections = []
+    for item in scores_list:
+        idx = item.get("index", -1)
+        if 0 <= idx < len(sections):
+            scored_sections.append(
+                {
+                    "section": sections[idx],
+                    "score": float(item.get("score", 0)),
+                    "reason": item.get("reason", ""),
+                }
+            )
+
+    if not scored_sections:
+        raise ValueError("LLM response did not contain any valid scored sections")
+
+    return scored_sections
+
+
 async def _llm_score_relevance(query: str, sections: list[dict]) -> list[dict]:
     """使用 LLM 对章节进行语义相关性评分。
 
     将所有章节标题和摘要打包成一次请求，让 LLM 批量评分，减少 API 调用次数。
     返回格式: [{"section": section_dict, "score": float, "reason": str}, ...]
     """
-    # 构建批量评分 prompt
+    # 控制单次 prompt 体积，降低超时概率。
     sections_text = "\n".join(
-        f"[{i}] {s['title']} - {s['summary'][:100]}" for i, s in enumerate(sections)
+        f"[{i}] {s['title']} - {s['summary'][:LLM_SCORE_MAX_SUMMARY_CHARS]}"
+        for i, s in enumerate(sections)
     )
 
     prompt = f"""你是一个专业的心理学文档检索助手。请基于用户的查询问题，对以下文档章节标题和摘要进行语义相关性评分。
@@ -181,52 +231,60 @@ async def _llm_score_relevance(query: str, sections: list[dict]) -> list[dict]:
         # 无 API key 时回退到关键词评分
         return _keyword_score_fallback(query, sections)
 
-    try:
-        client = httpx.AsyncClient(timeout=30.0)
+    total_attempts = LLM_SCORE_MAX_RETRIES + 1
+    last_error: Exception | None = None
+
+    for attempt in range(1, total_attempts + 1):
         try:
-            response = await client.post(
-                "https://api.deepseek.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "deepseek-chat",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.1,
-                    "max_tokens": 2000,
-                },
-            )
-            response.raise_for_status()
-            result = response.json()
-            content = result["choices"][0]["message"]["content"]
-
-            # 解析 JSON 响应
-            scores_data = json.loads(content)
-            scores_list = scores_data.get("scores", [])
-
-            scored_sections = []
-            for item in scores_list:
-                idx = item.get("index", -1)
-                if 0 <= idx < len(sections):
-                    scored_sections.append(
-                        {
-                            "section": sections[idx],
-                            "score": float(item.get("score", 0)),
-                            "reason": item.get("reason", ""),
-                        }
-                    )
-
-            return scored_sections
-        finally:
+            client = httpx.AsyncClient(timeout=LLM_SCORE_TIMEOUT)
             try:
-                await client.aclose()
-            except RuntimeError:
-                pass  # Windows ProactorEventLoop: 事件循环已关闭时 aclose 会报错，连接已断开，可安全忽略
+                response = await client.post(
+                    "https://api.deepseek.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "deepseek-chat",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.1,
+                        "max_tokens": 2000,
+                    },
+                )
+                response.raise_for_status()
+                result = response.json()
+                content = result["choices"][0]["message"]["content"]
+                return _parse_llm_scores(content, sections)
+            finally:
+                try:
+                    await client.aclose()
+                except RuntimeError:
+                    pass  # Windows ProactorEventLoop: 事件循环已关闭时 aclose 会报错，连接已断开，可安全忽略
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            last_error = exc
+            if attempt < total_attempts:
+                logger.warning(
+                    "[RAG] LLM 语义评分第 %s/%s 次失败，准备重试: query=%r, sections=%s, error=%s",
+                    attempt,
+                    total_attempts,
+                    query,
+                    len(sections),
+                    _describe_exception(exc),
+                )
+                await asyncio.sleep(LLM_SCORE_RETRY_DELAY_SECONDS * attempt)
+                continue
+            break
+        except Exception as exc:
+            last_error = exc
+            break
 
-    except Exception as e:
-        print(f"[RAG] LLM 语义评分失败: {e}，回退到关键词评分")
-        return _keyword_score_fallback(query, sections)
+    logger.warning(
+        "[RAG] LLM 语义评分失败，回退到关键词评分: query=%r, sections=%s, error=%s",
+        query,
+        len(sections),
+        _describe_exception(last_error or RuntimeError("unknown error")),
+    )
+    return _keyword_score_fallback(query, sections)
 
 
 def _keyword_score_fallback(query: str, sections: list[dict]) -> list[dict]:

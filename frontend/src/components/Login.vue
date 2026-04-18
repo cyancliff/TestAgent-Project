@@ -2,7 +2,7 @@
   <div class="login-page">
     <div class="login-card animate-fade-in">
       <div class="brand-header">
-        <span class="logo">✨</span>
+        <img :src="atmrLogo" class="login-logo" alt="ATMR logo" />
         <h1 class="app-title">ATMR 测评系统</h1>
         <p class="app-subtitle">多智能体辩论驱动的深度心理画像</p>
       </div>
@@ -38,6 +38,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
+import atmrLogo from '../assets/atmr-logo.png'
 
 const router = useRouter()
 
@@ -99,11 +100,12 @@ const handleSubmit = async () => {
   margin-bottom: 32px;
 }
 
-.logo {
-  font-size: 58px;
+.login-logo {
+  width: min(168px, 48vw);
+  height: auto;
   display: block;
-  margin-bottom: 16px;
-  text-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  margin: 0 auto 18px;
+  filter: drop-shadow(0 10px 24px rgba(17, 24, 39, 0.14));
   animation: float 3s ease-in-out infinite;
 }
 
@@ -192,7 +194,7 @@ const handleSubmit = async () => {
 .input-group input:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.12);
 }
 
 .input-group input::placeholder {
@@ -224,7 +226,7 @@ const handleSubmit = async () => {
 
 .submit-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 8px 20px rgba(17, 17, 17, 0.24);
 }
 
 .submit-btn:disabled {
@@ -238,8 +240,8 @@ const handleSubmit = async () => {
   .login-card {
     padding: 40px 32px;
   }
-  .logo {
-    font-size: 48px;
+  .login-logo {
+    width: min(144px, 44vw);
   }
   .app-title {
     font-size: 24px;
@@ -261,8 +263,8 @@ const handleSubmit = async () => {
   .login-card {
     padding: 32px 24px;
   }
-  .logo {
-    font-size: 40px;
+  .login-logo {
+    width: min(128px, 42vw);
   }
   .app-title {
     font-size: 22px;

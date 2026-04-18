@@ -158,7 +158,7 @@ def ensure_chat_session_owner(db: Session, chat_session_id: int, user_id: int) -
 
 
 def init_chat_with_context(db: Session, chat_session: ChatSession, user_id: int):
-    """为咨询会话初始化系统提示和欢迎消息"""
+    """为咨询会话初始化系统提示。"""
     # 清除旧的系统消息
     db.query(ChatMessageModel).filter(
         ChatMessageModel.chat_session_id == chat_session.id,
@@ -180,22 +180,6 @@ def init_chat_with_context(db: Session, chat_session: ChatSession, user_id: int)
         system_prompt,
         legacy_session_id=chat_session.assessment_session_id,
     )
-
-    # 如果没有任何可见消息，添加欢迎消息
-    visible = get_chat_messages(db, chat_session.id, include_system=False)
-    if not visible:
-        if chat_session.assessment_session_id:
-            welcome = "你好！我是你的AI心理顾问。我已经详细了解了你的测评结果，很高兴能和你交流。你可以问我关于测评结果的任何问题，或者聊聊你当前的心理状态。"
-        else:
-            welcome = "你好！我是你的AI心理顾问。目前没有关联测评结果，我可以基于心理学专业知识为你提供通用的心理咨询。你也可以在上方选择关联一份测评结果，获得更个性化的分析。"
-        append_chat_message(
-            db,
-            chat_session.id,
-            user_id,
-            "assistant",
-            welcome,
-            legacy_session_id=chat_session.assessment_session_id,
-        )
 
 
 async def generate_reply(messages: list[dict]) -> str:
@@ -410,9 +394,6 @@ async def create_chat_session(
     db.commit()
     db.refresh(chat_session)
 
-    # 初始化系统提示和欢迎消息
-    init_chat_with_context(db, chat_session, current_user.id)
-
     return {
         "id": chat_session.id,
         "title": chat_session.title,
@@ -489,11 +470,6 @@ async def get_messages(
 ):
     """获取咨询会话的消息历史"""
     chat_session = ensure_chat_session_owner(db, chat_session_id, current_user.id)
-
-    # 如果没有任何消息，初始化
-    all_msgs = get_chat_messages(db, chat_session_id, include_system=True)
-    if not all_msgs:
-        init_chat_with_context(db, chat_session, current_user.id)
 
     return {
         "messages": serialize_messages(get_chat_messages(db, chat_session_id, include_system=False)),
@@ -600,9 +576,6 @@ async def clear_chat(
         ChatMessageModel.chat_session_id == chat_session_id,
     ).delete()
     db.commit()
-
-    # 重新初始化
-    init_chat_with_context(db, chat_session, current_user.id)
 
     return {
         "status": "success",

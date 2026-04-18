@@ -8,9 +8,9 @@
     </div>
 
     <!-- 统一导航栏 -->
-    <nav v-if="showNav" class="navbar">
+    <nav v-if="showNav" ref="navRef" class="navbar">
       <div class="nav-brand">
-        <span class="logo">✨</span>
+        <img :src="atmrLogo" class="nav-logo" alt="ATMR logo" />
         <span class="brand-text">ATMR</span>
       </div>
       <div class="nav-links">
@@ -67,35 +67,79 @@
     </nav>
 
     <!-- 主内容区 -->
-    <main :class="['main-content', { 'with-nav': showNav }]">
+    <main
+      :class="[
+        'main-content',
+        {
+          'with-nav': showNav,
+          'main-content--chat': isChatRoute,
+          'main-content--assessment': isAssessmentRoute,
+        },
+      ]"
+    >
       <router-view v-slot="{ Component }">
         <transition name="fade-slide" mode="out-in">
           <component :is="Component" />
         </transition>
       </router-view>
     </main>
+
+    <AppDialog
+      v-model="dialogState.open"
+      :mode="dialogState.mode"
+      :title="dialogState.title"
+      :message="dialogState.message"
+      :confirm-text="dialogState.confirmText"
+      :cancel-text="dialogState.cancelText"
+      :input-value="dialogState.inputValue"
+      :input-label="dialogState.inputLabel"
+      :input-placeholder="dialogState.inputPlaceholder"
+      :input-max-length="dialogState.inputMaxLength"
+      :multiline="dialogState.multiline"
+      :input-rows="dialogState.inputRows"
+      :destructive="dialogState.destructive"
+      @update:input-value="updateDialogInputValue"
+      @confirm="handleDialogConfirm"
+      @cancel="handleDialogCancel"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from './api'
+import atmrLogo from './assets/atmr-logo.png'
+import AppDialog from './components/AppDialog.vue'
+import {
+  dialogState,
+  handleDialogCancel,
+  handleDialogConfirm,
+  showAlertDialog,
+  updateDialogInputValue,
+} from './composables/useAppDialog'
 
 const route = useRoute()
 const router = useRouter()
 
+const isChatRoute = computed(() => route.path.startsWith('/chat'))
+const isAssessmentRoute = computed(() => route.path.startsWith('/assessment'))
 const showNav = computed(() => route.path !== '/login')
 const username = ref(localStorage.getItem('username') || '用户')
 const avatarUrl = ref(localStorage.getItem('avatarUrl') || '')
 const usernameInitial = computed(() => (username.value || '?')[0].toUpperCase())
 const userSubtitle = computed(() => `@${username.value || 'user'}`)
 const avatarInput = ref(null)
+const navRef = ref(null)
 const showUserMenu = ref(false)
 const userMenuRef = ref(null)
 
 const closeUserMenu = () => {
   showUserMenu.value = false
+}
+
+const emitUserProfileUpdated = () => {
+  window.dispatchEvent(new CustomEvent('user-profile-updated'))
 }
 
 const toggleUserMenu = () => {
@@ -111,7 +155,10 @@ const handleAvatarUpload = async (e) => {
   const file = e.target.files?.[0]
   if (!file) return
   if (file.size > 2 * 1024 * 1024) {
-    alert('图片大小不能超过 2MB')
+    await showAlertDialog('图片大小不能超过 2MB', {
+      title: '上传失败',
+    })
+    e.target.value = ''
     return
   }
   const formData = new FormData()
@@ -122,8 +169,12 @@ const handleAvatarUpload = async (e) => {
     })
     avatarUrl.value = res.data.avatar_url
     localStorage.setItem('avatarUrl', res.data.avatar_url)
+    emitUserProfileUpdated()
   } catch (err) {
-    alert(err.response?.data?.detail || '头像上传失败')
+    await showAlertDialog(err.response?.data?.detail || '头像上传失败', {
+      title: '上传失败',
+      destructive: true,
+    })
   }
   // 重置 input 以便再次选择同一文件
   e.target.value = ''
@@ -132,6 +183,7 @@ const handleAvatarUpload = async (e) => {
 const handleAvatarLoadError = () => {
   avatarUrl.value = ''
   localStorage.removeItem('avatarUrl')
+  emitUserProfileUpdated()
 }
 
 const syncCurrentUser = async () => {
@@ -148,7 +200,9 @@ const syncCurrentUser = async () => {
       localStorage.setItem('avatarUrl', res.data.avatar_url)
     } else {
       handleAvatarLoadError()
+      return
     }
+    emitUserProfileUpdated()
   } catch (err) {
     console.error('同步用户信息失败:', err)
   }
@@ -156,6 +210,7 @@ const syncCurrentUser = async () => {
 
 const logout = () => {
   closeUserMenu()
+  localStorage.removeItem('token')
   localStorage.removeItem('userId')
   localStorage.removeItem('username')
   localStorage.removeItem('avatarUrl')
@@ -170,25 +225,44 @@ const handleClickOutside = (event) => {
   }
 }
 
+const updateNavHeight = () => {
+  const navHeight = showNav.value ? Math.ceil(navRef.value?.getBoundingClientRect().height || 0) : 0
+  document.documentElement.style.setProperty('--nav-height', `${navHeight}px`)
+}
+
+watch(
+  [() => route.fullPath, showNav],
+  async () => {
+    await nextTick()
+    updateNavHeight()
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+  window.addEventListener('resize', updateNavHeight)
   syncCurrentUser()
+  updateNavHeight()
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('resize', updateNavHeight)
+  document.documentElement.style.setProperty('--nav-height', '0px')
 })
 </script>
 
 <style>
 /* ========== 全局配色变量 ========== */
 :root {
+  --nav-height: 0px;
   /* 恢复原版主色与浅色明亮主题 */
-  --primary: #6366f1;
-  --primary-dark: #4f46e5;
-  --primary-light: #818cf8;
-  --secondary: #06b6d4;
-  --accent: #f472b6;
+  --primary: #18181b;
+  --primary-dark: #000000;
+  --primary-light: #52525b;
+  --secondary: #3f3f46;
+  --accent: #71717a;
   
   /* 浅色系环境，保留微透明实现Bright Glassmorphism */
   --bg-base: #f8fafc;       /* 浅灰色底层 */
@@ -212,12 +286,12 @@ onBeforeUnmount(() => {
   --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.02);
   --shadow-xl: 0 20px 40px -12px rgba(0, 0, 0, 0.08);
   --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.02);
-  --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.15); /* 柔和的发光阴影 */
+  --shadow-glow: 0 0 20px rgba(17, 17, 17, 0.12); /* 柔和的发光阴影 */
 
   --gradient-primary: linear-gradient(135deg, var(--primary), var(--primary-dark));
   --gradient-success: linear-gradient(135deg, var(--success), #059669);
   --gradient-warning: linear-gradient(135deg, var(--warning), #d97706);
-  --gradient-secondary: linear-gradient(135deg, var(--secondary), #0891b2);
+  --gradient-secondary: linear-gradient(135deg, var(--secondary), #18181b);
   
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -272,21 +346,21 @@ body {
 .blob-1 {
   top: -10%; left: -10%;
   width: 50vw; height: 50vw;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.5) 0%, rgba(255,255,255,0) 70%);
+  background: radial-gradient(circle, rgba(17, 17, 17, 0.16) 0%, rgba(255,255,255,0) 70%);
   animation-delay: 0s;
 }
 
 .blob-2 {
   bottom: -20%; right: -10%;
   width: 60vw; height: 60vw;
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.4) 0%, rgba(255,255,255,0) 70%);
+  background: radial-gradient(circle, rgba(64, 64, 64, 0.14) 0%, rgba(255,255,255,0) 70%);
   animation-delay: -5s;
 }
 
 .blob-3 {
   top: 40%; left: 40%;
   width: 40vw; height: 40vw;
-  background: radial-gradient(circle, rgba(244, 114, 182, 0.3) 0%, rgba(255,255,255,0) 70%);
+  background: radial-gradient(circle, rgba(113, 113, 122, 0.12) 0%, rgba(255,255,255,0) 70%);
   animation-delay: -10s;
 }
 
@@ -344,13 +418,15 @@ body {
   min-width: 0;
 }
 
-.logo {
-  font-size: 34px;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+.nav-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 14px rgba(17, 24, 39, 0.12));
   transition: transform 0.3s ease;
 }
 
-.logo:hover {
+.nav-logo:hover {
   transform: scale(1.1);
 }
 
@@ -399,7 +475,7 @@ body {
 .nav-link.active {
   background: var(--gradient-primary);
   color: white;
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 6px 20px rgba(17, 17, 17, 0.22);
 }
 
 .nav-icon {
@@ -502,8 +578,8 @@ body {
 }
 
 .user-menu-card {
-  background: linear-gradient(180deg, rgba(99, 102, 241, 0.07), rgba(255, 255, 255, 0.95));
-  border: 1px solid rgba(99, 102, 241, 0.08);
+  background: linear-gradient(180deg, rgba(17, 17, 17, 0.05), rgba(255, 255, 255, 0.95));
+  border: 1px solid rgba(17, 17, 17, 0.08);
   border-radius: 18px;
   padding: 22px 16px 16px;
   display: flex;
@@ -523,7 +599,7 @@ body {
   justify-content: center;
   cursor: pointer;
   background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(17, 17, 17, 0.1);
   transition: transform var(--transition-normal);
 }
 
@@ -536,7 +612,7 @@ body {
   height: 60px;
   object-fit: cover;
   border-radius: 50%;
-  border: 2px solid rgba(99, 102, 241, 0.14);
+  border: 2px solid rgba(17, 17, 17, 0.12);
 }
 
 .user-menu-avatar-fallback {
@@ -583,7 +659,7 @@ body {
 }
 
 .user-menu-item:hover {
-  background: rgba(99, 102, 241, 0.08);
+  background: rgba(17, 17, 17, 0.06);
   transform: translateX(2px);
 }
 
@@ -623,6 +699,27 @@ body {
   padding-top: 24px;
 }
 
+.main-content.main-content--chat {
+  max-width: none;
+  min-height: calc(100dvh - var(--nav-height));
+  height: calc(100dvh - var(--nav-height));
+  box-sizing: border-box;
+  padding: 0;
+  overflow: hidden;
+}
+
+.main-content.main-content--assessment {
+  max-width: none;
+  min-height: calc(100dvh - var(--nav-height));
+  height: calc(100dvh - var(--nav-height));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 20px 14px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 /* ========== 通用卡片样式 ========== */
 .card {
   background: var(--bg-card);
@@ -657,12 +754,12 @@ body {
 .btn-primary {
   background: var(--gradient-primary);
   color: white;
-  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 4px 15px rgba(17, 17, 17, 0.16);
 }
 
 .btn-primary:hover {
   transform: translateY(-3px) scale(1.02);
-  box-shadow: 0 12px 24px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 12px 24px rgba(17, 17, 17, 0.24);
 }
 
 .btn-primary:active {
@@ -702,7 +799,7 @@ body {
   outline: none;
   border-color: var(--primary);
   background: rgba(255, 255, 255, 0.9);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02), 0 0 0 3px rgba(99, 102, 241, 0.2);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02), 0 0 0 3px rgba(17, 17, 17, 0.12);
 }
 
 .input::placeholder {
@@ -802,13 +899,13 @@ body {
 
 .sidebar-item:hover {
   border-color: var(--primary);
-  background: rgba(99, 102, 241, 0.06);
+  background: rgba(17, 17, 17, 0.05);
   transform: translateX(2px);
 }
 
 .sidebar-item.active {
   border-color: var(--primary);
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(17, 17, 17, 0.08);
 }
 
 .sidebar-item-title {
@@ -967,8 +1064,9 @@ body {
     padding: var(--safe-area-inset-top) 16px 0 16px;
   }
 
-  .logo {
-    font-size: 28px;
+  .nav-logo {
+    width: 42px;
+    height: 42px;
   }
 
   .brand-text {
@@ -993,6 +1091,13 @@ body {
     padding-top: 16px;
   }
 
+  .main-content.main-content--assessment {
+    min-height: calc(100dvh - var(--nav-height));
+    height: auto;
+    padding: 12px;
+    overflow: visible;
+  }
+
   .sidebar-item-title {
     font-size: 14px;
   }
@@ -1004,7 +1109,7 @@ body {
 @media (max-width: 480px) {
   .navbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     min-height: 72px;
     height: auto;
@@ -1019,12 +1124,13 @@ body {
     max-width: 100%;
   }
 
-  .logo {
-    font-size: 20px;
+  .nav-logo {
+    width: 32px;
+    height: 32px;
   }
 
   .brand-text {
-    font-size: 24px;
+    font-size: 20px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1040,9 +1146,8 @@ body {
 
   .nav-links {
     grid-column: 2;
-    justify-self: center;
-    width: max-content;
-    max-width: 100%;
+    justify-self: stretch;
+    width: 100%;
     flex: 0 1 auto;
     justify-content: center;
     flex-wrap: nowrap;
@@ -1133,6 +1238,13 @@ body {
   .main-content.with-nav {
     padding-top: 18px;
   }
+
+  .main-content.main-content--assessment {
+    min-height: calc(100dvh - var(--nav-height));
+    height: auto;
+    padding: 8px 6px 10px;
+    overflow: visible;
+  }
 }
 
 @media (max-width: 360px) {
@@ -1142,8 +1254,9 @@ body {
     gap: 4px;
   }
 
-  .logo {
-    font-size: 18px;
+  .nav-logo {
+    width: 28px;
+    height: 28px;
   }
 
   .brand-text {

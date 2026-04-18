@@ -60,6 +60,8 @@ multimodal_personality/data/cfi_v2/mock_features/
 multimodal_personality/data/cfi_v2/mock_feature_jobs.json
 multimodal_personality/data/cfi_v2/mock_manifest.json
 multimodal_personality/checkpoints/
+uploads/avatars/*
+!uploads/avatars/.gitkeep
 uploads/multimodal_personality/videos/
 uploads/multimodal_personality/tasks/
 uploads/multimodal_personality/artifacts/

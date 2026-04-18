@@ -154,6 +154,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
 import { marked } from 'marked'
+import { showAlertDialog, showConfirmDialog } from '../composables/useAppDialog'
 import { Radar } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -177,8 +178,8 @@ const showAllAnswers = ref(false)
 const expandedDimension = reactive({ A: false, T: false, M: false, R: false })
 
 const modules = [
-  { key: 'A', name: '欣赏型', color: '#6366f1' },
-  { key: 'T', name: '目标型', color: '#06b6d4' },
+  { key: 'A', name: '欣赏型', color: '#18181b' },
+  { key: 'T', name: '目标型', color: '#3f3f46' },
   { key: 'M', name: '包容型', color: '#22c55e' },
   { key: 'R', name: '责任型', color: '#f59e0b' },
 ]
@@ -232,8 +233,8 @@ const radarData = computed(() => {
     datasets: [{
       label: 'ATMR 特质分布',
       data: modules.map(m => ds[m.key]?.percentage || 0),
-      backgroundColor: 'rgba(99, 102, 241, 0.12)',
-      borderColor: '#6366f1',
+      backgroundColor: 'rgba(17, 17, 17, 0.12)',
+      borderColor: '#18181b',
       borderWidth: 2.5,
       pointBackgroundColor: modules.map(m => m.color),
       pointBorderColor: '#fff',
@@ -284,13 +285,22 @@ const formatTime = (iso) => {
 }
 
 const deleteCurrentSession = async () => {
-  if (!confirm('确定要删除本次测评记录吗？删除后无法恢复。')) return
+  const shouldDelete = await showConfirmDialog('确定要删除本次测评记录吗？删除后无法恢复。', {
+    title: '删除记录',
+    confirmText: '删除',
+    cancelText: '取消',
+    destructive: true,
+  })
+  if (!shouldDelete) return
   try {
     await api.delete(`/assessment/session/${props.sessionId}`)
     router.push('/history')
   } catch (err) {
     console.error('删除失败:', err)
-    alert(err.response?.data?.detail || '删除失败')
+    await showAlertDialog(err.response?.data?.detail || '删除失败', {
+      title: '删除失败',
+      destructive: true,
+    })
   }
 }
 
@@ -326,9 +336,9 @@ onMounted(fetchReport)
 /* === 头部 === */
 .header-card {
   text-align: center;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.03), rgba(99, 102, 241, 0.08));
+  background: linear-gradient(135deg, rgba(17, 17, 17, 0.03), rgba(17, 17, 17, 0.08));
   padding: 56px 48px;
-  border: 2px solid rgba(99, 102, 241, 0.1);
+  border: 2px solid rgba(17, 17, 17, 0.08);
 }
 .report-title {
   font-size: 42px;
@@ -376,7 +386,7 @@ onMounted(fetchReport)
 /* === Markdown 报告渲染 === */
 .report-body { padding-top: 12px; text-align: left; }
 .markdown-body { line-height: 1.8; font-size: 16px; color: var(--text-secondary); text-align: left; }
-.markdown-body :deep(h1) { font-size: 2.25em; font-weight: 800; color: var(--text-primary); margin: 1.5em 0 0.5em; padding-bottom: 0.3em; border-bottom: 3px solid rgba(99, 102, 241, 0.15); text-align: left; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.markdown-body :deep(h1) { font-size: 2.25em; font-weight: 800; color: var(--text-primary); margin: 1.5em 0 0.5em; padding-bottom: 0.3em; border-bottom: 3px solid rgba(17, 17, 17, 0.12); text-align: left; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 .markdown-body :deep(h2) { font-size: 1.8em; font-weight: 700; color: var(--text-primary); margin: 1.5em 0 0.5em; text-align: left; }
 .markdown-body :deep(h3) { font-size: 1.5em; font-weight: 700; color: var(--primary); margin: 1.25em 0 0.5em; text-align: left; }
 .markdown-body :deep(h4) { font-size: 1.25em; font-weight: 600; color: var(--text-primary); margin: 1em 0 0.5em; text-align: left; }
@@ -387,10 +397,10 @@ onMounted(fetchReport)
 .markdown-body :deep(li)::marker { color: var(--primary); font-weight: 700; }
 .markdown-body :deep(blockquote) {
   border-left: 4px solid var(--primary); padding: 1em 1.25em; margin: 1em 0;
-  background: rgba(99, 102, 241, 0.05); border-radius: 0 var(--radius-lg) var(--radius-lg) 0; color: var(--text-secondary);
+  background: rgba(17, 17, 17, 0.05); border-radius: 0 var(--radius-lg) var(--radius-lg) 0; color: var(--text-secondary);
   font-style: italic; font-size: 1.05em;
 }
-.markdown-body :deep(hr) { border: none; height: 1px; background: rgba(99, 102, 241, 0.2); margin: 2em 0; }
+.markdown-body :deep(hr) { border: none; height: 1px; background: rgba(17, 17, 17, 0.16); margin: 2em 0; }
 
 /* === 分维度报告 === */
 .dimension-report-body {
@@ -408,7 +418,7 @@ onMounted(fetchReport)
 .dim-subsection-title {
   font-size: 18px; font-weight: 700; color: var(--primary);
   margin: 0 0 14px; padding-bottom: 8px;
-  border-bottom: 2px solid rgba(99, 102, 241, 0.15);
+  border-bottom: 2px solid rgba(17, 17, 17, 0.12);
 }
 
 /* === 可折叠模块（分维度报告 & 答题明细共用） === */
@@ -445,11 +455,11 @@ onMounted(fetchReport)
   transition: background 0.12s;
 }
 .ev-record:last-child { border-bottom: none; }
-.ev-record:hover { background: rgba(99, 102, 241, 0.02); }
+.ev-record:hover { background: rgba(17, 17, 17, 0.02); }
 .ev-anomaly { background: rgba(239, 68, 68, 0.025); }
 .ev-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
 .ev-no { font-weight: 700; font-size: 15px; color: var(--primary); }
-.ev-trait { font-size: 13px; padding: 2px 7px; background: rgba(99, 102, 241, 0.08); color: var(--primary); border-radius: 4px; }
+.ev-trait { font-size: 13px; padding: 2px 7px; background: rgba(17, 17, 17, 0.08); color: var(--primary); border-radius: 4px; }
 .ev-score { font-size: 15px; font-weight: 600; }
 .score-high { color: var(--success); }
 .score-mid { color: var(--warning); }
@@ -465,7 +475,7 @@ onMounted(fetchReport)
 .ev-explain { font-size: 15px; color: var(--success); margin-top: 4px; }
 .ev-chain {
   margin-top: 8px; padding: 10px 14px; font-size: 15px; line-height: 1.7;
-  background: rgba(99, 102, 241, 0.04); border-left: 3px solid var(--primary);
+  background: rgba(17, 17, 17, 0.04); border-left: 3px solid var(--primary);
   border-radius: 0 6px 6px 0; color: var(--text-secondary);
 }
 .chain-icon::before { content: '🔗 '; }
@@ -485,7 +495,7 @@ onMounted(fetchReport)
   color: #fff; border: none; border-radius: 12px;
   cursor: pointer; font-size: 17px; font-weight: 600; transition: all 0.2s;
 }
-.back-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(99, 102, 241, 0.35); }
+.back-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(17, 17, 17, 0.24); }
 
 .delete-btn {
   display: block; margin: 12px auto 0; padding: 14px 32px;
