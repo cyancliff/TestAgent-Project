@@ -61,9 +61,9 @@
 
 测评完成后提供基于测评结果的多轮对话咨询，结合 RAG 知识库给出专业建议。
 
-### 断点续答
+### 断点续答与答案重改
 
-答题进度实时保存，支持中途退出后继续作答，已完成测评也支持修改答案并重新提交。
+阶段作答支持中途退出后继续恢复；已完成测评在历史页点击“修改答案”时，会复制出一份新的独立测评会话，保留旧报告不被覆盖，新答案会生成新的报告记录。
 
 ## 测评流程
 
@@ -313,11 +313,20 @@ TestAgent/
 |------|------|------|
 | 认证 | `POST /api/v1/auth/register` | 用户注册 |
 | | `POST /api/v1/auth/login` | 用户登录，返回 JWT |
-| 测评 | `POST /api/v1/assessment/start-session` | 创建测评会话 |
-| | `POST /api/v1/assessment/adaptive-question` | 获取自适应选题 |
-| | `POST /api/v1/assessment/save-answer` | 保存作答答案 |
-| | `POST /api/v1/assessment/finish-module` | 完成模块，触发辩论分析 |
-| | `POST /api/v1/assessment/finish-session` | 完成测评，生成报告 |
+| 测评 | `POST /api/v1/assessment/start-session` | 开始新测评草稿，必要时可覆盖当前未完成会话 |
+| | `GET /api/v1/assessment/resume-session` | 恢复最近一次未完成测评，或按 `session_id` 精确恢复 |
+| | `POST /api/v1/assessment/restart-session` | 将现有会话重置回 `intro` 阶段 |
+| | `POST /api/v1/assessment/reopen-session/{session_id}` | 基于已完成测评复制出新的独立可编辑会话 |
+| | `GET /api/v1/assessment/stage-info` | 获取当前阶段信息 |
+| | `POST /api/v1/assessment/adaptive-question` | 获取当前阶段下一题，支持携带未入库的暂存答案参与选题 |
+| | `POST /api/v1/assessment/check-answer` | 预检单题得分与异常情况，不直接入库 |
+| | `POST /api/v1/assessment/save-answer` | 兼容旧前端的空操作接口，当前不再逐题入库 |
+| | `POST /api/v1/assessment/submit-stage` | 按阶段一次性提交答案，触发阶段推进与模块辩论 |
+| | `GET /api/v1/assessment/finish-stream` | 获取综合辩论 SSE 流 |
+| | `GET /api/v1/assessment/history` | 获取测评历史列表 |
+| | `GET /api/v1/assessment/report/{session_id}` | 获取单次测评报告详情 |
+| | `PUT /api/v1/assessment/session/{session_id}` | 重命名测评记录 |
+| | `DELETE /api/v1/assessment/session/{session_id}` | 删除测评记录 |
 | 对话 | `POST /api/v1/chat/message` | AI 心理咨询对话 |
 | 知识库 | `POST /api/v1/rag/query` | RAG 语义检索查询 |
 

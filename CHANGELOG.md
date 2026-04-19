@@ -8,6 +8,43 @@
 
 ---
 
+## [2026-04-20] - 草稿态阶段提交、独立复制改答案与综合报告输入收口
+
+### 新增
+- 为测评草稿引入“阶段提交时首入库”的新状态模型：`POST /assessment/start-session` 只准备草稿，不再立即创建空会话；`POST /assessment/submit-stage` 在首个阶段真正提交时才创建 `assessment_sessions` 记录。
+- 为 `POST /assessment/adaptive-question` 新增 `AdaptiveQuestionRequest` 载荷，支持在没有持久化会话时携带 `current_stage` 和 `transient_answers`，让当前阶段未入库答案也能参与下一题选择与能力向量估计。
+- 为恢复链路补充显式会话恢复能力，`GET /assessment/resume-session` 现在支持按 `session_id` 精确打开指定未完成会话，并在响应里返回题目所属 `stage` 元数据，供前端按阶段精确回填。
+- 为已完成测评的答案修改链路新增“复制为独立新会话”的语义，`POST /assessment/reopen-session/{session_id}` 现在会复制原答案到新的活动会话，而不是把旧记录改回进行中。
+
+### 变更
+- 重写 `app/api/assessment/submissions.py` 的提交流程：`save-answer` 退化为兼容旧前端的空操作接口，`check-answer` 只负责预检，`submit-stage` 负责阶段完整校验、统一写库、阶段推进、模块辩论触发和最终报告生成。
+- 调整 `app/api/assessment/questions.py` 的选题逻辑，把暂存答案与已入库答案合并后再做阶段过滤、自适应选题和剩余题目判断，避免首阶段未入库时丢失上下文。
+- 调整 `frontend/src/components/Assessment.vue` 的启动与恢复逻辑：历史页带 `sessionId` 打开时优先恢复指定会话，恢复后按题目 `stage` 精确回填当前阶段，不再通过“取最后 N 题”推测阶段题集。
+- 调整 `frontend/src/components/History.vue` 的“修改答案”行为：按钮仍保留在已完成记录上，但打开的是一条新的普通测评记录，不再把旧报告包装成“修订版”。
+- 更新 `app/services/debate_manager.py` 的综合辩论编排，改为基于模块层裁判总结做两轮并发综合辩论，并为主模型空内容/失败场景增加备用模型整理与降级能力。
+- 更新 `app/services/report_service.py` 的综合报告输入来源，综合层只消费 A/T/M/R 模块的裁判总结，不再重复拼接原始答题明细或再次注入 RAG 证据。
+- 收敛 `app/services/ai_detector.py` 的异常检测规则，只保留“明显过快作答”这一条高置信异常信号，主动降低此前连续快速作答、重复选项等规则带来的误报。
+- 为 `pytest` 增加 `-p no:cacheprovider` 默认参数，减少受限目录下 `.pytest_cache` 与临时缓存目录造成的权限噪音。
+
+### 修复
+- 修复修改答案后重新进入测评时，`intro` 阶段会误混入其他阶段历史题目的问题，避免提交时触发“存在不属于阶段 intro 的题目”校验错误。
+- 修复已完成测评原地重开导致历史报告被覆盖、状态从 `completed` 回退到 `active`、用户难以区分“历史结果”和“当前编辑草稿”的产品语义混乱问题。
+- 修复历史记录与报告接口暴露 `revision_no / parent_session_id / is_revision` 等临时版本链字段后，前端出现“修订版”标识但实际又不希望保留关联关系的状态错配。
+- 修复综合报告层和模块层都读取原始答题明细时造成的上下文重复、提示词职责重叠和报告风格漂移风险。
+- 修复异常检测误报过多导致的解释性追问过度触发问题，让异常拦截更聚焦于明显不可信的超快作答。
+
+### 测试
+- 更新 `tests/test_assessment_sessions.py`，覆盖草稿态不逐题入库、显式 `session_id` 恢复、题目阶段元数据返回、已完成测评复制为新会话、历史记录接口精简等回归场景。
+- 更新 `tests/test_ai_detector.py`，使测试期望与当前“只拦截明显过快作答”的检测策略保持一致。
+- 更新 `tests/test_project_health.py`，把头像清理测试改为显式临时目录方案，降低受限环境下 `tmp_path` 与缓存目录交互带来的不稳定性。
+
+### 文档
+- 更新 `README.md` 的核心功能说明与 API 概览，补齐草稿态提交流程、显式恢复、历史复制改答案和当前真实接口列表。
+- 更新 `docs/开发者日志.md`，同步记录“草稿首入库”“独立复制改答案”“综合报告仅消费模块裁判总结”等最新状态模型。
+- 将本批会话语义、阶段提交、异常检测和报告生成收口内容补充归档到 `CHANGELOG.md`，作为 2026-04-20 的完整发布记录。
+
+---
+
 ## [2026-04-19] - 部署依赖拆分、测评阶段优化与历史页空态修复
 
 ### 新增

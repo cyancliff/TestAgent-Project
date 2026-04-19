@@ -36,6 +36,7 @@ __all__ = [
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_assessment_session_title_column()
+    _ensure_assessment_session_revision_columns()
     _ensure_user_nickname_column()
     from app.services.question_sanitizer import repair_question_contents
 
@@ -77,6 +78,35 @@ def _ensure_assessment_session_title_column() -> None:
     with engine.begin() as connection:
         connection.execute(text("ALTER TABLE assessment_sessions ADD COLUMN title VARCHAR(100)"))
     logger.info("Added missing assessment_sessions.title column")
+
+
+def _ensure_assessment_session_revision_columns() -> None:
+    inspector = inspect(engine)
+    if "assessment_sessions" not in inspector.get_table_names():
+        return
+
+    column_names = {column["name"] for column in inspector.get_columns("assessment_sessions")}
+
+    statements = []
+    if "parent_session_id" not in column_names:
+        statements.append("ALTER TABLE assessment_sessions ADD COLUMN parent_session_id INTEGER")
+    if "revision_no" not in column_names:
+        statements.append("ALTER TABLE assessment_sessions ADD COLUMN revision_no INTEGER DEFAULT 1")
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+        if statements:
+            logger.info("Added missing assessment_sessions revision columns")
+
+        connection.execute(text("UPDATE assessment_sessions SET revision_no = 1 WHERE revision_no IS NULL"))
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_assessment_sessions_parent_session_id "
+                "ON assessment_sessions (parent_session_id)"
+            )
+        )
 
 
 def _ensure_user_nickname_column() -> None:

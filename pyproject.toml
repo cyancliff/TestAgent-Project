@@ -46,6 +46,7 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 asyncio_mode = "auto"
+addopts = "-p no:cacheprovider"
 
 [tool.ruff]
 line-length = 120
