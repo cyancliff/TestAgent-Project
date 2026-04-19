@@ -46,6 +46,14 @@ class AssessmentSession(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, comment="受试者ID")
+    parent_session_id = Column(
+        Integer,
+        ForeignKey("assessment_sessions.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+        comment="修订版父会话ID",
+    )
+    revision_no = Column(Integer, default=1, nullable=False, comment="会话版本号")
     started_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), comment="开始时间")
     finished_at = Column(DateTime(timezone=True), nullable=True, comment="完成时间")
     status = Column(String(20), default="active", comment="状态: active/completed")
@@ -56,6 +64,17 @@ class AssessmentSession(Base):
 
     # 关系
     user = relationship("User", back_populates="sessions")
+    parent_session = relationship(
+        "AssessmentSession",
+        remote_side=[id],
+        foreign_keys=[parent_session_id],
+        back_populates="revision_sessions",
+    )
+    revision_sessions = relationship(
+        "AssessmentSession",
+        back_populates="parent_session",
+        foreign_keys=[parent_session_id],
+    )
     answers = relationship("AnswerRecord", back_populates="session")
     debate_results = relationship("ModuleDebateResult", back_populates="session")
     chat_sessions = relationship("ChatSession", back_populates="assessment_session")

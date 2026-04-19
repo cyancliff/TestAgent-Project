@@ -10,7 +10,6 @@ import asyncio
 import time
 from datetime import datetime
 from collections import defaultdict
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -127,14 +126,19 @@ def _run_debate_logic(session_id: int, user_id: int, module: str, result_holder:
         avg_score = total_score / len(module_records) if module_records else 0
         anomaly_count = sum(1 for r in module_records if r["is_anomaly"])
 
-        clamped_score = clamp_score(total_score)
+        weight_bonus = calculate_weight_bonus(records, question_map)
+        weighted_bonus = weight_bonus.get(module, 0)
+        weighted_total_score = total_score + weighted_bonus
+        clamped_score = clamp_score(weighted_total_score)
         level_info = get_dimension_level(clamped_score)
 
         module_data = {
             "module": module,
             "dimension_id": target_dimension,
             "question_count": len(module_records),
-            "total_score": total_score,
+            "raw_total_score": total_score,
+            "weighted_bonus": weighted_bonus,
+            "weighted_total_score": weighted_total_score,
             "clamped_score": clamped_score,
             "average_score": round(avg_score, 2),
             "anomaly_count": anomaly_count,
@@ -165,53 +169,37 @@ def _run_debate_logic(session_id: int, user_id: int, module: str, result_holder:
 请结合以上理论知识进行分析，在分析中引用知识库中的理论依据。"""
 
         experts = {
-            "psychologist": {
-                "name": "心理学专家",
-                "prompt": f"""你是一位资深心理学专家，专注于分析ATMR测评中的{module}模块（{'欣赏型' if module=='A' else '目标型' if module=='T' else '包容型' if module=='M' else '责任型'}）。
+            "proponent": {
+                "name": "正方分析师",
+                "prompt": f"""你是 ATMR 模块辩论中的正方分析师，负责基于完整材料给出建设性判断。
 
 {SCORING_STANDARD_TEXT}
-请结合上述评分标准，分析用户在该维度的得分所处的等级（偏低/中等/偏高），并从心理学角度：
-1. 评估用户在该维度上的心理特质水平
-2. 分析答题模式（一致性、极端性、矛盾性）
-3. 识别潜在的心理优势和发展空间
-4. 给出专业的心理学解读
+请完整阅读分数、异常标记、作答耗时、用户解释和知识库证据，并完成：
+1. 明确该模块当前等级（偏低/中等/偏高）及主要依据，注意加权后的封顶分
+2. 提炼用户在该模块的核心特质、稳定优势和可迁移潜力
+3. 解释行为数据与作答内容之间的一致性，不要忽略异常后的自我解释
+4. 对潜在风险保持审慎，但整体立场以“发掘优势与成长空间”为主
 {rag_context}
 
 数据：{data_json}
 
-请用中文输出你的专业分析（不超过400字）。"""
+请用中文输出一段结构清晰、专业但简洁的分析（不超过450字）。"""
             },
-            "behaviorist": {
-                "name": "行为分析师",
-                "prompt": f"""你是一位行为分析师，专注于从行为数据中发现模式。
+            "opponent": {
+                "name": "反方分析师",
+                "prompt": f"""你是 ATMR 模块辩论中的反方分析师，负责基于完整材料给出审慎而批判的判断。
 
 {SCORING_STANDARD_TEXT}
-请结合上述评分标准，从行为数据角度分析：
-1. 作答时间分布是否合理
-2. 是否存在异常作答模式（过快/过慢）
-3. 用户对异常追问的解释说明了什么
-4. 行为数据与选项选择的一致性
+请完整阅读分数、异常标记、作答耗时、用户解释和知识库证据，并完成：
+1. 明确该模块等级判断中最需要谨慎对待的依据与边界
+2. 挖掘可能的情境依赖、测量误差、行为矛盾和替代解释
+3. 说明高分或低分不应被直接浪漫化或绝对化的原因
+4. 给出最值得继续观察或在综合层继续追问的风险点
 {rag_context}
 
 数据：{data_json}
 
-请用中文输出你的行为分析（不超过400字）。"""
-            },
-            "critic": {
-                "name": "批判性评估师",
-                "prompt": f"""你是一位批判性评估师，负责质疑和挑战初步结论。
-
-{SCORING_STANDARD_TEXT}
-请结合上述评分标准，对{module}模块的答题数据提出批判性观点：
-1. 数据是否存在矛盾或不可信之处
-2. 可能存在的测量误差或干扰因素
-3. 对高分/低分解释的替代假设
-4. 建议需要进一步验证的方面
-{rag_context}
-
-数据：{data_json}
-
-请用中文输出你的批判性评估（不超过400字）。"""
+请用中文输出一段结构清晰、专业但简洁的分析（不超过450字）。"""
             },
         }
 
@@ -248,25 +236,25 @@ def _run_debate_logic(session_id: int, user_id: int, module: str, result_holder:
 
         expert_results = asyncio.run(run_all())
 
-        # 综合结论
-        synthesis_prompt = f"""作为ATMR测评系统的主分析师，请综合以下三位专家的意见，生成{module}模块的最终评估结论。
+        # 裁判总结
+        synthesis_prompt = f"""你是 ATMR 模块辩论中的裁判，请综合以下正反两方观点，生成 {module} 模块可供上层综合报告直接复用的裁判总结。
 
 {SCORING_STANDARD_TEXT}
-请结合评分标准，在总结中明确指出用户在该模块的等级（偏低/中等/偏高），并说明依据。
+请输出一段简洁、专业、可复用的模块总结（不超过450字），必须包含：
+1. 该模块的最终等级判断（偏低/中等/偏高）与关键依据，注意加权后得分口径
+2. 核心特质判断：这个模块最稳定的表现是什么
+3. 优势与风险：各给出最关键的一点到两点
+4. 跨模块提示：一句话说明这个模块后续在综合层最应与哪些维度联动理解
+
+输出要求：
+- 直接输出总结正文，不要写标题
+- 不要提及“正方”“反方”“两位分析师”等元信息
 
 专家意见：
 """
         for result in expert_results:
             if isinstance(result, dict) and result.get("status") == "success":
                 synthesis_prompt += f"\n【{result['expert']}】\n{result['content']}\n"
-
-        synthesis_prompt += """
-请输出一个简洁的模块评估总结（不超过400字），包含：
-1. 该模块的核心特质水平评估
-2. 关键发现或注意事项
-3. 与其他模块的关联预期
-
-格式：直接输出总结文本，不要加标题。"""
 
         try:
             client = AsyncOpenAI(
@@ -286,14 +274,16 @@ def _run_debate_logic(session_id: int, user_id: int, module: str, result_holder:
         except Exception as e:
             final_conclusion = f"模块{module}综合评估生成失败: {str(e)}"
 
-        clamped_score = clamp_score(total_score)
+        clamped_score = clamp_score(weighted_total_score)
         level_info = get_dimension_level(clamped_score)
 
         result_content = f"""# 模块 {module} 专家辩论结果
 
 ## 数据摘要
 - 题目数: {len(module_records)}
-- 总得分: {total_score:.2f} / {DIMENSION_MAX_SCORE}（封顶后 {clamped_score:.2f}）
+- 原始总得分: {total_score:.2f} / {DIMENSION_MAX_SCORE}
+- 前两题加权: +{weighted_bonus}
+- 加权后总得分: {weighted_total_score:.2f}（封顶后 {clamped_score:.2f}）
 - 等级评定: {level_info['label']}（{level_info['level']}）
 - 平均分: {avg_score:.2f}
 - 异常标记: {anomaly_count} 次
@@ -304,7 +294,7 @@ def _run_debate_logic(session_id: int, user_id: int, module: str, result_holder:
             if isinstance(result, dict):
                 result_content += f"\n### {result['expert']}\n{result.get('content', '无内容')}\n"
 
-        result_content += f"\n## 综合结论\n{final_conclusion}\n"
+        result_content += f"\n## 裁判总结\n{final_conclusion}\n"
 
         # 先删除旧的辩论结果（覆盖）
         db.query(ModuleDebateResult).filter(
@@ -569,7 +559,7 @@ async def get_history(
     result = []
     for s in sessions:
         records = records_by_session.get(s.id, [])
-        session_questions = [q for q in all_questions if any(r.exam_no == q.exam_no for r in records)]
+        session_questions = [question_map[r.exam_no] for r in records if r.exam_no in question_map]
         total_score = sum(float(r.score or 0) for r in records)
         anomaly_count = sum(1 for r in records if r.is_anomaly == 1)
 

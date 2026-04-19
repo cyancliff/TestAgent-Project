@@ -540,20 +540,50 @@ const pollForReports = async () => {
   }
 }
 
+const getActiveSessionConflict = (error) => {
+  const detail = error?.response?.data?.detail
+  if (!detail || typeof detail !== 'object' || detail.code !== 'active_session_exists') {
+    return null
+  }
+  return detail
+}
+
 const startNewSession = async () => {
   closeSessionMenu()
   closeMobileSidebar()
   try {
-    const res = await api.post('/assessment/start-session', {})
-    if (res.data.reused_existing) {
-      await showAlertDialog('检测到你已有一份未完成的测评，系统已直接恢复这份记录，不会再删除之前的答题。', {
-        title: '继续未完成测评',
+    let res
+    try {
+      res = await api.post('/assessment/start-session', {})
+    } catch (err) {
+      const conflict = getActiveSessionConflict(err)
+      if (!conflict) throw err
+
+      const shouldOverwrite = await showConfirmDialog(conflict.message, {
+        title: '发现进行中测评',
+        confirmText: '是，覆盖',
+        cancelText: '否，继续当前',
+        destructive: true,
+      })
+
+      if (!shouldOverwrite) {
+        router.push({ path: '/assessment', query: { sessionId: conflict.session_id } })
+        return
+      }
+
+      res = await api.post('/assessment/start-session', {
+        force_overwrite: true,
       })
     }
-    router.push({ path: '/assessment', query: { sessionId: res.data.session_id } })
+
+    if (res.data.session_id) {
+      router.push({ path: '/assessment', query: { sessionId: res.data.session_id } })
+    } else {
+      router.push('/assessment')
+    }
   } catch (err) {
     console.error('创建会话失败:', err)
-    const detail = err.response?.data?.detail || err.message || '未知错误'
+    const detail = err.response?.data?.detail?.message || err.response?.data?.detail || err.message || '未知错误'
     await showAlertDialog(`创建测评会话失败：${detail}`, {
       title: '创建失败',
       destructive: true,
@@ -576,8 +606,8 @@ const editAnswers = async (sessionId) => {
   closeSessionMenu()
   closeMobileSidebar()
   try {
-    await api.post(`/assessment/reopen-session/${sessionId}`)
-    router.push({ path: '/assessment', query: { sessionId, mode: 'edit' } })
+    const res = await api.post(`/assessment/reopen-session/${sessionId}`)
+    router.push({ path: '/assessment', query: { sessionId: res.data.session_id, mode: 'edit' } })
   } catch (err) {
     await showAlertDialog(err.response?.data?.detail || '打开编辑模式失败', {
       title: '打开失败',

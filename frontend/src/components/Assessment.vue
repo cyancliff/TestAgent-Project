@@ -271,7 +271,7 @@ import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
 import { marked } from 'marked'
-import { showAlertDialog, showPromptDialog } from '../composables/useAppDialog'
+import { showAlertDialog, showConfirmDialog, showPromptDialog } from '../composables/useAppDialog'
 
 const route = useRoute()
 const router = useRouter()
@@ -288,10 +288,18 @@ const stageNames = {
   R: '责任型',
 }
 const stages = ['intro', 'A', 'T', 'M', 'R']
+const stageQuestionCounts = {
+  intro: 2,
+  A: 10,
+  T: 10,
+  M: 10,
+  R: 10,
+}
 
 // 状态变量
 const currentIndex = ref(0)
 const stageQuestions = ref([])  // 当前阶段的题目列表
+const restoredQuestions = ref([])
 const answersMap = ref({})
 const explanationDrafts = ref({})
 const allAnsweredExamNos = ref([])  // 所有已答题目编号
@@ -323,7 +331,7 @@ const stageDisplay = computed(() => {
   const s = currentStage.value
   return stageNames[s] || s
 })
-const stageQuestionCount = computed(() => stageInfo.value?.question_count || 10)
+const stageQuestionCount = computed(() => stageInfo.value?.question_count || stageQuestionCounts[currentStage.value] || 10)
 const stageAnsweredCount = computed(() => {
   // 本地已答数，实时更新
   const local = stageQuestions.value.filter(
@@ -381,6 +389,34 @@ const clearAsyncTimers = () => {
   clearFinalGeneratingRedirectTimer()
 }
 
+const buildLocalStageInfo = (stage = currentStage.value, submittedStages = stageInfo.value?.submitted_stages || []) => {
+  const safeStage = stage || 'intro'
+  const answeredCount = stageQuestions.value.filter(
+    (q) => q && answersMap.value[q.id],
+  ).length
+  const questionCount = stageQuestionCounts[safeStage] || 10
+  return {
+    current_stage: safeStage,
+    stage_name: safeStage,
+    stage_display_name: stageNames[safeStage] || safeStage,
+    question_count: questionCount,
+    answered_count: answeredCount,
+    can_submit: answeredCount >= questionCount,
+    is_stage_complete: answeredCount >= questionCount,
+    submitted_stages: submittedStages,
+  }
+}
+
+const syncSessionQuery = () => {
+  const nextQuery = { ...route.query }
+  if (sessionId.value) {
+    nextQuery.sessionId = sessionId.value
+  } else {
+    delete nextQuery.sessionId
+  }
+  router.replace({ query: nextQuery })
+}
+
 const submitStageSnapshot = computed(() => {
   // 构建当前阶段所有答案的快照用于提交
   return stageQuestions.value
@@ -392,6 +428,9 @@ const submitStageSnapshot = computed(() => {
         exam_no: q.id,
         selected_option: ans.selected_option,
         time_spent: ans.time_spent,
+        score: ans.score,
+        is_anomaly: ans.status === 'anomaly' ? 1 : 0,
+        ai_follow_up: ans.follow_up_question || null,
         user_explanation: ans.user_explanation || null,
       }
     })
@@ -418,6 +457,11 @@ watch(isGenerating, (generating) => {
 })
 
 const loadStageInfo = async () => {
+  if (!sessionId.value) {
+    const localStageInfo = buildLocalStageInfo()
+    stageInfo.value = localStageInfo
+    return localStageInfo
+  }
   try {
     const res = await api.get('/assessment/stage-info', {
       params: { session_id: sessionId.value },
@@ -446,8 +490,10 @@ const loadNextQuestionInStage = async () => {
   }
 
   try {
-    const res = await api.post('/assessment/adaptive-question', null, {
-      params: { session_id: sessionId.value },
+    const res = await api.post('/assessment/adaptive-question', {
+      session_id: sessionId.value || null,
+      current_stage: currentStage.value,
+      transient_answers: submitStageSnapshot.value,
     })
 
     const q = {
@@ -541,6 +587,16 @@ const persistAnswerExplanation = async (answer, explanation) => {
   }
 }
 
+const applyAnswerExplanationLocally = async (answer, explanation) => {
+  if (!answer) return
+  delete explanationDrafts.value[answer.exam_no]
+  answersMap.value[answer.exam_no] = {
+    ...answer,
+    user_explanation: explanation,
+    explanation_submitted: true,
+  }
+}
+
 const requestAnswerExplanation = async (examNo = currentQuestion.value.id) => {
   if (!examNo) return false
   const answer = answersMap.value[examNo]
@@ -561,7 +617,7 @@ const requestAnswerExplanation = async (examNo = currentQuestion.value.id) => {
 
     if (explanation === null) {
       if (answer?.status === 'anomaly') {
-        await persistAnswerExplanation(answer, '')
+        await applyAnswerExplanationLocally(answer, '')
         return true
       }
       return false
@@ -570,7 +626,7 @@ const requestAnswerExplanation = async (examNo = currentQuestion.value.id) => {
     const normalized = explanation.trim()
 
     if (answer) {
-      await persistAnswerExplanation(answer, normalized)
+      await applyAnswerExplanationLocally(answer, normalized)
     } else if (normalized) {
       explanationDrafts.value = {
         ...explanationDrafts.value,
@@ -652,22 +708,28 @@ const openPendingFollowUp = async () => {
   await requestAnswerExplanation()
 }
 
-const hydrateStageQuestionsFromResume = (resumeData) => {
-  const answeredInStage = stageInfo.value?.answered_count || 0
-  if (!answeredInStage || !resumeData?.questions?.length) {
-    stageQuestions.value = []
-    return
-  }
+const buildStageQuestion = (question) => ({
+  id: question.examNo,
+  content: question.exam,
+  options: question.options,
+})
 
-  const currentStageQuestions = resumeData.questions
-    .slice(-answeredInStage)
-    .map((q) => ({
-      id: q.examNo,
-      content: q.exam,
-      options: q.options,
-    }))
+const getRestoredQuestionsForStage = (stage = currentStage.value) => {
+  if (!stage || !restoredQuestions.value.length) return []
 
-  stageQuestions.value = currentStageQuestions
+  const seen = new Set()
+  return restoredQuestions.value
+    .filter((question) => question.stage === stage)
+    .filter((question) => {
+      if (seen.has(question.examNo)) return false
+      seen.add(question.examNo)
+      return true
+    })
+    .map(buildStageQuestion)
+}
+
+const hydrateStageQuestionsFromResume = (stage = currentStage.value) => {
+  stageQuestions.value = getRestoredQuestionsForStage(stage)
 }
 
 const nextQuestion = async () => {
@@ -714,7 +776,7 @@ const submitCurrentStage = async () => {
     })
 
     const submitRequest = api.post('/assessment/submit-stage', {
-      session_id: sessionId.value,
+      session_id: sessionId.value || null,
       answers: submitStageSnapshot.value,
     })
     const submitResult = submitRequest.then((res) => {
@@ -724,6 +786,10 @@ const submitCurrentStage = async () => {
 
     const [data] = await Promise.all([submitResult, reviewProgress])
     clearStageReviewTimers()
+    if (data.session_id && data.session_id !== sessionId.value) {
+      sessionId.value = data.session_id
+      syncSessionQuery()
+    }
 
     isStageReviewing.value = false
 
@@ -736,7 +802,7 @@ const submitCurrentStage = async () => {
       // 进入下一阶段
       await loadStageInfo()
       currentIndex.value = 0
-      stageQuestions.value = []
+      hydrateStageQuestionsFromResume(currentStage.value)
       await loadNextQuestionInStage()
     }
 
@@ -782,45 +848,96 @@ const pollForReport = async () => {
   reportPollTimer = setTimeout(poll, REPORT_POLL_INITIAL_DELAY_MS)
 }
 
+const getActiveSessionConflict = (error) => {
+  const detail = error?.response?.data?.detail
+  if (!detail || typeof detail !== 'object' || detail.code !== 'active_session_exists') {
+    return null
+  }
+  return detail
+}
+
+const redirectToExistingAssessment = async (targetSessionId) => {
+  try {
+    const res = await api.get('/assessment/resume-session', {
+      params: { session_id: targetSessionId },
+    })
+    if (res.data.has_active_session && res.data.session_id === targetSessionId) {
+      pendingResume.value = {
+        ...res.data,
+        stage_display_name: stageNames[res.data.current_stage] || res.data.current_stage,
+      }
+      await resumeSession(res.data)
+      return
+    }
+  } catch (error) {
+    console.warn('跳转进行中测评失败:', error)
+  }
+
+  router.replace({ path: '/assessment', query: { sessionId: targetSessionId } })
+}
+
 const startNewSession = async () => {
   isStarting.value = true
   startError.value = ''
   try {
-    const res = await api.post('/assessment/start-session', {})
-    if (res.data.reused_existing) {
-      await showAlertDialog('检测到你已有一份未完成的测评，系统已恢复这份记录，不会再清空旧答题。', {
-        title: '继续未完成测评',
+    let res
+    try {
+      res = await api.post('/assessment/start-session', {})
+    } catch (error) {
+      const conflict = getActiveSessionConflict(error)
+      if (!conflict) throw error
+
+      const shouldOverwrite = await showConfirmDialog(conflict.message, {
+        title: '发现进行中测评',
+        confirmText: '是，覆盖',
+        cancelText: '否，继续当前',
+        destructive: true,
+      })
+
+      if (!shouldOverwrite) {
+        await redirectToExistingAssessment(conflict.session_id)
+        return
+      }
+
+      res = await api.post('/assessment/start-session', {
+        force_overwrite: true,
       })
     }
-    sessionId.value = res.data.session_id
+
+    sessionId.value = Number(res.data.session_id || 0)
     hasStarted.value = true
     currentIndex.value = 0
     stageQuestions.value = []
+    restoredQuestions.value = []
     answersMap.value = {}
     allAnsweredExamNos.value = []
     isFinished.value = false
     isStageReviewing.value = false
     finalReport.value = ''
     debateMessages.value = []
-    router.replace({ query: { ...route.query, sessionId: sessionId.value } })
+    stageInfo.value = buildLocalStageInfo('intro', [])
+    syncSessionQuery()
 
     // 加载阶段信息
-    await loadStageInfo()
     await loadNextQuestionInStage()
   } catch (error) {
-    startError.value = error.response?.data?.detail || '网络错误，请检查后端服务'
+    startError.value = error.response?.data?.detail?.message || error.response?.data?.detail || '网络错误，请检查后端服务'
   } finally {
     isStarting.value = false
   }
 }
 
-const resumeSession = async () => {
-  const data = pendingResume.value
+const resumeSession = async (resumeData = pendingResume.value) => {
+  const data = resumeData
   if (!data) return
   isStarting.value = true
   try {
     sessionId.value = data.session_id
     hasStarted.value = true
+    stageQuestions.value = []
+    restoredQuestions.value = data.questions || []
+    answersMap.value = {}
+    explanationDrafts.value = {}
 
     // 恢复所有已答题目
     data.answers.forEach(a => {
@@ -839,12 +956,12 @@ const resumeSession = async () => {
 
     // 加载当前阶段信息
     await loadStageInfo()
-    hydrateStageQuestionsFromResume(data)
+    hydrateStageQuestionsFromResume(currentStage.value)
 
     // currentIndex 应为当前阶段已答数（不超过本阶段最大题目数）
     currentIndex.value = Math.min(stageInfo.value?.answered_count || 0, stageQuestionCount.value - 1)
 
-    router.replace({ query: { ...route.query, sessionId: sessionId.value } })
+    syncSessionQuery()
     await loadNextQuestionInStage()
   } catch (error) {
     startError.value = '恢复会话失败，请重新开始'
@@ -906,12 +1023,20 @@ onMounted(async () => {
 
   isCheckingResume.value = true
   try {
-    const res = await api.get('/assessment/resume-session')
+    const resumeRequest = querySid
+      ? api.get('/assessment/resume-session', {
+          params: { session_id: querySid },
+        })
+      : api.get('/assessment/resume-session')
+    const res = await resumeRequest
     if (res.data.has_active_session) {
       // 有未完成的会话
       pendingResume.value = {
         ...res.data,
         stage_display_name: stageNames[res.data.current_stage] || res.data.current_stage,
+      }
+      if (querySid && res.data.session_id === querySid) {
+        await resumeSession(res.data)
       }
     } else {
       // 检查是否有已完成的会话
@@ -928,7 +1053,6 @@ onMounted(async () => {
     console.warn('检查未完成会话失败:', err)
   } finally {
     isCheckingResume.value = false
-    hasStarted.value = false
   }
 })
 

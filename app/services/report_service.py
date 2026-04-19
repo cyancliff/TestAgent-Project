@@ -1,137 +1,99 @@
 # app/services/report_service.py
 
-import asyncio
-import json
 import os
+import time
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.models.assessment import AnswerRecord, ModuleDebateResult, Question
+from app.models.assessment import AnswerRecord, ModuleDebateResult
+from app.core.constants import MODULES, MODULE_DISPLAY_NAMES
 
 
-# 评分标准说明（注入到最终辩论 prompt 中）
-SCORING_STANDARD_PROMPT = """
-【ATMR 评分标准】
-本测评采用 1-5 分李克特量表（完全不符合=1分，比较不符合=2分，一般=3分，比较符合=4分，完全符合=5分）。
-4 大维度（A 欣赏型、T 目标型、M 包容型、R 责任型），每个维度 10 道题。
-单项基础满分为 50 分（10题 × 5分），最低 10 分（10题 × 1分）。
-
-等级划分（三分法）：
-  - 偏低（潜伏特质）：10-23 分 — 该维度特征在测试者身上表现不明显，在日常工作或生活中很少调用该特质
-  - 中等（情境特质）：24-37 分 — 测试者具备该维度的基础特征，但非本能首选，通常在特定环境或任务要求下才会展现
-  - 偏高（显性主导特质）：38-50 分 — 该特质是测试者的典型行为模式和舒适区，表现极为强烈且稳定
-
-前两题存在加权调节机制（破局与定调），根据第1题和第2题的组合对相应维度加 2 分：
-  - AC 组合（做事快+选项C）→ A特质 +2分
-  - BC 组合（靠分析+选项C）→ T特质 +2分
-  - AD 组合（做事快+选项D）→ M特质 +2分
-  - BD 组合（靠分析+选项D）→ R特质 +2分
-
-注意：对外展示时维度得分以 50 分为封顶，内部计算可能因加权超过 50 分。
-在撰写心理画像报告时，请明确标注各维度的等级（偏低/中等/偏高），并结合等级特征进行深入分析。
+FINAL_SUMMARY_GUIDE = """
+【综合层输入说明】
+以下内容来自 A/T/M/R 四个模块各自的分层辩论裁判总结。
+- 模块层已经整合了原始作答、异常追问、用户解释、评分等级与知识库证据。
+- 综合层不要再假设自己能访问原始答题记录，也不要额外补充新的 RAG 证据。
+- 请直接基于模块层裁判总结做跨模块综合判断，识别共振关系、结构性优势、潜在风险与发展建议。
 """
 
 
-class _DecimalEncoder(json.JSONEncoder):
-    def default(self, o):
-        if isinstance(o, Decimal):
-            return float(o)
-        return super().default(o)
+def _extract_markdown_section(content: str, heading: str) -> str:
+    marker = f"## {heading}"
+    start = content.find(marker)
+    if start == -1:
+        return ""
+
+    start += len(marker)
+    remaining = content[start:].lstrip()
+    next_heading = remaining.find("\n## ")
+    if next_heading != -1:
+        remaining = remaining[:next_heading]
+    return remaining.strip()
+
+
+def _extract_module_summary(result_content: str) -> str:
+    for heading in ("裁判总结", "综合结论"):
+        section = _extract_markdown_section(result_content, heading)
+        if section:
+            return section
+    return result_content.strip()
+
+
+def _wait_for_module_results(user_id: str, db: Session, session_id: int | None, timeout_seconds: int = 120) -> list[ModuleDebateResult]:
+    deadline = time.time() + timeout_seconds
+
+    while True:
+        db.expire_all()
+        query = db.query(ModuleDebateResult).filter(ModuleDebateResult.user_id == user_id)
+        if session_id:
+            query = query.filter(ModuleDebateResult.session_id == session_id)
+
+        module_results = query.all()
+        module_map = {mr.module: mr for mr in module_results}
+        if all(module in module_map for module in MODULES):
+            return [module_map[module] for module in MODULES]
+
+        if time.time() >= deadline:
+            return [module_map[module] for module in MODULES if module in module_map]
+
+        time.sleep(2.0)
 
 
 def build_debate_context(user_id: str, db: Session, session_id: int = None) -> str:
-    """从数据库查询用户作答记录，组装辩论 prompt，并注入 RAG 知识库证据"""
-    query = db.query(AnswerRecord).filter(AnswerRecord.user_id == user_id)
+    """从数据库查询模块层裁判总结，组装最终综合辩论 prompt。"""
+    record_query = db.query(AnswerRecord).filter(AnswerRecord.user_id == user_id)
     if session_id:
-        query = query.filter(AnswerRecord.session_id == session_id)
-    records = query.all()
-    if not records:
+        record_query = record_query.filter(AnswerRecord.session_id == session_id)
+    if not record_query.first():
         raise ValueError(f"用户 {user_id} 没有作答记录，无法生成报告。")
 
-    # 批量查询所有相关题目，避免 N+1
-    record_exam_nos = [r.exam_no for r in records]
-    questions = db.query(Question).filter(Question.exam_no.in_(record_exam_nos)).all()
-    question_map = {q.exam_no: q for q in questions}
+    module_results = _wait_for_module_results(user_id, db, session_id)
+    if not module_results:
+        raise ValueError(f"用户 {user_id} 暂无可用的模块辩论结果，无法生成报告。")
 
-    debate_context = []
-    for r in records:
-        question = question_map.get(r.exam_no)
-        q_content = question.content if question else "未知题目"
+    module_map = {mr.module: mr for mr in module_results}
+    missing_modules = [module for module in MODULES if module not in module_map]
+    if missing_modules:
+        print(f"[report_service] 构建综合辩论上下文时缺少模块结果: {', '.join(missing_modules)}")
 
-        record_data = {
-            "exam_no": r.exam_no,
-            "question_content": q_content,
-            "selected_option": r.selected_option,
-            "score": r.score,
-            "time_spent": r.time_spent,
-            "is_anomaly": r.is_anomaly,
-            "is_reverse": question.is_reverse if question else False,
-            "trait_label": question.trait_label if question else None,
-            "dimension_id": question.dimension_id if question else None,
-        }
-        if hasattr(r, "user_explanation") and r.user_explanation:
-            record_data["user_explanation"] = r.user_explanation
+    module_summary = "\n\n【模块层裁判总结】\n"
+    for module in MODULES:
+        result = module_map.get(module)
+        if not result:
+            continue
+        summary = _extract_module_summary(result.result_content)
+        module_summary += f"\n### 模块 {module}（{MODULE_DISPLAY_NAMES[module]}）\n{summary}\n"
 
-        debate_context.append(record_data)
-
-    context_str = json.dumps(debate_context, ensure_ascii=False, indent=2, cls=_DecimalEncoder)
-
-    # 查询模块辩论结果
-    module_query = db.query(ModuleDebateResult).filter(ModuleDebateResult.user_id == user_id)
-    if session_id:
-        module_query = module_query.filter(ModuleDebateResult.session_id == session_id)
-    module_results = module_query.all()
-
-    module_summary = ""
-    if module_results:
-        module_summary = "\n\n【模块辩论结果汇总】：\n"
-        for mr in module_results:
-            module_summary += f"模块 {mr.module}: {mr.result_content}\n"
-
-    # RAG 检索：获取 ATMR 理论知识作为辩论证据
-    rag_section = ""
-    try:
-        from app.services.rag_service import retrieve_evidence_for_debate
-
-        # 计算各维度得分以构建更精准的查询
-        dimension_scores = {}
-        for record in debate_context:
-            dim = record.get("dimension_id", "")
-            if dim:
-                dimension_scores[dim] = dimension_scores.get(dim, 0) + record.get("score", 0)
-
-        user_traits = ", ".join(f"维度{k}={v:.1f}" for k, v in dimension_scores.items())
-
-        # 同步执行异步 RAG 检索
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                evidence = pool.submit(asyncio.run, retrieve_evidence_for_debate(user_traits)).result(timeout=30)
-        else:
-            evidence = asyncio.run(retrieve_evidence_for_debate(user_traits))
-
-        if evidence:
-            rag_section = f"\n\n【ATMR 理论知识库参考】：\n{evidence}"
-            print(f"[report_service] RAG 证据已注入辩论上下文，{len(evidence)} 字符")
-    except Exception as e:
-        print(f"[report_service] RAG 检索失败（不影响辩论）: {e}")
+    if missing_modules:
+        module_summary += f"\n【缺失模块】{', '.join(missing_modules)}\n"
 
     return (
-        f"以下是用户（ID: {user_id}）在 ATMR 心理测评中的作答记录（包含异常检测与用户的自我解释）。\n"
-        f"请你们（正方、反方、裁决者）根据这些数据展开辩论，并生成最终的心理画像报告。\n"
-        f"在分析中请引用 ATMR 理论知识库中的专业依据来支撑你的论点。\n"
-        f"{SCORING_STANDARD_PROMPT}"
-        f"【作答数据】：\n{context_str}"
+        f"以下是用户（ID: {user_id}）在 ATMR 心理测评四个模块中的分层辩论裁判总结。\n"
+        f"请你们（正方、反方、裁判）仅基于这些模块层总结展开综合辩论，并生成最终的心理画像报告。\n"
+        f"{FINAL_SUMMARY_GUIDE}"
         f"{module_summary}"
-        f"{rag_section}"
     )
 
 

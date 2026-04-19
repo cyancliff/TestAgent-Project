@@ -7,7 +7,7 @@ from typing import Optional
 
 
 class StartSessionRequest(BaseModel):
-    pass  # user_id 从 JWT token 获取
+    force_overwrite: bool = False
 
 
 class StageAnswerItem(BaseModel):
@@ -15,12 +15,15 @@ class StageAnswerItem(BaseModel):
     exam_no: str
     selected_option: str
     time_spent: float
+    score: Optional[float] = None
+    is_anomaly: int = 0
+    ai_follow_up: Optional[str] = None
     user_explanation: Optional[str] = None
 
 
 class SubmitStageRequest(BaseModel):
     """阶段提交请求"""
-    session_id: int
+    session_id: Optional[int] = None
     answers: list[StageAnswerItem]
 
 
@@ -73,6 +76,12 @@ class CheckAnswerRequest(BaseModel):
     exam_no: str
     selected_option: str
     time_spent: float
+
+
+class AdaptiveQuestionRequest(BaseModel):
+    session_id: Optional[int] = None
+    current_stage: Optional[str] = None
+    transient_answers: list[StageAnswerItem] = Field(default_factory=list)
 
 
 class RestartSessionRequest(BaseModel):

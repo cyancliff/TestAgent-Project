@@ -1,5 +1,5 @@
 """
-测评会话管理路由：创建、恢复、重新开始、重新打开、删除
+Assessment session routes: start, resume, restart, reopen, update, delete.
 """
 
 import os
@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.assessment.schemas import StartSessionRequest, UpdateSessionRequest
+from app.core.constants import STAGE_DIM_MAP
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.assessment import AnswerRecord, AssessmentSession, ModuleDebateResult, Question
@@ -17,6 +18,7 @@ from app.models.user import User
 from app.services.stage_service import StageService
 
 router = APIRouter()
+DIM_STAGE_MAP = {dimension_id: stage for stage, dimension_id in STAGE_DIM_MAP.items()}
 
 
 def get_latest_active_session(
@@ -34,8 +36,37 @@ def get_latest_active_session(
     return query.order_by(AssessmentSession.started_at.desc()).first()
 
 
+def delete_assessment_session_data(db: Session, session: AssessmentSession) -> str | None:
+    """Remove an assessment session together with its dependent records."""
+    report_file_path = session.report_file_path
+    session_id = session.id
+
+    db.query(AssessmentSession).filter(AssessmentSession.parent_session_id == session_id).update(
+        {
+            AssessmentSession.parent_session_id: None,
+            AssessmentSession.revision_no: 1,
+        },
+        synchronize_session=False,
+    )
+    db.query(ModuleDebateResult).filter(ModuleDebateResult.session_id == session_id).delete()
+    db.query(AnswerRecord).filter(AnswerRecord.session_id == session_id).delete()
+    db.query(ChatSession).filter(ChatSession.assessment_session_id == session_id).update(
+        {ChatSession.assessment_session_id: None}
+    )
+    db.delete(session)
+    return report_file_path
+
+
+def cleanup_report_file(report_file_path: str | None) -> None:
+    if report_file_path and os.path.exists(report_file_path):
+        try:
+            os.remove(report_file_path)
+        except Exception as exc:
+            print(f"删除报告文件失败: {exc}")
+
+
 def ensure_session_owner(db: Session, session_id: int, user_id: int) -> AssessmentSession:
-    """校验会话属于当前用户。"""
+    """Ensure the session belongs to the current user."""
     session = db.query(AssessmentSession).filter(
         AssessmentSession.id == session_id,
         AssessmentSession.user_id == user_id,
@@ -56,23 +87,11 @@ def build_assessment_session_title(started_at: datetime | None, session_id: int 
     return "未命名测评"
 
 
-@router.post("/start-session")
-async def start_session(
-    payload: StartSessionRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """创建新测评会话，如已有未完成会话则直接复用。"""
-    existing_active = get_latest_active_session(db, current_user.id)
-    if existing_active:
-        return {
-            "session_id": existing_active.id,
-            "status": "success",
-            "reused_existing": True,
-        }
-
+def create_assessment_session(db: Session, user_id: int) -> AssessmentSession:
+    """Persist a new active session when the first full stage is submitted."""
     new_session = AssessmentSession(
-        user_id=current_user.id,
+        user_id=user_id,
+        revision_no=1,
         status="active",
         current_stage="intro",
         submitted_stages=[],
@@ -82,20 +101,113 @@ async def start_session(
     db.refresh(new_session)
     new_session.title = build_assessment_session_title(new_session.started_at, new_session.id)
     db.commit()
+    return new_session
+
+
+def create_editable_session_copy(db: Session, source_session: AssessmentSession) -> AssessmentSession:
+    """Create a standalone editable copy from a completed assessment session."""
+    source_records = (
+        db.query(AnswerRecord)
+        .filter(
+            AnswerRecord.session_id == source_session.id,
+            AnswerRecord.user_id == source_session.user_id,
+        )
+        .order_by(AnswerRecord.created_at.asc(), AnswerRecord.id.asc())
+        .all()
+    )
+
+    copied_session = AssessmentSession(
+        user_id=source_session.user_id,
+        parent_session_id=None,
+        revision_no=1,
+        status="active",
+        current_stage="intro",
+        submitted_stages=[],
+    )
+    db.add(copied_session)
+    db.commit()
+    db.refresh(copied_session)
+    copied_session.title = build_assessment_session_title(copied_session.started_at, copied_session.id)
+    db.commit()
+
+    for record in source_records:
+        db.add(
+            AnswerRecord(
+                session_id=copied_session.id,
+                user_id=record.user_id,
+                exam_no=record.exam_no,
+                selected_option=record.selected_option,
+                score=record.score,
+                time_spent=record.time_spent,
+                is_anomaly=record.is_anomaly,
+                ai_follow_up=record.ai_follow_up,
+                user_explanation=record.user_explanation,
+                created_at=record.created_at,
+            )
+        )
+
+    db.commit()
+    return copied_session
+
+
+def build_active_session_conflict_detail(session: AssessmentSession) -> dict:
     return {
-        "session_id": new_session.id,
+        "code": "active_session_exists",
+        "message": "你已有一个正常进行中的测评，是否覆盖",
+        "session_id": session.id,
+        "title": session.title or build_assessment_session_title(session.started_at, session.id),
+    }
+
+
+@router.post("/start-session")
+async def start_session(
+    payload: StartSessionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Prepare a new assessment draft without persisting an empty session."""
+    existing_active = get_latest_active_session(db, current_user.id)
+    if existing_active and not payload.force_overwrite:
+        raise HTTPException(
+            status_code=409,
+            detail=build_active_session_conflict_detail(existing_active),
+        )
+
+    if payload.force_overwrite:
+        active_sessions = db.query(AssessmentSession).filter(
+            AssessmentSession.user_id == current_user.id,
+            AssessmentSession.status == "active",
+        ).all()
+        deleted_report_files = []
+        for active_session in active_sessions:
+            deleted_report_files.append(delete_assessment_session_data(db, active_session))
+        if active_sessions:
+            db.commit()
+            for report_file_path in deleted_report_files:
+                cleanup_report_file(report_file_path)
+
+    return {
+        "session_id": None,
         "status": "success",
         "reused_existing": False,
+        "overwrote_existing": bool(payload.force_overwrite and existing_active),
+        "draft_only": True,
     }
 
 
 @router.get("/resume-session")
 async def resume_session(
+    session_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """恢复未完成的测评会话。"""
-    session = get_latest_active_session(db, current_user.id)
+    """Resume the requested active assessment session, or the latest one when omitted."""
+    if session_id is not None:
+        session = ensure_session_owner(db, session_id, current_user.id)
+        if session.status != "active":
+            return {"has_active_session": False}
+    else:
+        session = get_latest_active_session(db, current_user.id)
     if not session:
         return {"has_active_session": False}
 
@@ -129,6 +241,8 @@ async def resume_session(
                     "examNo": question.exam_no,
                     "exam": question.content,
                     "options": question.options,
+                    "dimension_id": question.dimension_id,
+                    "stage": DIM_STAGE_MAP.get(question.dimension_id),
                 }
             )
 
@@ -150,7 +264,7 @@ async def restart_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """重新作答：重置阶段到 intro，清理辩论结果，保留作答记录。"""
+    """Reset an existing session back to intro while keeping persisted answers."""
     session_id = payload.get("session_id")
     if not session_id:
         raise HTTPException(status_code=400, detail="缺少 session_id")
@@ -176,28 +290,23 @@ async def reopen_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """重新打开已完成的会话以修改答案。"""
-    session = ensure_session_owner(db, session_id, current_user.id)
-    if session.status != "completed":
+    """Create a new standalone editable copy from a completed session."""
+    source_session = ensure_session_owner(db, session_id, current_user.id)
+    if source_session.status != "completed":
         raise HTTPException(status_code=400, detail="该会话不是已完成状态")
 
-    existing_active = get_latest_active_session(db, current_user.id, exclude_session_id=session_id)
+    existing_active = get_latest_active_session(db, current_user.id)
     if existing_active:
         raise HTTPException(
             status_code=409,
             detail="当前还有一份未完成的测评，请先继续或重置它，系统已不再自动删除旧答题记录",
         )
 
-    session.status = "active"
-    session.current_stage = "intro"
-    session.submitted_stages = []
-    session.finished_at = None
-    session.report_content = None
-    session.report_file_path = None
-    db.query(ModuleDebateResult).filter(ModuleDebateResult.session_id == session_id).delete()
-    db.commit()
-
-    return {"status": "success", "session_id": session_id}
+    copied_session = create_editable_session_copy(db, source_session)
+    return {
+        "status": "success",
+        "session_id": copied_session.id,
+    }
 
 
 @router.put("/session/{session_id}")
@@ -228,7 +337,7 @@ async def delete_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """删除测评记录及其关联文件。"""
+    """Delete an assessment record and its dependent files."""
     session = db.query(AssessmentSession).filter(
         AssessmentSession.id == session_id,
         AssessmentSession.user_id == current_user.id,
@@ -236,20 +345,8 @@ async def delete_session(
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
 
-    report_file_path = session.report_file_path
-
-    db.query(ModuleDebateResult).filter(ModuleDebateResult.session_id == session_id).delete()
-    db.query(AnswerRecord).filter(AnswerRecord.session_id == session_id).delete()
-    db.query(ChatSession).filter(ChatSession.assessment_session_id == session_id).update(
-        {ChatSession.assessment_session_id: None}
-    )
-    db.delete(session)
+    report_file_path = delete_assessment_session_data(db, session)
     db.commit()
-
-    if report_file_path and os.path.exists(report_file_path):
-        try:
-            os.remove(report_file_path)
-        except Exception as exc:
-            print(f"删除报告文件失败: {exc}")
+    cleanup_report_file(report_file_path)
 
     return {"status": "success", "message": "测评记录已删除"}

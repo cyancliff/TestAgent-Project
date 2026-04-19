@@ -1,5 +1,7 @@
 import importlib
 import os
+from pathlib import Path
+from uuid import uuid4
 
 from app.api import auth
 from app.core import config
@@ -20,14 +22,25 @@ def test_avatar_upload_dir_matches_static_mount():
     assert auth.UPLOAD_DIR == os.path.join(uploads_dir, "avatars")
 
 
-def test_remove_old_avatar_uses_single_avatars_segment(tmp_path, monkeypatch):
-    monkeypatch.setattr(auth, "UPLOAD_DIR", str(tmp_path))
-    avatar_path = tmp_path / "user_1.png"
-    avatar_path.write_bytes(b"test")
+def test_remove_old_avatar_uses_single_avatars_segment(monkeypatch):
+    temp_root = Path("test_artifacts")
+    temp_root.mkdir(exist_ok=True)
+    upload_dir = temp_root / f"avatar_test_{uuid4().hex}"
+    upload_dir.mkdir()
 
-    auth._remove_old_avatar("avatars/user_1.png")
+    try:
+        monkeypatch.setattr(auth, "UPLOAD_DIR", str(upload_dir))
+        avatar_path = upload_dir / "user_1.png"
+        avatar_path.write_bytes(b"test")
 
-    assert not avatar_path.exists()
+        auth._remove_old_avatar("avatars/user_1.png")
+
+        assert not avatar_path.exists()
+    finally:
+        if upload_dir.exists():
+            for child in upload_dir.iterdir():
+                child.unlink()
+            upload_dir.rmdir()
 
 
 def test_build_database_url_from_env_uses_db_password(monkeypatch):
