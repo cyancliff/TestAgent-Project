@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from typing import Optional
 
 import httpx
@@ -146,6 +147,32 @@ def append_chat_message(
     return message
 
 
+def extract_text_only_report_content(report_content: str | None) -> str:
+    """仅保留报告中的文字内容，剔除图片、图表和代码块标记。"""
+    if not report_content:
+        return "暂无报告"
+
+    text = report_content
+    # 移除 fenced code block（例如 mermaid、图表配置等）
+    text = re.sub(r"```[\s\S]*?```", "\n", text)
+    # 移除 markdown 图片
+    text = re.sub(r"!\[[^\]]*]\([^)]*\)", "", text)
+    # 保留 markdown 链接文本，移除 URL
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", text)
+    # 移除常见图片/图表 HTML 标签
+    text = re.sub(r"<(img|svg|canvas|figure|figcaption)[^>]*>[\s\S]*?</\1>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"<(img|svg|canvas)[^>]*/?>", "", text, flags=re.IGNORECASE)
+    # 去掉剩余 HTML 标签
+    text = re.sub(r"<[^>]+>", "", text)
+    # 去掉 markdown 格式符号，仅保留文本
+    text = re.sub(r"^[>#*\-\s`]+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\|", " ", text)
+    text = re.sub(r"[_~`]+", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    cleaned = text.strip()
+    return cleaned or "暂无报告"
+
+
 def get_assessment_context(assessment_session_id: int, db: Session) -> str:
     """获取测评报告和答题记录作为上下文"""
     session = db.query(AssessmentSession).filter(AssessmentSession.id == assessment_session_id).first()
@@ -153,9 +180,10 @@ def get_assessment_context(assessment_session_id: int, db: Session) -> str:
         return ""
 
     records = db.query(AnswerRecord).filter(AnswerRecord.session_id == assessment_session_id).all()
+    report_text = extract_text_only_report_content(session.report_content)
 
     context = f"""【用户心理测评报告】
-{session.report_content or "暂无报告"}
+{report_text}
 
 【答题记录】
 """

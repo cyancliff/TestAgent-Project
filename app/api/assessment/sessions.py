@@ -8,19 +8,34 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.assessment.schemas import StartSessionRequest, UpdateSessionRequest
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.assessment import Question, AssessmentSession, AnswerRecord, ModuleDebateResult
+from app.models.assessment import AnswerRecord, AssessmentSession, ModuleDebateResult, Question
 from app.models.chat import ChatSession
 from app.models.user import User
-from app.api.assessment.schemas import StartSessionRequest, UpdateSessionRequest
 from app.services.stage_service import StageService
 
 router = APIRouter()
 
 
+def get_latest_active_session(
+    db: Session,
+    user_id: int,
+    exclude_session_id: int | None = None,
+) -> AssessmentSession | None:
+    """Return the latest active assessment session for the current user."""
+    query = db.query(AssessmentSession).filter(
+        AssessmentSession.user_id == user_id,
+        AssessmentSession.status == "active",
+    )
+    if exclude_session_id is not None:
+        query = query.filter(AssessmentSession.id != exclude_session_id)
+    return query.order_by(AssessmentSession.started_at.desc()).first()
+
+
 def ensure_session_owner(db: Session, session_id: int, user_id: int) -> AssessmentSession:
-    """校验会话属于当前用户"""
+    """校验会话属于当前用户。"""
     session = db.query(AssessmentSession).filter(
         AssessmentSession.id == session_id,
         AssessmentSession.user_id == user_id,
@@ -47,21 +62,19 @@ async def start_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """创建新测评会话，清理旧的 active 会话"""
-    old_sessions = db.query(AssessmentSession).filter(
-        AssessmentSession.user_id == current_user.id,
-        AssessmentSession.status == 'active',
-    ).all()
-    for old in old_sessions:
-        db.query(AnswerRecord).filter(AnswerRecord.session_id == old.id).delete()
-        db.query(ModuleDebateResult).filter(ModuleDebateResult.session_id == old.id).delete()
-        db.delete(old)
-    db.commit()
+    """创建新测评会话，如已有未完成会话则直接复用。"""
+    existing_active = get_latest_active_session(db, current_user.id)
+    if existing_active:
+        return {
+            "session_id": existing_active.id,
+            "status": "success",
+            "reused_existing": True,
+        }
 
     new_session = AssessmentSession(
         user_id=current_user.id,
-        status='active',
-        current_stage='intro',
+        status="active",
+        current_stage="intro",
         submitted_stages=[],
     )
     db.add(new_session)
@@ -69,7 +82,11 @@ async def start_session(
     db.refresh(new_session)
     new_session.title = build_assessment_session_title(new_session.started_at, new_session.id)
     db.commit()
-    return {"session_id": new_session.id, "status": "success"}
+    return {
+        "session_id": new_session.id,
+        "status": "success",
+        "reused_existing": False,
+    }
 
 
 @router.get("/resume-session")
@@ -77,49 +94,45 @@ async def resume_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """恢复未完成的测评会话"""
-    session = db.query(AssessmentSession).filter(
-        AssessmentSession.user_id == current_user.id,
-        AssessmentSession.status == 'active',
-    ).order_by(AssessmentSession.started_at.desc()).first()
-
+    """恢复未完成的测评会话。"""
+    session = get_latest_active_session(db, current_user.id)
     if not session:
         return {"has_active_session": False}
 
     stage_service = StageService(db, session.id, current_user.id)
     records = stage_service.get_all_answer_records()
-
     if not records:
         return {"has_active_session": False}
 
-    exam_nos = [r.exam_no for r in records]
-    questions = db.query(Question).filter(
-        Question.exam_no.in_(exam_nos)
-    ).all()
-    q_map = {q.exam_no: q for q in questions}
+    exam_nos = [record.exam_no for record in records]
+    questions = db.query(Question).filter(Question.exam_no.in_(exam_nos)).all()
+    question_map = {question.exam_no: question for question in questions}
 
     answers_data = []
     questions_data = []
-    for r in records:
-        q = q_map.get(r.exam_no)
-        answers_data.append({
-            "exam_no": r.exam_no,
-            "selected_option": r.selected_option,
-            "time_spent": float(r.time_spent) if r.time_spent else 0,
-            "score": float(r.score) if r.score else 0,
-            "is_anomaly": r.is_anomaly,
-            "ai_follow_up": r.ai_follow_up,
-            "user_explanation": r.user_explanation,
-        })
-        if q:
-            questions_data.append({
-                "examNo": q.exam_no,
-                "exam": q.content,
-                "options": q.options,
-            })
+    for record in records:
+        question = question_map.get(record.exam_no)
+        answers_data.append(
+            {
+                "exam_no": record.exam_no,
+                "selected_option": record.selected_option,
+                "time_spent": float(record.time_spent) if record.time_spent else 0,
+                "score": float(record.score) if record.score else 0,
+                "is_anomaly": record.is_anomaly,
+                "ai_follow_up": record.ai_follow_up,
+                "user_explanation": record.user_explanation,
+            }
+        )
+        if question:
+            questions_data.append(
+                {
+                    "examNo": question.exam_no,
+                    "exam": question.content,
+                    "options": question.options,
+                }
+            )
 
     current_stage = stage_service.get_current_stage()
-
     return {
         "has_active_session": True,
         "session_id": session.id,
@@ -137,13 +150,13 @@ async def restart_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """重新作答：重置阶段到 intro，清理辩论结果，保留作答记录"""
+    """重新作答：重置阶段到 intro，清理辩论结果，保留作答记录。"""
     session_id = payload.get("session_id")
     if not session_id:
         raise HTTPException(status_code=400, detail="缺少 session_id")
 
     session = ensure_session_owner(db, session_id, current_user.id)
-    if session.status != 'completed' and session.status != 'active':
+    if session.status not in {"completed", "active"}:
         raise HTTPException(status_code=400, detail="该会话不可重新开始")
 
     stage_service = StageService(db, session_id, current_user.id)
@@ -163,24 +176,20 @@ async def reopen_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """重新打开已完成的会话以修改答案"""
+    """重新打开已完成的会话以修改答案。"""
     session = ensure_session_owner(db, session_id, current_user.id)
-    if session.status != 'completed':
+    if session.status != "completed":
         raise HTTPException(status_code=400, detail="该会话不是已完成状态")
 
-    # 关闭该用户其他 active 会话
-    old_active = db.query(AssessmentSession).filter(
-        AssessmentSession.user_id == current_user.id,
-        AssessmentSession.status == 'active',
-        AssessmentSession.id != session_id,
-    ).all()
-    for old in old_active:
-        db.query(AnswerRecord).filter(AnswerRecord.session_id == old.id).delete()
-        db.query(ModuleDebateResult).filter(ModuleDebateResult.session_id == old.id).delete()
-        db.delete(old)
+    existing_active = get_latest_active_session(db, current_user.id, exclude_session_id=session_id)
+    if existing_active:
+        raise HTTPException(
+            status_code=409,
+            detail="当前还有一份未完成的测评，请先继续或重置它，系统已不再自动删除旧答题记录",
+        )
 
-    session.status = 'active'
-    session.current_stage = 'intro'
+    session.status = "active"
+    session.current_stage = "intro"
     session.submitted_stages = []
     session.finished_at = None
     session.report_content = None
@@ -219,7 +228,7 @@ async def delete_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """删除测评记录及其关联文件"""
+    """删除测评记录及其关联文件。"""
     session = db.query(AssessmentSession).filter(
         AssessmentSession.id == session_id,
         AssessmentSession.user_id == current_user.id,
@@ -240,7 +249,7 @@ async def delete_session(
     if report_file_path and os.path.exists(report_file_path):
         try:
             os.remove(report_file_path)
-        except Exception as e:
-            print(f"删除报告文件失败: {e}")
+        except Exception as exc:
+            print(f"删除报告文件失败: {exc}")
 
     return {"status": "success", "message": "测评记录已删除"}
