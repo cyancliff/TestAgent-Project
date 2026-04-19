@@ -47,6 +47,58 @@ class ChatSendRequest(BaseModel):
 
 
 # --- 辅助函数 ---
+def build_assessment_title(assessment_session: AssessmentSession | None) -> str:
+    if assessment_session is None:
+        return "未命名测评"
+
+    title = (assessment_session.title or "").strip()
+    if title:
+        return title
+
+    if assessment_session.started_at is not None:
+        try:
+            return assessment_session.started_at.astimezone().strftime("%Y.%m.%d %H:%M")
+        except Exception:
+            return assessment_session.started_at.strftime("%Y.%m.%d %H:%M")
+
+    if assessment_session.id is not None:
+        return f"测评 #{assessment_session.id}"
+    return "未命名测评"
+
+
+def build_default_chat_title(assessment_session: AssessmentSession | None) -> str:
+    if assessment_session is None:
+        return "新对话"
+    return f"{build_assessment_title(assessment_session)} 咨询"
+
+
+def serialize_assessment_info(assessment_session: AssessmentSession | None) -> dict | None:
+    if assessment_session is None:
+        return None
+
+    return {
+        "session_id": assessment_session.id,
+        "title": build_assessment_title(assessment_session),
+        "started_at": assessment_session.started_at.isoformat() if assessment_session.started_at else None,
+        "finished_at": assessment_session.finished_at.isoformat() if assessment_session.finished_at else None,
+        "has_report": assessment_session.report_content is not None,
+    }
+
+
+def is_auto_generated_chat_title(chat_session: ChatSession) -> bool:
+    normalized_title = (chat_session.title or "").strip()
+    if not normalized_title:
+        return True
+
+    candidate_titles = {"新对话"}
+    if chat_session.assessment_session_id:
+        candidate_titles.add(f"测评 #{chat_session.assessment_session_id} 咨询")
+    if chat_session.assessment_session is not None:
+        candidate_titles.add(build_default_chat_title(chat_session.assessment_session))
+        candidate_titles.add(build_assessment_title(chat_session.assessment_session))
+    return normalized_title in candidate_titles
+
+
 def serialize_messages(messages: list[ChatMessageModel], include_system: bool = False) -> list[dict]:
     result = []
     for msg in messages:
@@ -277,7 +329,7 @@ async def prepare_chat_messages(
     from datetime import datetime
 
     chat_session.updated_at = datetime.now()
-    if chat_session.title in ("新对话", f"测评 #{chat_session.assessment_session_id} 咨询"):
+    if is_auto_generated_chat_title(chat_session):
         chat_session.title = message_text[:20] + ("..." if len(message_text) > 20 else "")
     db.commit()
 
@@ -336,13 +388,7 @@ async def list_chat_sessions(db: Session = Depends(get_db), current_user: User =
         )
 
         # 获取关联测评的简要信息
-        assessment_info = None
-        if s.assessment_session_id and s.assessment_session:
-            assessment_info = {
-                "session_id": s.assessment_session_id,
-                "started_at": s.assessment_session.started_at.isoformat() if s.assessment_session.started_at else None,
-                "has_report": s.assessment_session.report_content is not None,
-            }
+        assessment_info = serialize_assessment_info(s.assessment_session) if s.assessment_session_id else None
 
         result.append(
             {
@@ -368,6 +414,7 @@ async def create_chat_session(
     current_user: User = Depends(get_current_user),
 ):
     """创建新咨询会话"""
+    assessment = None
     # 如果指定了关联测评，校验归属
     if payload.assessment_session_id:
         assessment = (
@@ -382,8 +429,8 @@ async def create_chat_session(
             raise HTTPException(status_code=404, detail="测评会话不存在")
 
     title = payload.title or "新对话"
-    if not payload.title and payload.assessment_session_id:
-        title = f"测评 #{payload.assessment_session_id} 咨询"
+    if not payload.title and assessment is not None:
+        title = build_default_chat_title(assessment)
 
     chat_session = ChatSession(
         user_id=current_user.id,
@@ -398,6 +445,7 @@ async def create_chat_session(
         "id": chat_session.id,
         "title": chat_session.title,
         "assessment_session_id": chat_session.assessment_session_id,
+        "assessment_info": serialize_assessment_info(assessment),
     }
 
 
@@ -410,11 +458,13 @@ async def update_chat_session(
 ):
     """修改咨询会话（切换关联测评、修改标题）"""
     chat_session = ensure_chat_session_owner(db, chat_session_id, current_user.id)
+    should_refresh_default_title = False
 
     # 检查关联测评是否变化
     assessment_changed = False
     if payload.assessment_session_id is not None:
         if payload.assessment_session_id != chat_session.assessment_session_id:
+            should_refresh_default_title = is_auto_generated_chat_title(chat_session)
             # 校验新测评归属
             if payload.assessment_session_id > 0:
                 assessment = (
@@ -428,13 +478,17 @@ async def update_chat_session(
                 if not assessment:
                     raise HTTPException(status_code=404, detail="测评会话不存在")
                 chat_session.assessment_session_id = payload.assessment_session_id
+                chat_session.assessment_session = assessment
             else:
                 # 传 0 或负数表示取消关联
                 chat_session.assessment_session_id = None
+                chat_session.assessment_session = None
             assessment_changed = True
 
     if payload.title is not None:
         chat_session.title = payload.title
+    elif assessment_changed and should_refresh_default_title:
+        chat_session.title = build_default_chat_title(chat_session.assessment_session)
 
     db.commit()
 
@@ -446,6 +500,7 @@ async def update_chat_session(
         "id": chat_session.id,
         "title": chat_session.title,
         "assessment_session_id": chat_session.assessment_session_id,
+        "assessment_info": serialize_assessment_info(chat_session.assessment_session),
     }
 
 
@@ -474,6 +529,7 @@ async def get_messages(
     return {
         "messages": serialize_messages(get_chat_messages(db, chat_session_id, include_system=False)),
         "assessment_session_id": chat_session.assessment_session_id,
+        "assessment_info": serialize_assessment_info(chat_session.assessment_session),
         "title": chat_session.title,
     }
 
@@ -601,6 +657,7 @@ async def get_available_assessments(db: Session = Depends(get_db), current_user:
         "assessments": [
             {
                 "session_id": s.id,
+                "title": build_assessment_title(s),
                 "started_at": s.started_at.isoformat() if s.started_at else None,
                 "finished_at": s.finished_at.isoformat() if s.finished_at else None,
                 "has_report": s.report_content is not None,

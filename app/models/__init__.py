@@ -36,6 +36,7 @@ __all__ = [
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_assessment_session_title_column()
+    _ensure_user_nickname_column()
     from app.services.question_sanitizer import repair_question_contents
 
     db = SessionLocal()
@@ -47,7 +48,14 @@ def init_db() -> None:
         ]
         for session in sessions_needing_title_update:
             session.title = _format_assessment_session_title(session.started_at, session.id)
-        if sessions_needing_title_update:
+        users_needing_nickname_update = [
+            user
+            for user in db.query(User).all()
+            if not (user.nickname or "").strip()
+        ]
+        for user in users_needing_nickname_update:
+            user.nickname = (user.username or "用户").strip()
+        if sessions_needing_title_update or users_needing_nickname_update:
             db.commit()
 
         updated_count = repair_question_contents(db)
@@ -69,6 +77,20 @@ def _ensure_assessment_session_title_column() -> None:
     with engine.begin() as connection:
         connection.execute(text("ALTER TABLE assessment_sessions ADD COLUMN title VARCHAR(100)"))
     logger.info("Added missing assessment_sessions.title column")
+
+
+def _ensure_user_nickname_column() -> None:
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    column_names = {column["name"] for column in inspector.get_columns("users")}
+    if "nickname" in column_names:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE users ADD COLUMN nickname VARCHAR(50)"))
+    logger.info("Added missing users.nickname column")
 
 
 def _format_assessment_session_title(started_at: datetime | None, session_id: int | None = None) -> str:

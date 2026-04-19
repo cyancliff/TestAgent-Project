@@ -12,6 +12,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     username = Column(String(50), unique=True, index=True, comment="用户名")
+    nickname = Column(String(50), nullable=True, comment="用户昵称")
     password_hash = Column(String(255), comment="密码哈希")
     avatar_url = Column(Text, nullable=True, comment="头像路径（相对路径）")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), comment="注册时间")

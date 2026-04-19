@@ -3,7 +3,7 @@ import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -31,11 +31,16 @@ class AuthRequest(BaseModel):
     password: str
 
 
+class UpdateProfileRequest(BaseModel):
+    nickname: str = Field(min_length=1, max_length=50)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user_id: int
     username: str
+    nickname: str
     avatar_url: str | None = None
 
 
@@ -46,22 +51,25 @@ async def register(
     payload: AuthRequest,
     db: Session = Depends(get_db),
 ):
-    existing = db.query(User).filter(User.username == payload.username).first()
+    username = payload.username.strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="用户名不能为空")
+
+    existing = db.query(User).filter(User.username == username).first()
     if existing:
         raise HTTPException(status_code=400, detail="用户名已存在")
 
-    user = User(username=payload.username, password_hash=hash_password(payload.password))
+    user = User(
+        username=username,
+        nickname=username,
+        password_hash=hash_password(payload.password),
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
 
     token = create_access_token(user.id, user.username)
-    return TokenResponse(
-        access_token=token,
-        user_id=user.id,
-        username=user.username,
-        avatar_url=_resolve_avatar_url(user),
-    )
+    return TokenResponse(**_build_auth_payload(user, token))
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -71,31 +79,47 @@ async def login(
     payload: AuthRequest,
     db: Session = Depends(get_db),
 ):
-    user = db.query(User).filter(User.username == payload.username).first()
+    username = payload.username.strip()
+    user = db.query(User).filter(User.username == username).first()
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
 
-    if is_legacy_hash(user.password_hash):
+    password_upgraded = is_legacy_hash(user.password_hash)
+    nickname_missing = not (user.nickname or "").strip()
+
+    if password_upgraded:
         user.password_hash = hash_password(payload.password)
+    if nickname_missing:
+        user.nickname = user.username
+    if password_upgraded or nickname_missing:
         db.commit()
 
     token = create_access_token(user.id, user.username)
-    return TokenResponse(
-        access_token=token,
-        user_id=user.id,
-        username=user.username,
-        avatar_url=_resolve_avatar_url(user),
-    )
+    return TokenResponse(**_build_auth_payload(user, token))
 
 
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user)):
-    return {
-        "user_id": current_user.id,
-        "username": current_user.username,
-        "avatar_url": _resolve_avatar_url(current_user),
-        "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
-    }
+    profile = _build_profile_payload(current_user)
+    profile["created_at"] = current_user.created_at.isoformat() if current_user.created_at else None
+    return profile
+
+
+@router.put("/profile")
+async def update_profile(
+    payload: UpdateProfileRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    nickname = payload.nickname.strip()
+    if not nickname:
+        raise HTTPException(status_code=400, detail="昵称不能为空")
+
+    user = db.query(User).filter(User.id == current_user.id).first()
+    user.nickname = nickname
+    db.commit()
+    db.refresh(user)
+    return _build_profile_payload(user)
 
 
 @router.post("/avatar")
@@ -161,3 +185,22 @@ def _normalize_avatar_relative_path(avatar_url: str) -> Optional[str]:
     if avatar_url.startswith("uploads/"):
         return avatar_url.removeprefix("uploads/")
     return None
+
+
+def _resolve_nickname(user: User) -> str:
+    return (user.nickname or user.username or "用户").strip()
+
+
+def _build_profile_payload(user: User) -> dict:
+    return {
+        "user_id": user.id,
+        "username": user.username,
+        "nickname": _resolve_nickname(user),
+        "avatar_url": _resolve_avatar_url(user),
+    }
+
+
+def _build_auth_payload(user: User, access_token: str) -> dict:
+    payload = _build_profile_payload(user)
+    payload["access_token"] = access_token
+    return payload

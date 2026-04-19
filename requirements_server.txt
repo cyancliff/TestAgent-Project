@@ -18,6 +18,9 @@ requests==2.31.0
 numpy==1.24.3
 scikit-learn==1.3.2
 
+# Multi-agent runtime
+pyautogen==0.2.14
+
 # Auth and security
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4

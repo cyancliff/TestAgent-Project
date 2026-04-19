@@ -100,11 +100,13 @@ cp .env.example .env
 # 3. 启动服务
 docker compose up -d --build
 ```
-Note: Docker now defaults to `requirements_full.txt`, then installs
+Note: Docker defaults to `requirements_full.txt`, then installs
 `requirements_feature.txt` in a second step. This keeps general packages
 on the main mirror and only lets Torch CPU use the PyTorch extra index.
+If you only want a lighter first deployment, you can manually switch
+`REQUIREMENTS_FILE` to `requirements_server.txt`.
 
-如果你的服务器拉取 `postgres:15-alpine` 很慢，可在 `.env` 中把 `POSTGRES_IMAGE` 改成你自己的镜像仓库地址。当前 Docker 默认先安装 `requirements_full.txt`，再单独安装 `requirements_feature.txt`，这样普通依赖仍走主镜像，`torch` 才会使用 PyTorch CPU 额外索引。
+如果你的服务器拉取 `postgres:15-alpine` 很慢，可在 `.env` 中把 `POSTGRES_IMAGE` 改成你自己的镜像仓库地址。当前 Docker 默认先安装 `requirements_full.txt`，再单独安装 `requirements_feature.txt`，这样普通依赖仍走主镜像，`torch` 才会使用 PyTorch CPU 额外索引。如果你只想先部署在线服务、暂时不生成题目特征向量，也可以手动把 `REQUIREMENTS_FILE` 改成 `requirements_server.txt`。
 
 启动后会自动完成：
 - 等待 PostgreSQL 就绪
@@ -146,7 +148,6 @@ python -m pip install -r requirements_feature.txt
 
 # `requirements_feature.txt` 这一层会补充 `sentence-transformers` 和 `torch==...+cpu`
 # 并把 PyTorch 额外索引限制在这一步，避免常规依赖解析到非主镜像
-python -m pip install -r requirements_feature.txt
 
 # 2. 准备环境变量
 cp .env.example .env
@@ -214,6 +215,7 @@ ZHIPU_API_KEY=
 - `uploads/` 在 Docker 部署中已通过独立卷持久化，重建 `backend` 容器后仍会保留上传文件
 - `REQUIREMENTS_FILE` 默认是 `requirements_full.txt`，包含当前后端启动所需的完整依赖
 - `requirements_feature.txt` 单独承载 `sentence-transformers` 与 `torch==...+cpu`，用于避免常规依赖解析到 PyTorch 额外索引
+- `requirements_server.txt` 是可选的轻量运行时依赖集合，包含 API、RAG、限流和多智能体辩论依赖，但不会安装题目特征向量生成所需的 `torch/sentence-transformers`
 
 ## 项目结构
 
