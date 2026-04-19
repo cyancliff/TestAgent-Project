@@ -109,7 +109,7 @@ ZHIPU_API_KEY=
 POSTGRES_IMAGE=postgres:15-alpine
 PYTHON_IMAGE=python:3.10-slim
 PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
-REQUIREMENTS_FILE=requirements_server.txt
+REQUIREMENTS_FILE=requirements_full.txt
 ```
 
 说明：
@@ -119,7 +119,8 @@ REQUIREMENTS_FILE=requirements_server.txt
 - 三个 AI Key 都是可选项，但不填的话 AI 相关功能不可用
 - 使用当前自带的 `docker-compose.yml` 时，不需要手工填写 `DATABASE_URL`
 - 如果 Docker Hub 拉取 `postgres:15-alpine` 很慢，可以在 `.env` 里把 `POSTGRES_IMAGE` 改成你自己的镜像仓库地址
-- Docker 默认使用 `requirements_server.txt` 构建后端镜像，不会在首次部署时安装 `torch/sentence-transformers`
+- Docker 默认使用 `requirements_full.txt` 构建后端镜像，并会在第二步安装 `requirements_feature.txt`
+- 如果你只想先部署在线服务、暂时不生成题目特征向量，可以手动把 `REQUIREMENTS_FILE` 改成 `requirements_server.txt`
 
 如果你想快速生成一个随机密钥，可以用：
 
@@ -143,7 +144,7 @@ docker compose up -d --build
 
 第一次部署时，等待 5 到 15 分钟都算正常。
 
-当前仓库默认不会在 Docker 首次构建时安装 `torch==2.1.0+cpu`。只有你明确把 `REQUIREMENTS_FILE` 改成 `requirements_full.txt`，或者手工安装 `requirements_feature.txt / requirements_full.txt` 时，才会进入这条依赖链。
+当前仓库默认会在 Docker 首次构建时安装 `requirements_full.txt`，并在第二步安装 `requirements_feature.txt`，因此会进入 `torch==2.1.0+cpu` 这条依赖链。如果你希望首次部署更轻，可以手动把 `REQUIREMENTS_FILE` 改成 `requirements_server.txt`，让系统先以不生成题目特征向量的模式启动。
 
 ## 7. 启动后会自动做什么
 
@@ -296,9 +297,10 @@ docker compose up -d --build
 按这个顺序处理：
 
 1. 如果卡在 `postgres:15-alpine`，优先判断是不是 Docker Hub 链路慢；必要时在 `.env` 里覆盖 `POSTGRES_IMAGE`
-2. 如果只是部署后端服务，不要把 `REQUIREMENTS_FILE` 改成 `requirements_full.txt`；保持默认的 `requirements_server.txt`
-3. 只有在你确实要在服务器上运行 `python scripts/generate_feature_vectors.py` 时，才额外安装 `requirements_feature.txt`
-4. 调整完 `.env` 后重新执行 `docker compose up -d --build`
+2. 默认部署会安装 `requirements_full.txt` 和 `requirements_feature.txt`，首次构建慢一些是预期行为
+3. 如果你只是想先把在线服务跑起来，可以临时把 `REQUIREMENTS_FILE` 改成 `requirements_server.txt`
+4. 只有在你确实要在服务器上运行 `python scripts/generate_feature_vectors.py`，或者恢复完整特征向量链路时，才需要保留 `requirements_full.txt + requirements_feature.txt` 组合
+5. 调整完 `.env` 后重新执行 `docker compose up -d --build`
 
 ### 13.1 打不开首页
 

@@ -61,6 +61,8 @@ const handleSubmit = async () => {
     localStorage.setItem('token', res.data.access_token)
     localStorage.setItem('userId', res.data.user_id)
     localStorage.setItem('username', res.data.username)
+    localStorage.setItem('loginAccount', res.data.username)
+    localStorage.setItem('nickname', res.data.nickname || res.data.username)
     if (res.data.avatar_url) {
       localStorage.setItem('avatarUrl', res.data.avatar_url)
     } else {

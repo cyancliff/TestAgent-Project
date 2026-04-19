@@ -27,6 +27,9 @@ api.interceptors.response.use(
       localStorage.removeItem('token')
       localStorage.removeItem('userId')
       localStorage.removeItem('username')
+      localStorage.removeItem('nickname')
+      localStorage.removeItem('loginAccount')
+      localStorage.removeItem('avatarUrl')
       router.push('/login')
     }
     return Promise.reject(error)

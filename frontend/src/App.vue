@@ -39,11 +39,15 @@
                 <img v-if="avatarUrl" :src="avatarUrl" class="user-menu-avatar" alt="头像" @error="handleAvatarLoadError" />
                 <span v-else class="user-menu-avatar user-menu-avatar-fallback">{{ usernameInitial }}</span>
               </div>
-              <div class="user-menu-name">{{ username }}</div>
+              <div class="user-menu-name">{{ nickname }}</div>
               <div class="user-menu-subtitle">{{ userSubtitle }}</div>
             </div>
 
             <div class="user-menu-list">
+              <button class="user-menu-item" type="button" @click="renameNickname">
+                <span class="user-menu-icon">✎</span>
+                <span>修改昵称</span>
+              </button>
               <button class="user-menu-item" type="button" @click="triggerAvatarUpload">
                 <span class="user-menu-icon">📷</span>
                 <span>更换头像</span>
@@ -117,6 +121,7 @@ import {
   handleDialogCancel,
   handleDialogConfirm,
   showAlertDialog,
+  showPromptDialog,
   updateDialogInputValue,
 } from './composables/useAppDialog'
 
@@ -129,11 +134,14 @@ const menuCaretClosed = '\u25BC'
 const isChatRoute = computed(() => route.path.startsWith('/chat'))
 const isAssessmentRoute = computed(() => route.path.startsWith('/assessment'))
 const showNav = computed(() => route.path !== '/login')
-const username = ref(localStorage.getItem('username') || '用户')
+const readStoredNickname = () => localStorage.getItem('nickname') || localStorage.getItem('username') || '用户'
+const readStoredLoginAccount = () => localStorage.getItem('loginAccount') || localStorage.getItem('username') || 'user'
 const readStoredAvatarUrl = () => resolveBackendUrl(localStorage.getItem('avatarUrl') || '')
+const nickname = ref(readStoredNickname())
+const loginAccount = ref(readStoredLoginAccount())
 const avatarUrl = ref(readStoredAvatarUrl())
-const usernameInitial = computed(() => (username.value || '?')[0].toUpperCase())
-const userSubtitle = computed(() => `@${username.value || 'user'}`)
+const usernameInitial = computed(() => (nickname.value || '?')[0].toUpperCase())
+const userSubtitle = computed(() => `@${loginAccount.value || 'user'}`)
 const avatarInput = ref(null)
 const navRef = ref(null)
 const showUserMenu = ref(false)
@@ -145,6 +153,41 @@ const closeUserMenu = () => {
 
 const emitUserProfileUpdated = () => {
   window.dispatchEvent(new CustomEvent('user-profile-updated'))
+}
+
+const persistUserProfile = (profile = {}) => {
+  const normalizedAccount = String(profile.username || '').trim()
+  const normalizedNickname = String(profile.nickname || '').trim()
+
+  if (normalizedAccount) {
+    loginAccount.value = normalizedAccount
+    localStorage.setItem('username', normalizedAccount)
+    localStorage.setItem('loginAccount', normalizedAccount)
+  } else {
+    loginAccount.value = readStoredLoginAccount()
+  }
+
+  if (normalizedNickname) {
+    nickname.value = normalizedNickname
+    localStorage.setItem('nickname', normalizedNickname)
+  } else if (normalizedAccount) {
+    nickname.value = normalizedAccount
+    localStorage.setItem('nickname', normalizedAccount)
+  } else {
+    nickname.value = readStoredNickname()
+  }
+
+  if (Object.prototype.hasOwnProperty.call(profile, 'avatar_url')) {
+    if (profile.avatar_url) {
+      avatarUrl.value = resolveBackendUrl(profile.avatar_url)
+      localStorage.setItem('avatarUrl', profile.avatar_url)
+    } else {
+      avatarUrl.value = ''
+      localStorage.removeItem('avatarUrl')
+    }
+  } else {
+    avatarUrl.value = readStoredAvatarUrl()
+  }
 }
 
 const toggleUserMenu = () => {
@@ -172,8 +215,7 @@ const handleAvatarUpload = async (e) => {
     const res = await api.post('/auth/avatar', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
-    avatarUrl.value = resolveBackendUrl(res.data.avatar_url)
-    localStorage.setItem('avatarUrl', res.data.avatar_url)
+    persistUserProfile({ avatar_url: res.data.avatar_url })
     emitUserProfileUpdated()
   } catch (err) {
     await showAlertDialog(err.response?.data?.detail || '头像上传失败', {
@@ -191,23 +233,41 @@ const handleAvatarLoadError = () => {
   emitUserProfileUpdated()
 }
 
+const renameNickname = async () => {
+  closeUserMenu()
+  const nextNickname = await showPromptDialog({
+    title: '修改昵称',
+    message: '昵称可以修改，账号 ID 会保持为登录账号。',
+    inputLabel: '昵称',
+    inputPlaceholder: '请输入昵称',
+    initialValue: nickname.value,
+    inputMaxLength: 50,
+    confirmText: '保存',
+  })
+  if (nextNickname === null) return
+
+  const normalizedNickname = nextNickname.trim().slice(0, 50)
+  if (!normalizedNickname || normalizedNickname === nickname.value) return
+
+  try {
+    const res = await api.put('/auth/profile', { nickname: normalizedNickname })
+    persistUserProfile(res.data)
+    emitUserProfileUpdated()
+  } catch (err) {
+    await showAlertDialog(err.response?.data?.detail || '昵称修改失败', {
+      title: '保存失败',
+      destructive: true,
+    })
+  }
+}
+
 const syncCurrentUser = async () => {
   const token = localStorage.getItem('token')
   if (!token) return
-  avatarUrl.value = readStoredAvatarUrl()
+  persistUserProfile()
   try {
     const res = await api.get('/auth/me')
-    if (res.data?.username) {
-      username.value = res.data.username
-      localStorage.setItem('username', res.data.username)
-    }
-    if (res.data?.avatar_url) {
-      avatarUrl.value = resolveBackendUrl(res.data.avatar_url)
-      localStorage.setItem('avatarUrl', res.data.avatar_url)
-    } else {
-      handleAvatarLoadError()
-      return
-    }
+    persistUserProfile(res.data || {})
     emitUserProfileUpdated()
   } catch (err) {
     console.error('同步用户信息失败:', err)
@@ -219,8 +279,11 @@ const logout = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('userId')
   localStorage.removeItem('username')
+  localStorage.removeItem('nickname')
+  localStorage.removeItem('loginAccount')
   localStorage.removeItem('avatarUrl')
-  username.value = '用户'
+  nickname.value = '用户'
+  loginAccount.value = 'user'
   avatarUrl.value = ''
   router.push('/login')
 }

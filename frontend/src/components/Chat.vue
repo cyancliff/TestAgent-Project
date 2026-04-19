@@ -19,7 +19,6 @@
         <select
           id="chat-assessment-select"
           class="chat-assessment-select"
-          :disabled="!activeChatId"
           :value="currentAssessmentId || 0"
           @change="changeAssessment($event.target.value)"
         >
@@ -29,7 +28,7 @@
             :key="assessment.session_id"
             :value="assessment.session_id"
           >
-            测评 #{{ assessment.session_id }} ({{ formatDate(assessment.started_at) }}){{ assessment.has_report ? '' : ' [无报告]' }}
+            {{ formatAssessmentOptionLabel(assessment) }}
           </option>
         </select>
         <p class="chat-assessment-hint">{{ currentAssessmentLabel }}</p>
@@ -46,7 +45,7 @@
             <button class="chat-session-main" type="button" @click="switchSession(session.id)">
               <span class="chat-session-item-title">{{ session.title || '新对话' }}</span>
               <span class="chat-session-item-meta">
-                {{ session.assessment_session_id ? `测评 #${session.assessment_session_id}` : '未关联测评' }}
+                {{ session.assessment_info?.title || (session.assessment_session_id ? '已关联测评' : '未关联测评') }}
                 · {{ session.message_count }} 条消息
               </span>
             </button>
@@ -86,7 +85,7 @@
             <span v-else>{{ usernameInitial }}</span>
           </div>
           <div class="chat-user-copy">
-            <strong>{{ username }}</strong>
+            <strong>{{ nickname }}</strong>
             <span>{{ userHandle }}</span>
           </div>
         </div>
@@ -249,15 +248,19 @@ import { showAlertDialog, showConfirmDialog, showPromptDialog } from '../composa
 const route = useRoute()
 const router = useRouter()
 
-const username = ref(localStorage.getItem('username') || '用户')
+const readStoredNickname = () => localStorage.getItem('nickname') || localStorage.getItem('username') || '用户'
+const readStoredLoginAccount = () => localStorage.getItem('loginAccount') || localStorage.getItem('username') || 'user'
 const readStoredAvatarUrl = () => resolveBackendUrl(localStorage.getItem('avatarUrl') || '')
+const nickname = ref(readStoredNickname())
+const loginAccount = ref(readStoredLoginAccount())
 const userAvatarUrl = ref(readStoredAvatarUrl())
-const usernameInitial = computed(() => (username.value || '?')[0].toUpperCase())
-const userHandle = computed(() => `@${username.value || 'user'}`)
+const usernameInitial = computed(() => (nickname.value || '?')[0].toUpperCase())
+const userHandle = computed(() => `@${loginAccount.value || 'user'}`)
 
 const chatSessions = ref([])
 const activeChatId = ref(null)
 const currentAssessmentId = ref(null)
+const currentAssessmentInfo = ref(null)
 const availableAssessments = ref([])
 const messages = ref([])
 const inputMessage = ref('')
@@ -309,13 +312,30 @@ const BLOCKED_MARKDOWN_TAGS = new Set(['button', 'embed', 'form', 'iframe', 'inp
 const SAFE_LINK_PATTERN = /^(https?:|mailto:|tel:|\/|#)/i
 
 const currentSession = computed(() => chatSessions.value.find((session) => session.id === activeChatId.value) || null)
+const lookupAssessmentById = (assessmentId) => {
+  const normalizedId = Number(assessmentId) || 0
+  if (!normalizedId) return null
+
+  return (
+    availableAssessments.value.find((assessment) => assessment.session_id === normalizedId)
+    || (currentSession.value?.assessment_info?.session_id === normalizedId ? currentSession.value.assessment_info : null)
+    || (currentAssessmentInfo.value?.session_id === normalizedId ? currentAssessmentInfo.value : null)
+    || null
+  )
+}
+const getAssessmentDisplayName = (assessment) => {
+  if (!assessment) return ''
+  const title = String(assessment.title || '').trim()
+  return title || (assessment.session_id ? `测评 #${assessment.session_id}` : '未命名测评')
+}
+const currentAssessment = computed(() => lookupAssessmentById(currentAssessmentId.value))
 const currentAssessmentLabel = computed(() => (
   !activeChatId.value
     ? currentAssessmentId.value
-      ? `首条消息将关联测评 #${currentAssessmentId.value}`
+      ? `首条消息将关联「${getAssessmentDisplayName(currentAssessment.value)}」`
       : '发送首条消息后自动创建对话'
     : currentAssessmentId.value
-    ? `已关联测评 #${currentAssessmentId.value}`
+    ? `已关联「${getAssessmentDisplayName(currentAssessment.value)}」`
     : '未关联测评'
 ))
 const activeSessionTitle = computed(() => {
@@ -325,7 +345,7 @@ const activeSessionTitle = computed(() => {
 const activeSessionDescription = computed(() => {
   if (!activeChatId.value) {
     return currentAssessmentId.value
-      ? `发送第一条消息后会自动创建对话，并关联测评 #${currentAssessmentId.value}`
+      ? `发送第一条消息后会自动创建对话，并关联「${getAssessmentDisplayName(currentAssessment.value)}」`
       : '围绕测评结果、情绪压力和行动建议继续追问'
   }
 
@@ -334,7 +354,8 @@ const activeSessionDescription = computed(() => {
 })
 
 const syncLocalUser = () => {
-  username.value = localStorage.getItem('username') || '用户'
+  nickname.value = readStoredNickname()
+  loginAccount.value = readStoredLoginAccount()
   userAvatarUrl.value = readStoredAvatarUrl()
 }
 
@@ -342,6 +363,9 @@ const fetchSessions = async () => {
   try {
     const res = await api.get('/chat/sessions')
     chatSessions.value = res.data.sessions
+    if (activeChatId.value) {
+      currentAssessmentInfo.value = chatSessions.value.find((session) => session.id === activeChatId.value)?.assessment_info || currentAssessmentInfo.value
+    }
   } catch (err) {
     console.error('获取咨询会话失败:', err)
   }
@@ -367,6 +391,7 @@ const createPersistedSession = async (assessmentSessionId = null) => {
     const res = await api.post('/chat/sessions', payload)
     activeChatId.value = res.data.id
     currentAssessmentId.value = payload.assessment_session_id || null
+    currentAssessmentInfo.value = res.data.assessment_info || lookupAssessmentById(payload.assessment_session_id)
     messages.value = []
     skipNextRouteLoadChatId = res.data.id
     await fetchSessions()
@@ -382,6 +407,7 @@ const createPersistedSession = async (assessmentSessionId = null) => {
         const fallback = await api.post('/chat/sessions', {})
         activeChatId.value = fallback.data.id
         currentAssessmentId.value = null
+        currentAssessmentInfo.value = null
         messages.value = []
         skipNextRouteLoadChatId = fallback.data.id
         await fetchSessions()
@@ -410,6 +436,7 @@ const createNewSession = async (assessmentSessionId = null) => {
   mobileSidebarOpen.value = false
   activeChatId.value = null
   currentAssessmentId.value = assessmentSessionId && typeof assessmentSessionId === 'number' ? assessmentSessionId : null
+  currentAssessmentInfo.value = lookupAssessmentById(currentAssessmentId.value)
   messages.value = []
   inputMessage.value = ''
   resetTextarea()
@@ -502,6 +529,7 @@ const deleteSession = async (sessionId) => {
     if (activeChatId.value === sessionId) {
       activeChatId.value = null
       currentAssessmentId.value = null
+      currentAssessmentInfo.value = null
       messages.value = []
       await router.push('/chat')
     }
@@ -519,6 +547,7 @@ const loadMessages = async (chatId) => {
     const res = await api.get(`/chat/sessions/${chatId}/messages`)
     messages.value = res.data.messages || []
     currentAssessmentId.value = res.data.assessment_session_id
+    currentAssessmentInfo.value = res.data.assessment_info || lookupAssessmentById(res.data.assessment_session_id)
   } catch (err) {
     console.error('加载消息失败:', err)
     messages.value = []
@@ -591,6 +620,8 @@ const handleUnauthorized = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('userId')
   localStorage.removeItem('username')
+  localStorage.removeItem('nickname')
+  localStorage.removeItem('loginAccount')
   localStorage.removeItem('avatarUrl')
   router.push('/login')
 }
@@ -740,14 +771,16 @@ const changeAssessment = async (value) => {
   const newId = parseInt(value, 10) || 0
   if (!activeChatId.value) {
     currentAssessmentId.value = newId || null
+    currentAssessmentInfo.value = lookupAssessmentById(newId)
     return
   }
 
   try {
-    await api.put(`/chat/sessions/${activeChatId.value}`, {
+    const res = await api.put(`/chat/sessions/${activeChatId.value}`, {
       assessment_session_id: newId,
     })
     currentAssessmentId.value = newId || null
+    currentAssessmentInfo.value = res.data?.assessment_info || lookupAssessmentById(newId)
     await loadMessages(activeChatId.value)
     await fetchSessions()
   } catch (err) {
@@ -812,6 +845,13 @@ const formatDate = (isoStr) => {
   return new Date(isoStr).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 
+const formatAssessmentOptionLabel = (assessment) => {
+  const title = getAssessmentDisplayName(assessment)
+  const dateLabel = formatDate(assessment.started_at)
+  const suffix = assessment.has_report ? '' : ' [无报告]'
+  return dateLabel ? `${title} · ${dateLabel}${suffix}` : `${title}${suffix}`
+}
+
 const autoResize = () => {
   const el = inputRef.value
   if (el) {
@@ -835,7 +875,7 @@ const handleUserProfileUpdated = () => {
 }
 
 const handleStorageChange = (event) => {
-  if (!event.key || event.key === 'username' || event.key === 'avatarUrl') {
+  if (!event.key || ['username', 'nickname', 'loginAccount', 'avatarUrl'].includes(event.key)) {
     syncLocalUser()
   }
 }
@@ -868,6 +908,7 @@ watch(
     } else {
       activeChatId.value = null
       currentAssessmentId.value = parseInt(route.query.assessmentSessionId, 10) || null
+      currentAssessmentInfo.value = lookupAssessmentById(currentAssessmentId.value)
       messages.value = []
     }
   },
