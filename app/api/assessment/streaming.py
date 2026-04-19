@@ -548,7 +548,7 @@ async def get_history(
     user_id = current_user.id
     sessions = db.query(AssessmentSession).filter(
         AssessmentSession.user_id == user_id,
-        AssessmentSession.status == 'completed',
+        AssessmentSession.status.in_(['active', 'completed']),
     ).order_by(AssessmentSession.started_at.desc()).all()
 
     session_ids = [s.id for s in sessions]
@@ -581,11 +581,13 @@ async def get_history(
             "started_at": s.started_at.isoformat() if s.started_at else None,
             "finished_at": s.finished_at.isoformat() if s.finished_at else None,
             "status": s.status,
+            "current_stage": s.current_stage,
+            "stage_display_name": STAGE_NAMES.get(s.current_stage, s.current_stage) if s.current_stage else None,
             "question_count": len(records),
             "total_score": total_score,
             "anomaly_count": anomaly_count,
-            "has_report": s.report_content is not None,
-            "report_generating": s.report_content is None and s.status == 'completed',
+            "has_report": s.status == 'completed' and s.report_content is not None,
+            "report_generating": s.status == 'completed' and s.report_content is None,
             "dim_scores": dim_scores,
         })
 

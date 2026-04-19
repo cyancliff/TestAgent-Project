@@ -787,6 +787,11 @@ const startNewSession = async () => {
   startError.value = ''
   try {
     const res = await api.post('/assessment/start-session', {})
+    if (res.data.reused_existing) {
+      await showAlertDialog('检测到你已有一份未完成的测评，系统已恢复这份记录，不会再清空旧答题。', {
+        title: '继续未完成测评',
+      })
+    }
     sessionId.value = res.data.session_id
     hasStarted.value = true
     currentIndex.value = 0
@@ -913,7 +918,7 @@ onMounted(async () => {
       try {
         const historyRes = await api.get('/assessment/history')
         if (historyRes.data.sessions && historyRes.data.sessions.length > 0) {
-          lastCompletedSession.value = historyRes.data.sessions[0]
+          lastCompletedSession.value = historyRes.data.sessions.find((session) => session.status === 'completed') || null
         }
       } catch {
         // 无历史记录

@@ -27,48 +27,97 @@
             <strong>{{ sidebarEmptyTitle }}</strong>
             <span>{{ sidebarEmptyNote }}</span>
           </div>
-          <div
-            v-else
-            v-for="session in sessions"
-            :key="session.session_id"
-            :class="[
-              'history-session-item',
-              {
-                active: activeHistorySessionId === session.session_id,
-                'history-session-item--menu-open': openSessionMenuId === session.session_id,
-              },
-            ]"
-          >
-            <button class="history-session-main" type="button" @click="scrollToSession(session.session_id)">
-              <span class="history-session-item-title">{{ displaySessionTitle(session) }}</span>
-              <span class="history-session-item-meta">{{ formatSidebarMeta(session) }}</span>
-            </button>
-
-            <div class="history-session-actions">
-              <button
-                class="history-session-menu-trigger"
-                type="button"
-                :aria-expanded="openSessionMenuId === session.session_id"
-                aria-label="管理测评记录"
-                @click.stop="toggleSessionMenu(session.session_id)"
+          <template v-else>
+            <div v-if="inProgressSessions.length" class="history-session-group">
+              <div class="history-session-group-label">进行中</div>
+              <div
+                v-for="session in inProgressSessions"
+                :key="session.session_id"
+                :class="[
+                  'history-session-item',
+                  {
+                    active: activeHistorySessionId === session.session_id,
+                    'history-session-item--menu-open': openSessionMenuId === session.session_id,
+                  },
+                ]"
               >
-                ⋯
-              </button>
+                <button class="history-session-main" type="button" @click="scrollToSession(session.session_id)">
+                  <span class="history-session-item-title">{{ displaySessionTitle(session) }}</span>
+                  <span class="history-session-item-meta">{{ formatSidebarMeta(session) }}</span>
+                </button>
 
-              <div v-if="openSessionMenuId === session.session_id" class="history-session-menu">
-                <button class="history-session-menu-item" type="button" @click.stop="renameSession(session)">
-                  重命名
-                </button>
-                <button
-                  class="history-session-menu-item history-session-menu-item--danger"
-                  type="button"
-                  @click.stop="deleteSession(session.session_id)"
-                >
-                  删除记录
-                </button>
+                <div class="history-session-actions">
+                  <button
+                    class="history-session-menu-trigger"
+                    type="button"
+                    :aria-expanded="openSessionMenuId === session.session_id"
+                    aria-label="管理测评记录"
+                    @click.stop="toggleSessionMenu(session.session_id)"
+                  >
+                    ⋯
+                  </button>
+
+                  <div v-if="openSessionMenuId === session.session_id" class="history-session-menu">
+                    <button class="history-session-menu-item" type="button" @click.stop="renameSession(session)">
+                      重命名
+                    </button>
+                    <button
+                      class="history-session-menu-item history-session-menu-item--danger"
+                      type="button"
+                      @click.stop="deleteSession(session.session_id)"
+                    >
+                      删除记录
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+
+            <div v-if="completedSessions.length" class="history-session-group">
+              <div class="history-session-group-label">已完成</div>
+              <div
+                v-for="session in completedSessions"
+                :key="session.session_id"
+                :class="[
+                  'history-session-item',
+                  {
+                    active: activeHistorySessionId === session.session_id,
+                    'history-session-item--menu-open': openSessionMenuId === session.session_id,
+                  },
+                ]"
+              >
+                <button class="history-session-main" type="button" @click="scrollToSession(session.session_id)">
+                  <span class="history-session-item-title">{{ displaySessionTitle(session) }}</span>
+                  <span class="history-session-item-meta">{{ formatSidebarMeta(session) }}</span>
+                </button>
+
+                <div class="history-session-actions">
+                  <button
+                    class="history-session-menu-trigger"
+                    type="button"
+                    :aria-expanded="openSessionMenuId === session.session_id"
+                    aria-label="管理测评记录"
+                    @click.stop="toggleSessionMenu(session.session_id)"
+                  >
+                    ⋯
+                  </button>
+
+                  <div v-if="openSessionMenuId === session.session_id" class="history-session-menu">
+                    <button class="history-session-menu-item" type="button" @click.stop="renameSession(session)">
+                      重命名
+                    </button>
+                    <button
+                      class="history-session-menu-item history-session-menu-item--danger"
+                      type="button"
+                      @click.stop="deleteSession(session.session_id)"
+                    >
+                      删除记录
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
         </div>
       </div>
     </aside>
@@ -140,72 +189,145 @@
           </button>
         </div>
 
-        <div v-else class="sessions-grid">
-          <article
-            v-for="session in sessions"
-            :key="session.session_id"
-            :id="`session-${session.session_id}`"
-            :class="['session-card', { 'session-card--active': activeHistorySessionId === session.session_id }]"
-          >
-            <div class="card-header">
-              <div class="session-identity">
-                <div class="session-date-chip">
-                  <span class="session-archive-label">档案编号</span>
-                  <span class="session-archive-code">{{ formatArchiveCode(session.session_id) }}</span>
-                </div>
-              </div>
-
-              <div class="session-header-badges">
-                <span v-if="session.has_report" class="intel-badge">报告可查看</span>
-                <span :class="['status-badge', session.status]">
-                  {{ formatStatusLabel(session.status) }}
-                </span>
-              </div>
+        <div v-else class="history-sections">
+          <section v-if="inProgressSessions.length" class="session-section">
+            <div class="session-section-header">
+              <h2>进行中</h2>
+              <p>这些测评还没结束，可以随时继续作答。</p>
             </div>
-
-            <div class="card-body">
-              <div class="session-score-block">
-                <span class="session-score-label">本次测评总分</span>
-                <strong class="session-score-value">{{ session.total_score }}</strong>
-                <div class="session-score-meta">
-                  <span>{{ session.question_count }} 题</span>
-                </div>
-              </div>
-
-              <div class="session-dim-grid">
-                <div
-                  v-for="dim in atmrDimensions"
-                  :key="dim.key"
-                  :class="['dim-panel', { 'dim-panel--dominant': isDominantDimension(session, dim.key) }]"
-                >
-                  <div class="dim-panel-top">
-                    <span class="dim-panel-key">{{ dim.key }}</span>
-                    <span v-if="isDominantDimension(session, dim.key)" class="dim-panel-badge">主导项</span>
+            <div class="sessions-grid">
+              <article
+                v-for="session in inProgressSessions"
+                :key="session.session_id"
+                :id="`session-${session.session_id}`"
+                :class="['session-card', { 'session-card--active': activeHistorySessionId === session.session_id }]"
+              >
+                <div class="card-header">
+                  <div class="session-identity">
+                    <div class="session-date-chip">
+                      <span class="session-archive-label">档案编号</span>
+                      <span class="session-archive-code">{{ formatArchiveCode(session.session_id) }}</span>
+                    </div>
                   </div>
-                  <span class="dim-panel-label">{{ dim.name }}</span>
-                  <strong class="dim-panel-score">{{ getDimScore(session, dim.key) }}</strong>
+
+                  <div class="session-header-badges">
+                    <span class="status-badge active">{{ formatStatusLabel(session.status) }}</span>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            <div v-if="session.report_generating" class="report-generating-bar">
-              <span class="generating-spinner"></span>
-              <span class="generating-text">报告生成中，稍后会自动刷新到这里。</span>
-            </div>
+                <div class="card-body">
+                  <div class="session-score-block">
+                    <span class="session-score-label">当前进度</span>
+                    <strong class="session-score-value">{{ session.question_count }}</strong>
+                    <div class="session-score-meta">
+                      <span>已答题数</span>
+                      <span>当前阶段：{{ getSessionStageLabel(session) }}</span>
+                    </div>
+                  </div>
 
-            <div class="card-footer">
-              <div class="session-time-block">
-                <span class="session-time-label">测评时间</span>
-                <span class="session-time">{{ formatFullDate(session.started_at) }}</span>
-              </div>
+                  <div class="session-dim-grid">
+                    <div
+                      v-for="dim in atmrDimensions"
+                      :key="dim.key"
+                      :class="['dim-panel', { 'dim-panel--dominant': isDominantDimension(session, dim.key) }]"
+                    >
+                      <div class="dim-panel-top">
+                        <span class="dim-panel-key">{{ dim.key }}</span>
+                        <span v-if="isDominantDimension(session, dim.key)" class="dim-panel-badge">当前偏高</span>
+                      </div>
+                      <span class="dim-panel-label">{{ dim.name }}</span>
+                      <strong class="dim-panel-score">{{ getDimScore(session, dim.key) }}</strong>
+                    </div>
+                  </div>
+                </div>
 
-              <div class="card-actions">
-                <button v-if="session.has_report" class="btn-view" type="button" @click="viewReport(session.session_id)">查看报告</button>
-                <span v-else-if="session.report_generating" class="btn-generating">生成中</span>
-                <button v-if="session.status === 'completed'" class="btn-edit" type="button" @click="editAnswers(session.session_id)">修改答案</button>
-              </div>
+                <div class="card-footer">
+                  <div class="session-time-block">
+                    <span class="session-time-label">开始时间</span>
+                    <span class="session-time">{{ formatFullDate(session.started_at) }}</span>
+                  </div>
+
+                  <div class="card-actions">
+                    <button class="btn-edit" type="button" @click="continueSession(session.session_id)">继续测评</button>
+                  </div>
+                </div>
+              </article>
             </div>
-          </article>
+          </section>
+
+          <section v-if="completedSessions.length" class="session-section">
+            <div class="session-section-header">
+              <h2>已完成</h2>
+              <p>这里会保留已经提交完成的测评档案和报告。</p>
+            </div>
+            <div class="sessions-grid">
+              <article
+                v-for="session in completedSessions"
+                :key="session.session_id"
+                :id="`session-${session.session_id}`"
+                :class="['session-card', { 'session-card--active': activeHistorySessionId === session.session_id }]"
+              >
+                <div class="card-header">
+                  <div class="session-identity">
+                    <div class="session-date-chip">
+                      <span class="session-archive-label">档案编号</span>
+                      <span class="session-archive-code">{{ formatArchiveCode(session.session_id) }}</span>
+                    </div>
+                  </div>
+
+                  <div class="session-header-badges">
+                    <span v-if="session.has_report" class="intel-badge">报告可查看</span>
+                    <span :class="['status-badge', session.status]">
+                      {{ formatStatusLabel(session.status) }}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="card-body">
+                  <div class="session-score-block">
+                    <span class="session-score-label">本次测评总分</span>
+                    <strong class="session-score-value">{{ session.total_score }}</strong>
+                    <div class="session-score-meta">
+                      <span>{{ session.question_count }} 题</span>
+                    </div>
+                  </div>
+
+                  <div class="session-dim-grid">
+                    <div
+                      v-for="dim in atmrDimensions"
+                      :key="dim.key"
+                      :class="['dim-panel', { 'dim-panel--dominant': isDominantDimension(session, dim.key) }]"
+                    >
+                      <div class="dim-panel-top">
+                        <span class="dim-panel-key">{{ dim.key }}</span>
+                        <span v-if="isDominantDimension(session, dim.key)" class="dim-panel-badge">主导项</span>
+                      </div>
+                      <span class="dim-panel-label">{{ dim.name }}</span>
+                      <strong class="dim-panel-score">{{ getDimScore(session, dim.key) }}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="session.report_generating" class="report-generating-bar">
+                  <span class="generating-spinner"></span>
+                  <span class="generating-text">报告生成中，稍后会自动刷新到这里。</span>
+                </div>
+
+                <div class="card-footer">
+                  <div class="session-time-block">
+                    <span class="session-time-label">测评时间</span>
+                    <span class="session-time">{{ formatFullDate(session.started_at) }}</span>
+                  </div>
+
+                  <div class="card-actions">
+                    <button v-if="session.has_report" class="btn-view" type="button" @click="viewReport(session.session_id)">查看报告</button>
+                    <span v-else-if="session.report_generating" class="btn-generating">生成中</span>
+                    <button v-if="session.status === 'completed'" class="btn-edit" type="button" @click="editAnswers(session.session_id)">修改答案</button>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </section>
         </div>
       </div>
     </section>
@@ -251,7 +373,9 @@ const getDominantDimKeys = (session) => {
 
 const isDominantDimension = (session, key) => getDominantDimKeys(session).includes(key)
 
+const inProgressSessions = computed(() => sessions.value.filter((session) => session.status === 'active'))
 const completedCount = computed(() => sessions.value.filter((session) => session.status === 'completed').length)
+const completedSessions = computed(() => sessions.value.filter((session) => session.status === 'completed'))
 const reportReadyCount = computed(() => sessions.value.filter((session) => session.has_report).length)
 const generatingCount = computed(() => sessions.value.filter((session) => session.report_generating).length)
 const latestSession = computed(() => sessions.value[0] || null)
@@ -323,10 +447,21 @@ const getReportStatusLabel = (session) => {
   return session.status === 'completed' ? '待生成报告' : '测评进行中'
 }
 
-const formatSidebarMeta = (session) => `${getReportStatusLabel(session)} · ${session.question_count} 题`
+const getSessionStageLabel = (session) => session.stage_display_name || session.current_stage || '未开始'
+
+const formatSidebarMeta = (session) => {
+  const parts = [getReportStatusLabel(session), `${session.question_count} 题`]
+  if (session.status === 'active') {
+    parts.push(getSessionStageLabel(session))
+  }
+  return parts.join(' · ')
+}
 
 const formatCardSubtitle = (session) => {
   const parts = [formatStatusLabel(session.status), `${session.question_count} 题`]
+  if (session.status === 'active') {
+    parts.push(`当前阶段 ${getSessionStageLabel(session)}`)
+  }
   return parts.join(' · ')
 }
 
@@ -410,6 +545,11 @@ const startNewSession = async () => {
   closeMobileSidebar()
   try {
     const res = await api.post('/assessment/start-session', {})
+    if (res.data.reused_existing) {
+      await showAlertDialog('检测到你已有一份未完成的测评，系统已直接恢复这份记录，不会再删除之前的答题。', {
+        title: '继续未完成测评',
+      })
+    }
     router.push({ path: '/assessment', query: { sessionId: res.data.session_id } })
   } catch (err) {
     console.error('创建会话失败:', err)
@@ -424,6 +564,12 @@ const startNewSession = async () => {
 const viewReport = (sessionId) => {
   closeMobileSidebar()
   router.push(`/report/${sessionId}`)
+}
+
+const continueSession = (sessionId) => {
+  closeSessionMenu()
+  closeMobileSidebar()
+  router.push({ path: '/assessment', query: { sessionId } })
 }
 
 const editAnswers = async (sessionId) => {
@@ -669,6 +815,20 @@ onUnmounted(() => {
   padding-right: 4px;
 }
 
+.history-session-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-session-group-label {
+  padding: 4px 8px 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--history-muted);
+}
+
 .history-session-list-state {
   display: flex;
   flex-direction: column;
@@ -886,6 +1046,40 @@ onUnmounted(() => {
   width: 100%;
   color: var(--history-copy);
   font-family: 'IBM Plex Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+.history-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.session-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.session-section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 4px;
+}
+
+.session-section-header h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 700;
+}
+
+.session-section-header p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--history-muted);
 }
 
 .history-overview-card,
@@ -1408,6 +1602,11 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
+  .session-section-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .history-stage-header {
     flex-direction: column;
     align-items: stretch;
