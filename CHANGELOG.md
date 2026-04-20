@@ -7,6 +7,23 @@
 - 整理范围覆盖 `3af8f21` 至当前 `HEAD` 提交。
 
 ---
+## [2026-04-20] - 安全与体验收口补充
+### 新增
+- 新增 `frontend/src/utils/markdown.js`，统一聊天消息、测评完成页预览与正式报告页的 Markdown 白名单清洗能力，降低报告内容混入用户解释字段时的 XSS 风险。
+- 新增 `tests/test_auth.py`、`tests/test_chat_api.py`、`tests/test_rag_api.py` 与 `tests/test_assessment_streaming_api.py`，覆盖登录/注册校验、聊天会话重绑保护、RAG 鉴权和 `finish-stream` 统一认证等回归场景。
+- 新增 `docs/2026-04-20-代码Review与多模态现状.md` 与 `docs/2026-04-20-剩余问题修复记录.md`，归档本轮 review 结论与修复记录。
+### 变更
+- 调整 `frontend/src/components/Chat.vue` 的测评关联逻辑：带历史消息的会话切换关联测评时不再清空上下文，而是自动创建新会话承接；同时根据当前主导维度生成更贴合测评结果的快捷提问。
+- 调整 `frontend/src/components/Assessment.vue`、`frontend/src/components/History.vue` 与 `frontend/src/components/Report.vue` 的状态文案和等待态表现，将“生成中/暂无报告内容”等系统视角提示改为更符合用户预期的“报告整理中”文案，并移除最终报告生成 10 秒后自动跳回历史页的行为。
+- 重写 `frontend/src/components/Login.vue` 的表单引导与错误映射，提供字段级提示、注册前端预校验以及“用户名不存在 / 密码错误 / 服务异常”的分层反馈。
+### 修复
+- 修复 `app/api/auth.py` 中注册与登录的输入边界处理，补齐用户名格式、最小密码长度和差异化登录错误返回，避免前端只能收到模糊失败提示。
+- 修复 `app/api/chat.py` 中会话重绑测评会清空历史上下文的问题，并在后端增加“已有历史消息时拒绝直接切换测评”的保护层。
+- 修复 `app/api/rag.py` 与 `app/api/assessment/streaming.py` 的未统一鉴权问题，使 RAG 路由组和 `finish-stream` SSE 入口都走标准登录认证。
+### 测试
+- 执行 `python -m pytest -q`，结果为 `62 passed, 3 warnings`。
+- 执行 `npm run build`，前端生产构建通过。
+
 
 ## [2026-04-20] - 草稿态阶段提交、独立复制改答案与综合报告输入收口
 

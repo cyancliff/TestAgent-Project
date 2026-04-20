@@ -130,7 +130,7 @@
 
             <div class="chat-prompt-grid">
               <button
-                v-for="prompt in starterPrompts"
+                v-for="prompt in activeStarterPrompts"
                 :key="prompt.title"
                 class="chat-prompt-card"
                 type="button"
@@ -149,7 +149,7 @@
 
             <div class="chat-prompt-grid">
               <button
-                v-for="prompt in starterPrompts"
+                v-for="prompt in activeStarterPrompts"
                 :key="prompt.title"
                 class="chat-prompt-card"
                 type="button"
@@ -196,7 +196,7 @@
                 >
                   <span></span><span></span><span></span>
                 </div>
-                <div v-else class="chat-message-content" v-html="formatMessage(msg.content)"></div>
+                <div v-else class="chat-message-content" v-html="renderChatMessage(msg.content)"></div>
               </div>
             </div>
           </div>
@@ -244,6 +244,7 @@ import api from '../api'
 import { buildApiUrl, resolveBackendUrl } from '../config'
 import atmrLogo from '../assets/atmr-logo.png'
 import { showAlertDialog, showConfirmDialog, showPromptDialog } from '../composables/useAppDialog'
+import { renderSafeMarkdown } from '../utils/markdown'
 
 const route = useRoute()
 const router = useRouter()
@@ -329,13 +330,63 @@ const getAssessmentDisplayName = (assessment) => {
   return title || (assessment.session_id ? `测评 #${assessment.session_id}` : '未命名测评')
 }
 const currentAssessment = computed(() => lookupAssessmentById(currentAssessmentId.value))
+const getDominantDimensionKey = (assessment) => String(assessment?.dominant_dimension?.key || '').toUpperCase()
+const getDominantDimensionLabel = (assessment) => String(assessment?.dominant_dimension?.label || '').trim()
+const buildDominantStarterPrompts = (assessment) => {
+  const dimensionKey = getDominantDimensionKey(assessment)
+  const dimensionLabel = getDominantDimensionLabel(assessment)
+
+  if (dimensionKey === 'A') {
+    return [
+      { title: '优势梳理', text: `如果我的${dimensionLabel || '欣赏型'}特质更突出，它会怎样影响我的优势和盲点？` },
+      { title: '稳定情绪', text: '当我容易被情绪和氛围带着走时，可以怎样更快稳住自己？' },
+      { title: '建立边界', text: '我很在意别人的感受，怎样表达关心又不把自己耗尽？' },
+      { title: '日常练习', text: '请给我 3 个适合我当前状态的日常自我照顾练习。' },
+    ]
+  }
+
+  if (dimensionKey === 'T') {
+    return [
+      { title: '目标节奏', text: `如果我的${dimensionLabel || '目标型'}特质更突出，怎样安排任务才不会把自己逼太紧？` },
+      { title: '面对失控', text: '当事情不按计划走时，我可以怎样减少内耗和挫败感？' },
+      { title: '优先级判断', text: '请帮我判断现在最该先抓住的一件事，并说说原因。' },
+      { title: '两周计划', text: '请结合我的状态，帮我做一个更稳的两周行动计划。' },
+    ]
+  }
+
+  if (dimensionKey === 'M') {
+    return [
+      { title: '情绪承载', text: `如果我的${dimensionLabel || '包容型'}特质更明显，我该怎样照顾别人同时照顾自己？` },
+      { title: '拒绝练习', text: '我不太会拒绝别人，你能教我一个更温和的表达模板吗？' },
+      { title: '关系消耗', text: '我总想把关系处理圆满，但这样很累，能帮我拆解一下吗？' },
+      { title: '恢复能量', text: '请给我几个适合我当前状态的恢复能量方法。' },
+    ]
+  }
+
+  if (dimensionKey === 'R') {
+    return [
+      { title: '责任压力', text: `如果我的${dimensionLabel || '责任型'}特质更突出，我怎样区分真正该负责和过度负责？` },
+      { title: '放下内疚', text: '当我没做到自己要求的标准时，怎样减轻内疚感？' },
+      { title: '柔和一点', text: '请帮我把高标准改写成一个更可持续的自我要求。' },
+      { title: '行动复盘', text: '请帮我做一次责任型视角的复盘，看看我最需要松动的地方。' },
+    ]
+  }
+
+  return [
+    { title: '整体解读', text: '请结合我的情况，先给我一个简明的整体分析。' },
+    { title: '缓解压力', text: '我最近压力有点大，你建议我先从哪一步调整节奏？' },
+    { title: '行动计划', text: '请根据我的状态，帮我做一个未来两周能执行的改善计划。' },
+    { title: '关系沟通', text: '我在人际沟通里容易紧张，能先帮我找出最值得调整的一点吗？' },
+  ]
+}
+const activeStarterPrompts = computed(() => buildDominantStarterPrompts(currentAssessment.value || currentSession.value?.assessment_info || null))
 const currentAssessmentLabel = computed(() => (
   !activeChatId.value
     ? currentAssessmentId.value
       ? `首条消息将关联「${getAssessmentDisplayName(currentAssessment.value)}」`
       : '发送首条消息后自动创建对话'
     : currentAssessmentId.value
-    ? `已关联「${getAssessmentDisplayName(currentAssessment.value)}」`
+    ? `已关联「${getAssessmentDisplayName(currentAssessment.value)}」，切换测评会自动新建会话`
     : '未关联测评'
 ))
 const activeSessionTitle = computed(() => {
@@ -350,6 +401,10 @@ const activeSessionDescription = computed(() => {
   }
 
   const messageCount = messages.value.length || currentSession.value?.message_count || 0
+  const dominantLabel = getDominantDimensionLabel(currentAssessment.value || currentSession.value?.assessment_info)
+  if (dominantLabel) {
+    return `${currentAssessmentLabel.value} · 当前主导维度：${dominantLabel} · ${messageCount} 条消息`
+  }
   return `${currentAssessmentLabel.value} · ${messageCount} 条消息`
 })
 
@@ -775,6 +830,16 @@ const changeAssessment = async (value) => {
     return
   }
 
+  if ((currentAssessmentId.value || 0) === newId) {
+    return
+  }
+
+  const hasVisibleHistory = messages.value.length > 0 || Number(currentSession.value?.message_count || 0) > 0
+  if (hasVisibleHistory) {
+    await createPersistedSession(newId || null)
+    return
+  }
+
   try {
     const res = await api.put(`/chat/sessions/${activeChatId.value}`, {
       assessment_session_id: newId,
@@ -785,6 +850,11 @@ const changeAssessment = async (value) => {
     await fetchSessions()
   } catch (err) {
     console.error('切换关联测评失败:', err)
+    const detail = err.response?.data?.detail
+    if (detail?.code === 'chat_session_has_history') {
+      await createPersistedSession(newId || null)
+      return
+    }
     await showAlertDialog('切换失败', {
       title: '关联失败',
       destructive: true,
@@ -839,6 +909,8 @@ const formatMessage = (text) => {
   if (!text) return ''
   return sanitizeRenderedMarkdown(marked.parse(text, { breaks: true, gfm: true }))
 }
+
+const renderChatMessage = (text) => renderSafeMarkdown(text)
 
 const formatDate = (isoStr) => {
   if (!isoStr) return ''

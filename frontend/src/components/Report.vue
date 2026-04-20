@@ -42,12 +42,25 @@
       </div>
 
       <!-- 综合心理画像报告（Markdown 渲染） -->
-      <div v-if="reportData.report" class="report-card">
+      <div v-if="hasReport" class="report-card">
         <h2 class="section-title">综合心理画像</h2>
         <div class="report-body markdown-body" v-html="formattedReport"></div>
       </div>
-      <div v-else class="report-card">
-        <div class="no-report-hint">该会话暂无报告内容</div>
+      <div v-else-if="reportPending" class="report-card report-card--pending">
+        <div class="no-report-hint">报告仍在整理中，已为你保留记录，页面会自动刷新。</div>
+        <div class="report-pending-actions">
+          <button class="back-btn" @click="fetchReport({ silent: true })">立即刷新</button>
+          <button class="back-btn" @click="$router.push('/history')">返回历史记录</button>
+        </div>
+      </div>
+      <div v-else-if="loadError" class="report-card report-card--pending">
+        <div class="no-report-hint">{{ loadError }}</div>
+        <div class="report-pending-actions">
+          <button class="back-btn" @click="fetchReport()">重新加载</button>
+        </div>
+      </div>
+      <div v-else class="report-card report-card--pending">
+        <div class="no-report-hint">报告内容还没有准备好，请稍后再回来查看。</div>
       </div>
 
       <!-- 分维度报告 -->
@@ -151,12 +164,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onBeforeUnmount, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
-import { marked } from 'marked'
 import { showAlertDialog, showConfirmDialog } from '../composables/useAppDialog'
 import { Radar } from 'vue-chartjs'
+import { renderReportMarkdown } from '../utils/markdown'
 import {
   Chart as ChartJS,
   RadialLinearScale,
@@ -173,8 +186,10 @@ const props = defineProps({ sessionId: String })
 const router = useRouter()
 const reportData = ref({})
 const loading = ref(true)
+const loadError = ref('')
 const showAllAnswers = ref(false)
 const expandedDimension = reactive({ A: false, T: false, M: false, R: false })
+let pendingRefreshTimer = null
 
 const modules = [
   { key: 'A', name: '欣赏型', color: '#18181b' },
@@ -183,40 +198,49 @@ const modules = [
   { key: 'R', name: '责任型', color: '#f59e0b' },
 ]
 
-// --- 数据获取 ---
-const fetchReport = async () => {
-  try {
-    const res = await api.get(`/assessment/report/${props.sessionId}`)
-    reportData.value = res.data
-  } catch (err) {
-    console.error('获取报告失败:', err)
-  } finally {
-    loading.value = false
+const clearPendingRefreshTimer = () => {
+  if (pendingRefreshTimer) {
+    clearTimeout(pendingRefreshTimer)
+    pendingRefreshTimer = null
   }
 }
 
-// --- 清洗报告文本 ---
-const cleanReportText = (raw) => {
-  if (!raw) return ''
-  return raw
-    // 移除【内部记录：...】
-    .replace(/【内部记录[：:].*?】/g, '')
-    // 移除 TERMINATE 标记
-    .replace(/\s*TERMINATE\s*/g, '')
-    // 移除知识库引用段落
-    .replace(/## 知识库引用[\s\S]*?(?=##|\Z)/g, '')
-    // 移除多余空行（3个以上换行合并为2个）
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+const schedulePendingRefresh = () => {
+  clearPendingRefreshTimer()
+  pendingRefreshTimer = setTimeout(() => {
+    fetchReport({ silent: true })
+  }, 4000)
+}
+
+// --- 数据获取 ---
+const fetchReport = async ({ silent = false } = {}) => {
+  clearPendingRefreshTimer()
+  if (!silent) {
+    loading.value = true
+  }
+
+  try {
+    const res = await api.get(`/assessment/report/${props.sessionId}`)
+    reportData.value = res.data
+    loadError.value = ''
+  } catch (err) {
+    console.error('获取报告失败:', err)
+    loadError.value = '报告暂时还没加载出来，请稍后刷新再试。'
+  } finally {
+    loading.value = false
+    if (!loadError.value && reportPending.value) {
+      schedulePendingRefresh()
+    }
+  }
 }
 
 // --- Markdown 渲染 ---
-const renderMarkdown = (text) => {
-  return marked.parse(cleanReportText(text))
-}
+const renderMarkdown = (text) => renderReportMarkdown(text)
 
 // --- 计算属性 ---
 const hasDimensionData = computed(() => !!reportData.value.dimension_summary)
+const hasReport = computed(() => !!reportData.value.report)
+const reportPending = computed(() => reportData.value.status === 'completed' && !reportData.value.report)
 const hasDebateResults = computed(() => {
   const d = reportData.value.module_debates
   return d && Object.keys(d).length > 0
@@ -307,7 +331,13 @@ const deleteCurrentSession = async () => {
   }
 }
 
-onMounted(fetchReport)
+onMounted(() => {
+  fetchReport()
+})
+
+onBeforeUnmount(() => {
+  clearPendingRefreshTimer()
+})
 </script>
 
 <style scoped>
@@ -370,6 +400,8 @@ onMounted(fetchReport)
 .section-title { font-size: 28px; font-weight: 800; margin: 0 0 20px; color: var(--text-primary); background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 .section-desc { font-size: 18px; color: var(--text-secondary); margin: -8px 0 24px; }
 .no-report-hint { text-align: center; color: var(--text-muted); padding: 40px; font-size: 20px; }
+.report-card--pending { text-align: center; }
+.report-pending-actions { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; padding: 0 0 24px; }
 
 /* === 雷达图 === */
 .radar-layout { display: flex; gap: 60px; align-items: center; }

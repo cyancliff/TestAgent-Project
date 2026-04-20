@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from typing import Optional
 
@@ -19,6 +20,8 @@ from app.models.user import User
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 2MB
+USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{3,20}$")
+MIN_PASSWORD_LENGTH = 8
 
 router = APIRouter()
 
@@ -44,6 +47,31 @@ class TokenResponse(BaseModel):
     avatar_url: str | None = None
 
 
+def _normalize_username(username: str) -> str:
+    return (username or "").strip()
+
+
+def _ensure_username_present(username: str) -> None:
+    if not username:
+        raise HTTPException(status_code=400, detail="请输入用户名")
+
+
+def _ensure_username_format(username: str) -> None:
+    if not USERNAME_PATTERN.fullmatch(username):
+        raise HTTPException(status_code=400, detail="用户名需为 3-20 位字母、数字或下划线")
+
+
+def _ensure_password_not_blank(password: str) -> None:
+    if not password or not password.strip():
+        raise HTTPException(status_code=400, detail="密码不能为空")
+
+
+def _ensure_password_valid_for_register(password: str) -> None:
+    _ensure_password_not_blank(password)
+    if len(password.strip()) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(status_code=400, detail=f"密码至少需要 {MIN_PASSWORD_LENGTH} 位")
+
+
 @router.post("/register", response_model=TokenResponse)
 @limiter.limit("10/minute")
 async def register(
@@ -51,9 +79,10 @@ async def register(
     payload: AuthRequest,
     db: Session = Depends(get_db),
 ):
-    username = payload.username.strip()
-    if not username:
-        raise HTTPException(status_code=400, detail="用户名不能为空")
+    username = _normalize_username(payload.username)
+    _ensure_username_present(username)
+    _ensure_username_format(username)
+    _ensure_password_valid_for_register(payload.password)
 
     existing = db.query(User).filter(User.username == username).first()
     if existing:
@@ -79,10 +108,15 @@ async def login(
     payload: AuthRequest,
     db: Session = Depends(get_db),
 ):
-    username = payload.username.strip()
+    username = _normalize_username(payload.username)
+    _ensure_username_present(username)
+    _ensure_password_not_blank(payload.password)
+
     user = db.query(User).filter(User.username == username).first()
-    if not user or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    if not user:
+        raise HTTPException(status_code=404, detail="用户名不存在")
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="密码错误")
 
     password_upgraded = is_legacy_hash(user.password_hash)
     nickname_missing = not (user.nickname or "").strip()

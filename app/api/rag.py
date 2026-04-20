@@ -4,16 +4,17 @@ RAG 知识库查询 API 端点
 提供 ATMR 心理学知识库的独立查询接口。
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.security import get_current_user
 from app.services.rag_service import (
     get_document_structure,
     query_knowledge_base,
     retrieve_knowledge,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 class RAGQueryRequest(BaseModel):

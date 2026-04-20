@@ -11,11 +11,13 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.constants import MODULE_DIM_MAP, MODULE_DISPLAY_NAMES
 from app.core.database import SessionLocal, get_db
 from app.core.security import get_current_user
-from app.models.assessment import AnswerRecord, AssessmentSession
+from app.models.assessment import AnswerRecord, AssessmentSession, Question
 from app.models.chat import ChatSession, ChatMessage as ChatMessageModel
 from app.models.user import User
+from app.services.scoring import calculate_weight_bonus, clamp_score
 from app.services.rag_service import retrieve_knowledge
 
 router = APIRouter()
@@ -73,17 +75,63 @@ def build_default_chat_title(assessment_session: AssessmentSession | None) -> st
     return f"{build_assessment_title(assessment_session)} 咨询"
 
 
-def serialize_assessment_info(assessment_session: AssessmentSession | None) -> dict | None:
-    if assessment_session is None:
+def get_assessment_dominant_dimension(db: Session, assessment_session_id: int | None) -> dict | None:
+    if not assessment_session_id:
+        return None
+
+    records = db.query(AnswerRecord).filter(AnswerRecord.session_id == assessment_session_id).all()
+    if not records:
+        return None
+
+    exam_nos = [record.exam_no for record in records]
+    questions = db.query(Question).filter(Question.exam_no.in_(exam_nos)).all() if exam_nos else []
+    question_map = {question.exam_no: question for question in questions}
+    module_by_dimension = {dimension_id: module for module, dimension_id in MODULE_DIM_MAP.items()}
+    module_scores = {module: 0.0 for module in MODULE_DISPLAY_NAMES}
+    module_counts = {module: 0 for module in MODULE_DISPLAY_NAMES}
+
+    for record in records:
+        question = question_map.get(record.exam_no)
+        module_key = module_by_dimension.get(question.dimension_id) if question else None
+        if not module_key:
+            continue
+        module_scores[module_key] += float(record.score or 0)
+        module_counts[module_key] += 1
+
+    weight_bonus = calculate_weight_bonus(records, question_map)
+    weighted_scores = {
+        module: clamp_score(module_scores[module] + weight_bonus.get(module, 0))
+        for module in MODULE_DISPLAY_NAMES
+    }
+    dominant_key = max(
+        weighted_scores,
+        key=lambda module: (weighted_scores[module], module_scores[module], module_counts[module], module),
+    )
+    if weighted_scores[dominant_key] <= 0:
         return None
 
     return {
+        "key": dominant_key,
+        "label": MODULE_DISPLAY_NAMES[dominant_key],
+        "score": round(weighted_scores[dominant_key], 2),
+        "question_count": module_counts[dominant_key],
+    }
+
+
+def serialize_assessment_info(assessment_session: AssessmentSession | None, db: Session | None = None) -> dict | None:
+    if assessment_session is None:
+        return None
+
+    info = {
         "session_id": assessment_session.id,
         "title": build_assessment_title(assessment_session),
         "started_at": assessment_session.started_at.isoformat() if assessment_session.started_at else None,
         "finished_at": assessment_session.finished_at.isoformat() if assessment_session.finished_at else None,
         "has_report": assessment_session.report_content is not None,
     }
+    if db is not None:
+        info["dominant_dimension"] = get_assessment_dominant_dimension(db, assessment_session.id)
+    return info
 
 
 def is_auto_generated_chat_title(chat_session: ChatSession) -> bool:
@@ -124,6 +172,26 @@ def get_chat_messages(db: Session, chat_session_id: int, include_system: bool = 
     if not include_system:
         query = query.filter(ChatMessageModel.role != "system")
     return query.all()
+
+
+def chat_session_has_visible_history(db: Session, chat_session_id: int) -> bool:
+    return (
+        db.query(ChatMessageModel)
+        .filter(
+            ChatMessageModel.chat_session_id == chat_session_id,
+            ChatMessageModel.role != "system",
+        )
+        .first()
+        is not None
+    )
+
+
+def clear_chat_messages(db: Session, chat_session_id: int, system_only: bool = False) -> None:
+    query = db.query(ChatMessageModel).filter(ChatMessageModel.chat_session_id == chat_session_id)
+    if system_only:
+        query = query.filter(ChatMessageModel.role == "system")
+    query.delete(synchronize_session=False)
+    db.commit()
 
 
 def append_chat_message(
@@ -237,14 +305,15 @@ def ensure_chat_session_owner(db: Session, chat_session_id: int, user_id: int) -
     return chat_session
 
 
-def init_chat_with_context(db: Session, chat_session: ChatSession, user_id: int):
+def init_chat_with_context(
+    db: Session,
+    chat_session: ChatSession,
+    user_id: int,
+    reset_history: bool = False,
+):
     """为咨询会话初始化系统提示。"""
-    # 清除旧的系统消息
-    db.query(ChatMessageModel).filter(
-        ChatMessageModel.chat_session_id == chat_session.id,
-        ChatMessageModel.role == "system",
-    ).delete()
-    db.commit()
+    # Rebinding to another assessment should not preserve prior turns.
+    clear_chat_messages(db, chat_session.id, system_only=not reset_history)
 
     # 构建上下文
     assessment_context = ""
@@ -416,7 +485,7 @@ async def list_chat_sessions(db: Session = Depends(get_db), current_user: User =
         )
 
         # 获取关联测评的简要信息
-        assessment_info = serialize_assessment_info(s.assessment_session) if s.assessment_session_id else None
+        assessment_info = serialize_assessment_info(s.assessment_session, db) if s.assessment_session_id else None
 
         result.append(
             {
@@ -473,7 +542,7 @@ async def create_chat_session(
         "id": chat_session.id,
         "title": chat_session.title,
         "assessment_session_id": chat_session.assessment_session_id,
-        "assessment_info": serialize_assessment_info(assessment),
+        "assessment_info": serialize_assessment_info(assessment, db),
     }
 
 
@@ -493,6 +562,15 @@ async def update_chat_session(
     if payload.assessment_session_id is not None:
         if payload.assessment_session_id != chat_session.assessment_session_id:
             should_refresh_default_title = is_auto_generated_chat_title(chat_session)
+            if chat_session_has_visible_history(db, chat_session.id):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "chat_session_has_history",
+                        "message": "当前会话已经有历史消息，切换关联测评时请自动创建新会话。",
+                        "create_new_session": True,
+                    },
+                )
             # 校验新测评归属
             if payload.assessment_session_id > 0:
                 assessment = (
@@ -522,13 +600,13 @@ async def update_chat_session(
 
     # 关联测评变化时，重新初始化系统上下文
     if assessment_changed:
-        init_chat_with_context(db, chat_session, current_user.id)
+        init_chat_with_context(db, chat_session, current_user.id, reset_history=True)
 
     return {
         "id": chat_session.id,
         "title": chat_session.title,
         "assessment_session_id": chat_session.assessment_session_id,
-        "assessment_info": serialize_assessment_info(chat_session.assessment_session),
+        "assessment_info": serialize_assessment_info(chat_session.assessment_session, db),
     }
 
 
@@ -557,7 +635,7 @@ async def get_messages(
     return {
         "messages": serialize_messages(get_chat_messages(db, chat_session_id, include_system=False)),
         "assessment_session_id": chat_session.assessment_session_id,
-        "assessment_info": serialize_assessment_info(chat_session.assessment_session),
+        "assessment_info": serialize_assessment_info(chat_session.assessment_session, db),
         "title": chat_session.title,
     }
 
@@ -656,10 +734,7 @@ async def clear_chat(
     """清空咨询会话的消息"""
     chat_session = ensure_chat_session_owner(db, chat_session_id, current_user.id)
 
-    db.query(ChatMessageModel).filter(
-        ChatMessageModel.chat_session_id == chat_session_id,
-    ).delete()
-    db.commit()
+    clear_chat_messages(db, chat_session_id)
 
     return {
         "status": "success",
@@ -683,13 +758,7 @@ async def get_available_assessments(db: Session = Depends(get_db), current_user:
 
     return {
         "assessments": [
-            {
-                "session_id": s.id,
-                "title": build_assessment_title(s),
-                "started_at": s.started_at.isoformat() if s.started_at else None,
-                "finished_at": s.finished_at.isoformat() if s.finished_at else None,
-                "has_report": s.report_content is not None,
-            }
+            serialize_assessment_info(s, db)
             for s in sessions
         ]
     }

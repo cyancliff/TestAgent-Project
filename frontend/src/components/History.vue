@@ -310,7 +310,7 @@
 
                 <div v-if="session.report_generating" class="report-generating-bar">
                   <span class="generating-spinner"></span>
-                  <span class="generating-text">报告生成中，稍后会自动刷新到这里。</span>
+                  <span class="generating-text">报告仍在整理中，记录已经为你保留，稍后会自动刷新到这里。</span>
                 </div>
 
                 <div class="card-footer">
@@ -321,7 +321,7 @@
 
                   <div class="card-actions">
                     <button v-if="session.has_report" class="btn-view" type="button" @click="viewReport(session.session_id)">查看报告</button>
-                    <span v-else-if="session.report_generating" class="btn-generating">生成中</span>
+                    <span v-else-if="session.report_generating" class="btn-generating">整理中</span>
                     <button v-if="session.status === 'completed'" class="btn-edit" type="button" @click="editAnswers(session.session_id)">修改答案</button>
                   </div>
                 </div>
@@ -402,7 +402,7 @@ const dashboardPanels = computed(() => [
   {
     label: '报告数量',
     value: String(reportReadyCount.value).padStart(2, '0'),
-    note: generatingCount.value ? `另有 ${generatingCount.value} 份报告生成中` : '已生成的分析报告',
+    note: generatingCount.value ? `另有 ${generatingCount.value} 份报告仍在整理中` : '已整理完成的分析报告',
   },
   {
     label: '最近记录',
@@ -443,8 +443,8 @@ const latestSessionArchiveHeadline = computed(() => (
 
 const getReportStatusLabel = (session) => {
   if (session.has_report) return '报告可查看'
-  if (session.report_generating) return '报告生成中'
-  return session.status === 'completed' ? '待生成报告' : '测评进行中'
+  if (session.report_generating) return '报告整理中'
+  return session.status === 'completed' ? '待整理报告' : '测评进行中'
 }
 
 const getSessionStageLabel = (session) => session.stage_display_name || session.current_stage || '未开始'

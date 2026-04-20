@@ -419,18 +419,12 @@ def generate_report_in_background(session_id: int, user_id: int):
 
 
 @router.get("/finish-stream")
-async def finish_assessment_stream(session_id: int, token: str):
+async def finish_assessment_stream(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+):
     """SSE 端点：实时推送多智能体辩论过程到前端"""
-    from jose import JWTError, jwt as jose_jwt
-    from app.core.config import settings as app_settings
-
-    try:
-        payload_data = jose_jwt.decode(token, app_settings.SECRET_KEY, algorithms=["HS256"])
-        user_id = payload_data.get("sub")
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="无效的认证凭据")
-    except JWTError:
-        raise HTTPException(status_code=401, detail="无效的认证凭据")
+    user_id = current_user.id
 
     print(f"[finish-stream] 收到请求 - user_id: {user_id}, session_id: {session_id}")
     db = SessionLocal()

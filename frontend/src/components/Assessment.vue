@@ -41,7 +41,7 @@
           </button>
           <button class="start-btn restart-new-btn" @click="restartFromPending" :disabled="isStarting">
             <span v-if="isStarting"><span class="btn-spinner"></span>准备中...</span>
-            <span v-else>重新开始</span>
+            <span v-else>修改答案</span>
           </button>
         </div>
 
@@ -239,14 +239,17 @@
             <div class="orbit-dot dot-3"></div>
             <div class="orbit-center-icon">✨</div>
           </div>
-          <h2 class="debate-loading-title">正在生成最终报告</h2>
-          <p class="debate-loading-subtitle">所有模块评审已完成，正在生成综合报告</p>
+          <h2 class="debate-loading-title">正在整理最终报告</h2>
+          <p class="debate-loading-subtitle">所有模块评审已完成，报告正在整理中，已为你保留本次测评记录。</p>
           <div class="debate-loading-steps">
             <div :class="['step-item', { active: true }]">
               <span class="step-dot"></span><span>报告生成中...</span>
             </div>
           </div>
           <p v-if="debateError" class="error-text">{{ debateError }}</p>
+          <div class="report-actions report-actions--inline">
+            <button class="restart-btn view-report-btn" @click="goToHistory">稍后去历史记录查看</button>
+          </div>
         </div>
       </div>
 
@@ -270,8 +273,8 @@
 import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
-import { marked } from 'marked'
 import { showAlertDialog, showConfirmDialog, showPromptDialog } from '../composables/useAppDialog'
+import { renderReportMarkdown } from '../utils/markdown'
 
 const route = useRoute()
 const router = useRouter()
@@ -360,12 +363,10 @@ const canGoNext = computed(() => {
 const canNavigateToQuestion = (index) => !!stageQuestions.value[index]
 const STAGE_REVIEW_DURATION_MS = 3000
 const STAGE_REVIEW_STEP_DURATION_MS = 1000
-const FINAL_GENERATING_REDIRECT_MS = 10000
 const REPORT_POLL_INITIAL_DELAY_MS = 5000
 const REPORT_POLL_INTERVAL_MS = 3000
 const stageReviewTimers = []
 let reportPollTimer = null
-let finalGeneratingRedirectTimer = null
 const clearStageReviewTimers = () => {
   while (stageReviewTimers.length) {
     clearTimeout(stageReviewTimers.pop())
@@ -377,16 +378,9 @@ const clearReportPollTimer = () => {
     reportPollTimer = null
   }
 }
-const clearFinalGeneratingRedirectTimer = () => {
-  if (finalGeneratingRedirectTimer) {
-    clearTimeout(finalGeneratingRedirectTimer)
-    finalGeneratingRedirectTimer = null
-  }
-}
 const clearAsyncTimers = () => {
   clearStageReviewTimers()
   clearReportPollTimer()
-  clearFinalGeneratingRedirectTimer()
 }
 
 const buildLocalStageInfo = (stage = currentStage.value, submittedStages = stageInfo.value?.submitted_stages || []) => {
@@ -441,19 +435,6 @@ watch(() => debateMessages.value.length, () => {
   nextTick(() => {
     // auto-scroll logic placeholder
   })
-})
-
-// 加载阶段信息
-watch(isGenerating, (generating) => {
-  clearFinalGeneratingRedirectTimer()
-  if (!generating) return
-
-  finalGeneratingRedirectTimer = setTimeout(() => {
-    finalGeneratingRedirectTimer = null
-    if (isGenerating.value && isFinished.value) {
-      router.replace('/history')
-    }
-  }, FINAL_GENERATING_REDIRECT_MS)
 })
 
 const loadStageInfo = async () => {
@@ -821,29 +802,27 @@ const submitCurrentStage = async () => {
 
 // 轮询等待最终报告
 const pollForReport = async () => {
-  const maxAttempts = 60
   let attempts = 0
   clearReportPollTimer()
+  debateError.value = ''
   const poll = async () => {
     reportPollTimer = null
     try {
       const res = await api.get(`/assessment/report/${sessionId.value}`)
       if (res.data.report) {
         finalReport.value = res.data.report
+        debateError.value = ''
         isGenerating.value = false
         return
       }
-    } catch {
-      // 忽略
+    } catch (error) {
+      console.warn('轮询最终报告失败:', error)
     }
     attempts++
-    if (attempts < maxAttempts) {
-      reportPollTimer = setTimeout(poll, REPORT_POLL_INTERVAL_MS)
-    } else {
-      // 超时，跳转到历史页
-      isGenerating.value = false
-      debateError.value = '报告生成超时，请查看历史记录'
+    if (attempts >= 8) {
+      debateError.value = '报告仍在整理中，已为你保留这次测评记录。你可以继续等待，或稍后到历史记录查看。'
     }
+    reportPollTimer = setTimeout(poll, REPORT_POLL_INTERVAL_MS)
   }
   reportPollTimer = setTimeout(poll, REPORT_POLL_INITIAL_DELAY_MS)
 }
@@ -994,7 +973,7 @@ const restartFromPending = async () => {
       return
     }
   } catch (error) {
-    startError.value = '重新开始失败，请重试'
+    startError.value = '修改答案失败，请重试'
   } finally {
     isStarting.value = false
   }
@@ -1009,13 +988,7 @@ const goToHistory = () => {
 }
 
 const formattedReport = computed(() => {
-  if (!finalReport.value) return ''
-  const cleaned = finalReport.value
-    .replace(/【内部记录[：:].*?】/g, '')
-    .replace(/\s*TERMINATE\s*/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-  return marked.parse(cleaned)
+  return renderReportMarkdown(finalReport.value)
 })
 
 onMounted(async () => {
@@ -1305,6 +1278,7 @@ onBeforeUnmount(() => {
 .report-divider { height: 2px; background: linear-gradient(90deg, var(--border), var(--primary), var(--border)); margin: 0; }
 .report-content { padding: 48px; color: var(--text-primary); line-height: 2; font-size: 20px; }
 .report-actions { display: flex; gap: 20px; padding: 0 48px 40px; }
+.report-actions--inline { justify-content: center; padding: 24px 0 0; }
 .restart-btn { padding: 20px 36px; border: none; border-radius: var(--radius-lg); background: var(--bg-hover); color: var(--text-primary); cursor: pointer; font-size: 18px; font-weight: 700; transition: all var(--transition-normal); }
 .restart-btn:hover { background: var(--border); transform: translateY(-4px); box-shadow: var(--shadow); }
 .view-report-btn { background: var(--gradient-primary); color: white; }
