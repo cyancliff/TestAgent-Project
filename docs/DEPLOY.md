@@ -1,376 +1,249 @@
-# TestAgent 部署教程（当前版本）
+# TestAgent 部署与运行说明
 
-本文基于仓库当前的 `docker-compose.yml`、`Dockerfile`、`docker-entrypoint.sh` 和前端 `nginx.conf` 编写，适用于把项目部署到一台 Linux 服务器上。
+更新时间：2026-04-20
 
-## 1. 先看当前项目的部署方式
+这份文档专门解决一件事：把“在线 Web 服务部署”和“离线多模态训练/推理”彻底分开讲清楚。
 
-当前项目默认通过 Docker Compose 启动 3 个服务：
+当前仓库有两种常见运行方式：
 
-- `db`：PostgreSQL 15，数据保存在 Docker 卷 `pgdata`
-- `backend`：FastAPI，容器内监听 `8000`
-- `frontend`：Nginx + Vue 静态文件，对外暴露 `80`
+1. 在线主系统：FastAPI + Vue + PostgreSQL，主要用于答题、报告、历史记录和 AI 咨询。
+2. 离线多模态：围绕 CFI-V2 数据集的本地预处理、特征提取、训练和评估，更适合在带 GPU 的 Windows 开发机上长期运行。
 
-访问链路如下：
+## 1. 先明确边界
+
+### 在线主系统负责什么
+
+- 用户注册和登录
+- ATMR 问卷答题主流程
+- 自适应选题、异常作答检测
+- 多智能体辩论与综合报告
+- 历史记录与 AI 咨询
+
+### 离线多模态负责什么
+
+- CFI-V2 数据集 manifest 构建
+- 视频抽帧、音频提取、Whisper 转写
+- CLIP 和 wav2clip 特征提取
+- AGTN-MTL baseline 训练、评估、推理
+- 全量长任务的可恢复执行
+
+### 当前最重要的现实限制
+
+- 在线接口里的多模态服务目前仍是 `scaffold-v1`，还没有接入真实 checkpoint。
+- 因此，哪怕你把 Web 服务部署起来，在线 `run` 接口也还不是论文级真实模型结果。
+- 真实多模态结果目前以离线运行和本地产物为主。
+
+## 2. 在线主系统部署
+
+### 2.1 推荐方式
+
+推荐优先使用 Docker Compose 部署在线主系统。
+
+当前默认容器包含：
+
+- `db`：PostgreSQL 15
+- `backend`：FastAPI
+- `frontend`：Nginx + Vue 静态站点
+
+默认访问链路：
 
 ```text
 浏览器
-  -> frontend (Nginx:80)
+  -> frontend:80
   -> /api 反向代理到 backend:8000
   -> backend 连接 db:5432
 ```
 
-这意味着：
+### 2.2 最低准备
 
-- 服务器对外默认只开放 `80` 端口即可
-- 后端 `8000` 端口默认不会暴露到宿主机
-- 首次启动时，后端会自动等待数据库、自动建表、并在题库为空时自动导入 `data/atmr_full_questions.json`
-- 当前项目不会自动创建测试账号，首次使用请在登录页自行注册
+- 已安装 Docker 与 Docker Compose v2
+- 已复制 `.env.example` 为 `.env`
+- 至少填写以下环境变量：
+  - `DB_PASSWORD`
+  - `SECRET_KEY`
+  - `DEEPSEEK_API_KEY` 或其它你实际使用的模型密钥
 
-## 2. 当前版本的注意事项
+### 2.3 启动命令
 
-这些是现在这份代码的真实行为，部署前建议先知道：
-
-1. `.env.example` 里虽然还有 `APP_ENV`、`DATABASE_URL`、`ALLOWED_ORIGINS` 等变量，但按照当前 `docker-compose.yml`，默认部署时真正会被用到的主要是：
-   - `DB_PASSWORD`
-   - `SECRET_KEY`
-   - `DEEPSEEK_API_KEY`
-   - `DASHSCOPE_API_KEY`
-   - `ZHIPU_API_KEY`
-2. 不配置 AI Key 也能把系统启动起来，但依赖大模型的功能会不可用或降级，比如 AI 辩论、RAG、咨询对话。
-3. 数据库是持久化的，因为用了 Docker 卷 `pgdata`。
-4. `uploads/` 目录已经挂载到独立 Docker 卷 `uploads`，重建 `backend` 容器后，头像和上传文件会保留。
-5. 前端 Nginx 已经代理 `/api` 和 `/uploads`，上传文件可以通过前端入口统一访问。
-
-## 3. 服务器准备
-
-建议准备一台 Linux 服务器，并确保：
-
-- 已开放 SSH 端口（通常是 `22`）
-- 已开放 HTTP 端口 `80`
-- 已安装 Git
-- 已安装 Docker 和 Docker Compose v2
-
-下面以 Ubuntu / Debian 为例：
-
-```bash
-sudo apt update
-sudo apt install -y git ca-certificates curl
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker $USER
-newgrp docker
-
-docker --version
-docker compose version
-```
-
-如果服务器里已经装好了 Docker 和 Git，可以直接跳到下一步。
-
-## 4. 让服务器拿到代码
-
-最简单的方式是先把当前项目推到一个远程 Git 仓库，然后在服务器上拉取。
-
-如果你的代码已经在远程仓库中，直接执行：
-
-```bash
-sudo mkdir -p /opt
-cd /opt
-sudo git clone <你的仓库地址> TestAgent
-sudo chown -R $USER:$USER /opt/TestAgent
-cd /opt/TestAgent
-```
-
-例如：
-
-```bash
-git clone https://github.com/<your-name>/TestAgent.git
-```
-
-如果代码现在只在本地电脑，还没有远程仓库，先把它推到 GitHub、Gitee 或你自己的 Git 服务，再继续本教程。
-
-## 5. 配置环境变量
-
-在项目根目录执行：
-
-```bash
-cp .env.example .env
-vi .env
-```
-
-至少修改这几项：
-
-```env
-DB_PASSWORD=请改成你自己的数据库密码
-SECRET_KEY=请改成一串足够长的随机字符串
-DEEPSEEK_API_KEY=
-DASHSCOPE_API_KEY=
-ZHIPU_API_KEY=
-
-# 可选：网络慢时覆盖镜像或依赖源
-POSTGRES_IMAGE=postgres:15-alpine
-PYTHON_IMAGE=python:3.10-slim
-PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
-REQUIREMENTS_FILE=requirements_full.txt
-```
-
-说明：
-
-- `DB_PASSWORD`：PostgreSQL 的密码，必须修改
-- `SECRET_KEY`：JWT 签名密钥，必须修改
-- 三个 AI Key 都是可选项，但不填的话 AI 相关功能不可用
-- 使用当前自带的 `docker-compose.yml` 时，不需要手工填写 `DATABASE_URL`
-- 如果 Docker Hub 拉取 `postgres:15-alpine` 很慢，可以在 `.env` 里把 `POSTGRES_IMAGE` 改成你自己的镜像仓库地址
-- Docker 默认使用 `requirements_full.txt` 构建后端镜像，并会在第二步安装 `requirements_feature.txt`
-- 如果你只想先部署在线服务、暂时不生成题目特征向量，可以手动把 `REQUIREMENTS_FILE` 改成 `requirements_server.txt`
-
-如果你想快速生成一个随机密钥，可以用：
-
-```bash
-openssl rand -hex 32
-```
-
-## 6. 启动服务
-
-在项目根目录执行：
-
-```bash
+```powershell
+Copy-Item .env.example .env
 docker compose up -d --build
 ```
 
-首次启动通常会比后续慢很多，原因包括：
+### 2.4 启动后检查
 
-- 拉取 PostgreSQL、Nginx、Python、Node 镜像
-- 构建前端静态资源
-- 安装后端 Python 依赖
-
-第一次部署时，等待 5 到 15 分钟都算正常。
-
-当前仓库默认会在 Docker 首次构建时安装 `requirements_full.txt`，并在第二步安装 `requirements_feature.txt`，因此会进入 `torch==2.1.0+cpu` 这条依赖链。如果你希望首次部署更轻，可以手动把 `REQUIREMENTS_FILE` 改成 `requirements_server.txt`，让系统先以不生成题目特征向量的模式启动。
-
-## 7. 启动后会自动做什么
-
-当前版本启动 `backend` 容器时，会自动完成下面这些动作：
-
-1. 等待数据库可连接
-2. 执行 `init_db()` 自动建表
-3. 检查题库是否为空
-4. 如果题库为空，自动运行 `scripts/import_data.py` 导入 `data/atmr_full_questions.json`
-5. 最后启动 `uvicorn app.main:app --host 0.0.0.0 --port 8000`
-
-所以在默认部署流程里：
-
-- 不需要手工执行建表脚本
-- 不需要手工执行题库导入脚本
-
-## 8. 检查服务是否正常
-
-先看容器状态：
-
-```bash
+```powershell
 docker compose ps
-```
-
-正常情况下，应该看到：
-
-- `db` 已启动并通过健康检查
-- `backend` 为 `Up`
-- `frontend` 为 `Up`
-
-再看后端日志：
-
-```bash
 docker compose logs --tail=100 backend
-```
-
-重点看这些信息：
-
-- 数据库连接成功
-- 自动建表完成
-- 题库已导入，或显示题库已存在并跳过导入
-- `Uvicorn running on http://0.0.0.0:8000`
-
-再看前端日志：
-
-```bash
 docker compose logs --tail=50 frontend
 ```
 
-## 9. 访问系统
+至少确认：
 
-浏览器访问：
+- `db` 正常启动
+- `backend` 和 `frontend` 都是 `Up`
+- 后端日志里没有持续报错
+- 浏览器能打开首页
 
-```text
-http://你的服务器公网IP/
-```
+### 2.5 可选：暴露 Swagger
 
-如果你绑定了域名，也可以直接访问：
+默认情况下只暴露前端 `80` 端口，后端 `8000` 不直接对宿主机开放。
 
-```text
-http://你的域名/
-```
-
-注意：
-
-- 当前项目默认没有预置账号
-- 第一次进入系统后，请直接在登录页注册一个新账号
-
-## 10. 可选：启用完整的自适应选题能力
-
-当前系统即使没有题目特征向量，也可以运行；这时自适应选题会回退为顺序选题。
-
-如果你想启用更完整的自适应选题逻辑，可以在部署完成后手工生成题目特征向量：
-
-```bash
-docker compose exec backend python scripts/generate_feature_vectors.py
-```
-
-这一步不是首启必需项，但要注意：
-
-- 会额外吃 CPU 和内存
-- 首次运行耗时可能较长
-- 更适合在服务器空闲时执行
-
-## 11. 可选：直接暴露后端 Swagger 文档
-
-按当前 `docker-compose.yml`，后端 `8000` 端口不会直接暴露，所以你默认不能从宿主机直接访问：
-
-```text
-http://服务器IP:8000/docs
-```
-
-如果你确实需要直接查看 Swagger，可以在 `docker-compose.yml` 的 `backend` 服务里增加：
+如果你需要直接访问 Swagger，请在 `docker-compose.yml` 的 `backend` 服务中增加：
 
 ```yaml
-backend:
-  ports:
-    - "8000:8000"
+ports:
+  - "8000:8000"
 ```
 
-然后重新部署：
+然后重新启动：
 
-```bash
+```powershell
 docker compose up -d --build backend frontend
 ```
 
-之后就可以访问：
+### 2.6 关于依赖文件
 
-```text
-http://你的服务器IP:8000/docs
+在线服务相关依赖有三层：
+
+- `requirements_server.txt`：更轻的在线服务依赖
+- `requirements_full.txt`：完整在线服务依赖
+- `requirements_feature.txt`：题目特征向量相关依赖
+
+如果你只是先把在线服务跑起来，而不是在服务器上生成题目特征向量，可以考虑把 `REQUIREMENTS_FILE` 改成 `requirements_server.txt`。
+
+## 3. 本地多模态运行
+
+### 3.1 适用场景
+
+这条线不建议直接塞进 Docker 在线部署里。更适合：
+
+- Windows 本地开发机
+- 带 NVIDIA GPU
+- 有较大磁盘空间
+- 允许长时间跑预处理和特征提取
+
+### 3.2 当前已经验证过的本地环境
+
+截至 2026-04-20，本仓库已经在下面这套环境上验证通过：
+
+- Windows + PowerShell
+- Python `3.14`
+- `ffmpeg` 已安装并可从 PATH 调用
+- `torch 2.11.0+cu126`
+- `torchvision 0.26.0+cu126`
+- `torchaudio 2.11.0+cu126`
+- `torch.cuda.is_available() == True`
+- GPU：`NVIDIA GeForce RTX 4060 Laptop GPU`
+
+这套环境支持同一份代码在 `cuda` 和 `cpu` 之间自动切换。
+
+### 3.3 安装多模态依赖
+
+```powershell
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -r requirements_multimodal.txt
 ```
 
-## 12. 常用运维命令
+此外还需要系统级依赖：
 
-```bash
-cd /opt/TestAgent
+- `ffmpeg`
 
-# 查看状态
-docker compose ps
+### 3.4 验证 GPU
 
-# 查看后端日志
-docker compose logs -f backend
-
-# 查看前端日志
-docker compose logs -f frontend
-
-# 查看数据库日志
-docker compose logs -f db
-
-# 重启全部服务
-docker compose restart
-
-# 停止服务（保留数据库卷）
-docker compose down
-
-# 停止并删除数据库卷（会清空数据库）
-docker compose down -v
-
-# 拉取新代码后重新部署
-git pull
-docker compose up -d --build
+```powershell
+python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no-gpu')"
 ```
 
-如果执行了 `docker compose down -v`，下次再启动时，系统会重新建库并重新导入题库。
+### 3.5 跑最小闭环
 
-## 13. 常见问题
+推荐先跑 `100 / 20`，不要直接全量。
 
-### 13.0 首次构建卡在 `postgres:15-alpine` 或大模型 / ML 依赖安装
+```powershell
+python scripts/build_cfi_v2_manifest.py --config multimodal_personality/configs/cfi_v2.example.yaml --phase all
 
-按这个顺序处理：
+python scripts/preprocess_cfi_v2_from_manifest.py --manifest multimodal_personality/data/cfi_v2/manifests/train_manifest.json --limit 100
+python scripts/preprocess_cfi_v2_from_manifest.py --manifest multimodal_personality/data/cfi_v2/manifests/val_manifest.json --limit 20
 
-1. 如果卡在 `postgres:15-alpine`，优先判断是不是 Docker Hub 链路慢；必要时在 `.env` 里覆盖 `POSTGRES_IMAGE`
-2. 默认部署会安装 `requirements_full.txt` 和 `requirements_feature.txt`，首次构建慢一些是预期行为
-3. 如果你只是想先把在线服务跑起来，可以临时把 `REQUIREMENTS_FILE` 改成 `requirements_server.txt`
-4. 只有在你确实要在服务器上运行 `python scripts/generate_feature_vectors.py`，或者恢复完整特征向量链路时，才需要保留 `requirements_full.txt + requirements_feature.txt` 组合
-5. 调整完 `.env` 后重新执行 `docker compose up -d --build`
+python scripts/build_clip_feature_jobs.py --manifest multimodal_personality/data/cfi_v2/manifests/train_manifest.json
+python scripts/extract_clip_features.py --jobs multimodal_personality/data/cfi_v2/train_feature_jobs.json --device cuda
+python scripts/extract_wav2clip_features.py --jobs multimodal_personality/data/cfi_v2/train_feature_jobs.json
 
-### 13.1 打不开首页
+python scripts/build_multimodal_feature_bundles.py --manifest multimodal_personality/data/cfi_v2/manifests/train_manifest.json --limit 100
+python scripts/build_multimodal_feature_bundles.py --manifest multimodal_personality/data/cfi_v2/manifests/val_manifest.json --limit 20
 
-按这个顺序检查：
-
-1. 安全组或防火墙是否已放行 `80` 端口
-2. `docker compose ps` 里 `frontend` 是否为 `Up`
-3. `docker compose logs frontend` 是否有 Nginx 报错
-4. 服务器公网 IP 或域名是否正确
-
-### 13.2 后端一直重启
-
-先看日志：
-
-```bash
-docker compose logs -f backend
+python scripts/train_agtn_mtl.py --train-manifest multimodal_personality/data/cfi_v2/manifests/train_manifest.json --val-manifest multimodal_personality/data/cfi_v2/manifests/val_manifest.json --train-limit 100 --val-limit 20 --device cuda
 ```
+
+### 3.6 跑全量长任务
+
+```powershell
+python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device cuda
+```
+
+这个脚本会依次执行：
+
+1. 预处理 train / val / test 缺失样本
+2. 构建特征任务
+3. 提取 CLIP 特征
+4. 提取 wav2clip 特征
+5. 生成 bundles
+6. 训练 baseline
+7. 输出 val / test 评估结果
+
+而且它支持断点恢复。
+
+### 3.7 日志与产物
+
+默认输出目录：
+
+- `reports/full_multimodal_pipeline/`
+
+重点查看：
+
+- `reports/full_multimodal_pipeline/stderr.log`
+- `reports/full_multimodal_pipeline/stdout.log`
+
+不要在任务运行时删除这些目录：
+
+- `uploads/multimodal_personality/artifacts`
+- `reports/full_multimodal_pipeline`
+
+## 4. Windows 黑色 python.exe 窗口说明
+
+如果你看到一个黑色终端窗口，标题像 `C:\Python314\python.exe`，大概率不是异常，而是本地长任务的宿主窗口。
 
 常见原因：
 
-- `.env` 里 `DB_PASSWORD` 配错
-- 本机 Docker 环境异常，数据库容器没起来
-- 首次安装依赖较慢，看起来像卡住，实际上仍在构建
+- 你启动的是 Python 长任务
+- 输出被重定向到了日志文件
+- 所以窗口本身可能几乎不显示内容
 
-### 13.3 AI 功能不可用
+如果长任务还在跑：
 
-先确认 `.env` 已填写至少一个可用的 AI Key，例如：
+- 不要关闭这个窗口
+- 优先看日志判断任务进度
 
-```env
-DEEPSEEK_API_KEY=你的真实密钥
-```
+## 5. 当前部署策略建议
 
-然后重启后端：
+### 如果你现在要演示系统
 
-```bash
-docker compose restart backend
-```
+优先做：
 
-### 13.4 自适应选题没有生效
+1. 用 Docker 跑在线主系统
+2. 用当前前后端主流程做演示
+3. 单独展示多模态离线运行结果和日志产物
 
-这是当前版本的预期行为之一：如果题库还没有特征向量，系统会回退到顺序选题。
+### 如果你现在要做论文实验
 
-手工补全特征向量：
+优先做：
 
-```bash
-docker compose exec backend python scripts/generate_feature_vectors.py
-```
+1. 用本地 GPU 环境继续跑多模态全量 baseline
+2. 记录 `val / test` 结果
+3. 再把 checkpoint 接进在线服务
 
-### 13.5 上传文件或头像访问异常
+## 6. 仍需注意的事情
 
-当前版本已经支持通过前端 Nginx 转发 `/uploads`，如果访问异常，按这个顺序检查：
-
-1. `docker compose ps` 中 `frontend` 和 `backend` 是否都为 `Up`
-2. `docker compose logs frontend` 是否有 Nginx 报错
-3. `docker compose logs backend` 是否有静态文件或上传相关报错
-4. 访问路径是否以 `/uploads/...` 开头
-
-### 13.6 重建容器后头像或上传文件丢失
-
-当前版本已经通过 Docker 卷持久化 `uploads/`，正常重建 `backend` 容器不会丢失文件。
-
-只有在你执行 `docker compose down -v`，或者手工删除 `uploads` 卷时，这些文件才会被清空。
-
-## 14. 建议的部署完成检查清单
-
-部署结束后，至少确认下面几件事：
-
-- 可以正常打开首页
-- 可以注册新账号并登录
-- 可以开始测评并正常提交答案
-- `docker compose ps` 中三个服务都稳定运行
-- 后端日志里没有持续报错
-- 如果需要 AI 功能，确认对应模型密钥已生效
+- 在线部署成功，不代表多模态真实推理已经接入。
+- 当前多模态在线接口仍返回占位分数，这一点答辩和汇报时要说清楚。
+- 真正的多模态研究结果，应以 `reports/` 目录中的训练、评估和推理产物为准。

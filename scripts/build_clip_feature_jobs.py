@@ -15,7 +15,7 @@ from multimodal_personality.preprocessing.cfi_v2_dataset import filter_manifest_
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build CLIP feature extraction jobs from a manifest")
+    parser = argparse.ArgumentParser(description="Build multimodal feature extraction jobs from a manifest")
     parser.add_argument("--manifest", required=True, help="Path to the train/val/test manifest JSON")
     parser.add_argument(
         "--artifacts-root",
@@ -42,6 +42,8 @@ def main() -> None:
     for sample in samples:
         candidate_dirs = list(artifacts_root.glob(f"*/"))
         frame_dir = ""
+        audio_path = ""
+        artifact_dir = ""
         manifest_path = ""
         for candidate_dir in candidate_dirs:
             local_manifest = candidate_dir / "manifest.json"
@@ -52,7 +54,11 @@ def main() -> None:
             except Exception:
                 continue
             if Path(payload.get("video_path", "")).name == Path(sample["video_path"]).name:
+                artifact_dir = str(candidate_dir)
                 frame_dir = str(candidate_dir / "frames")
+                audio_candidate = candidate_dir / "audio.wav"
+                if audio_candidate.exists():
+                    audio_path = str(audio_candidate)
                 manifest_path = str(local_manifest)
                 break
 
@@ -61,9 +67,12 @@ def main() -> None:
                 "video_name": sample["video_name"],
                 "video_path": sample["video_path"],
                 "transcript": sample.get("transcript", ""),
+                "artifact_dir": artifact_dir,
                 "artifact_manifest_path": manifest_path,
                 "frames_dir": frame_dir,
+                "audio_path": audio_path,
                 "ready_for_clip": bool(frame_dir),
+                "ready_for_wav2clip": bool(audio_path),
             }
         )
 
@@ -82,7 +91,10 @@ def main() -> None:
         encoding="utf-8",
     )
     ready_count = sum(1 for job in jobs if job["ready_for_clip"])
-    print(f"jobs={len(jobs)} ready_for_clip={ready_count} output={output_path}")
+    ready_audio_count = sum(1 for job in jobs if job["ready_for_wav2clip"])
+    print(
+        f"jobs={len(jobs)} ready_for_clip={ready_count} ready_for_wav2clip={ready_audio_count} output={output_path}",
+    )
 
 
 if __name__ == "__main__":

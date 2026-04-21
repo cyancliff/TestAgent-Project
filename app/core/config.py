@@ -69,6 +69,11 @@ class Settings(BaseSettings):
         "MULTIMODAL_ARTIFACT_DIR",
         "uploads/multimodal_personality/artifacts",
     )
+    MULTIMODAL_CHECKPOINT_PATH: str = os.environ.get(
+        "MULTIMODAL_CHECKPOINT_PATH",
+        "reports/full_multimodal_pipeline/agtn_mtl_full.pt",
+    )
+    MULTIMODAL_DEVICE: str = os.environ.get("MULTIMODAL_DEVICE", "auto")
 
     model_config = SettingsConfigDict(case_sensitive=True, enable_decoding=False)
 

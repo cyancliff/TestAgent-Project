@@ -38,6 +38,7 @@ frontend/.vite/
 *.db
 .claude/
 reports/
+test_artifacts/
 
 # Multimodal personality dataset and generated artifacts
 multimodal_personality/data/cfi_v2/train/videos/
@@ -62,6 +63,7 @@ multimodal_personality/data/cfi_v2/mock_manifest.json
 multimodal_personality/checkpoints/
 uploads/avatars/*
 !uploads/avatars/.gitkeep
+.ai/refs/
 uploads/multimodal_personality/videos/
 uploads/multimodal_personality/tasks/
 uploads/multimodal_personality/artifacts/
