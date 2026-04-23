@@ -2,6 +2,26 @@
 
 本文档遵循 Keep a Changelog 风格，按北京时间记录关键变更。
 
+## [2026-04-24] - 切换多模态最佳模型并完成在线验证
+### 变更
+
+- 将 [app/core/config.py](/D:/PythonCode/TestAgent/app/core/config.py) 中的 `MULTIMODAL_CHECKPOINT_PATH` 默认值从 `reports/full_multimodal_pipeline/agtn_mtl_full.pt` 切换为 `reports/night_lr1e4_drop02/agtn_mtl_lr1e4_drop02.pt`，使在线服务默认使用当前最优的多模态 checkpoint。
+- 将 [app/services/multimodal_personality_service.py](/D:/PythonCode/TestAgent/app/services/multimodal_personality_service.py) 中的真实模型版本标识更新为 `agtn-mtl-best-lr1e4-drop02`，便于后续接口、报告和排错时判断当前实际在用的模型版本。
+
+### 实验结果
+
+- 当前最优 checkpoint 为 `reports/night_lr1e4_drop02/agtn_mtl_lr1e4_drop02.pt`。
+- 该版本全量测试结果为：
+  - `test mse = 0.011543`
+  - `test mae = 0.086074`
+- 与此前线上候选 `night_lr1e4_drop03` 相比，新模型在验证集和测试集上都更优，并继续领先旧的全量 baseline。
+
+### 测试
+
+- 执行 `python -m pytest -q tests/test_multimodal_service.py tests/test_multimodal_training_pipeline.py`，结果为 `4 passed`。
+- 执行 `python -m pytest -q`，结果为 `71 passed, 3 warnings`。
+- 基于本地真实样本视频完成一次 service smoke，结果已写入 [smoke_result.json](/D:/PythonCode/TestAgent/reports/overnight_service_switch_verify/smoke_result.json)，任务状态为 `completed`，已成功返回真实 Big Five 分数，而不是占位分数。
+
 ## [2026-04-21] - 全量基线落地、在线真实推理接入与多模态服务收口
 
 ### 新增

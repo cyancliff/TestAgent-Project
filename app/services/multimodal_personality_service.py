@@ -65,7 +65,7 @@ class MultimodalPersonalityService:
 
     _SCAFFOLD_MODEL_VERSION = "scaffold-v1"
     _FALLBACK_MODEL_VERSION = "scaffold-fallback"
-    _REAL_MODEL_VERSION = "agtn-mtl-full-baseline"
+    _REAL_MODEL_VERSION = "agtn-mtl-best-lr1e4-drop02"
 
     def __init__(self) -> None:
         self._tasks: dict[str, MultimodalTaskRecord] = {}

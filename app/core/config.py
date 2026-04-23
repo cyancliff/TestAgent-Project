@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     )
     MULTIMODAL_CHECKPOINT_PATH: str = os.environ.get(
         "MULTIMODAL_CHECKPOINT_PATH",
-        "reports/full_multimodal_pipeline/agtn_mtl_full.pt",
+        "reports/night_lr1e4_drop02/agtn_mtl_lr1e4_drop02.pt",
     )
     MULTIMODAL_DEVICE: str = os.environ.get("MULTIMODAL_DEVICE", "auto")
 
