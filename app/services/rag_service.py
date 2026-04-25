@@ -15,6 +15,15 @@ from typing import Optional
 
 import httpx
 
+from app.core.config import (
+    build_deepseek_thinking_payload,
+    get_deepseek_api_key,
+    get_deepseek_chat_completions_url,
+    get_deepseek_rag_model,
+    get_deepseek_rag_retrieve_model,
+    get_deepseek_rag_thinking_mode,
+)
+
 # 将 PageIndex 目录加入模块搜索路径
 PAGEINDEX_DIR = Path(__file__).resolve().parent.parent.parent / "PageIndex"
 if str(PAGEINDEX_DIR) not in sys.path:
@@ -40,6 +49,10 @@ LLM_SCORE_RETRY_DELAY_SECONDS = 0.6
 LLM_SCORE_TIMEOUT = httpx.Timeout(45.0, connect=10.0)
 
 
+def _to_pageindex_model_name(model_name: str) -> str:
+    return model_name if "/" in model_name else f"deepseek/{model_name}"
+
+
 def get_rag_client() -> tuple[PageIndexClient, str]:
     """
     获取或初始化 RAG 客户端单例。
@@ -50,7 +63,7 @@ def get_rag_client() -> tuple[PageIndexClient, str]:
     if _client is not None and _doc_id is not None:
         return _client, _doc_id
 
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    api_key = get_deepseek_api_key()
     if not api_key:
         raise RuntimeError("未设置 DEEPSEEK_API_KEY 环境变量，无法初始化 RAG 服务")
 
@@ -58,8 +71,8 @@ def get_rag_client() -> tuple[PageIndexClient, str]:
     os.environ.setdefault("OPENAI_API_KEY", api_key)
     _client = PageIndexClient(
         api_key=api_key,
-        model="deepseek/deepseek-chat",
-        retrieve_model="deepseek/deepseek-chat",
+        model=_to_pageindex_model_name(get_deepseek_rag_model()),
+        retrieve_model=_to_pageindex_model_name(get_deepseek_rag_retrieve_model()),
         workspace=str(WORKSPACE),
     )
 
@@ -226,7 +239,7 @@ async def _llm_score_relevance(query: str, sections: list[dict]) -> list[dict]:
 {{"scores": [{{"index": 序号, "score": 分数, "reason": "理由"}}, ...]}}
 """
 
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    api_key = get_deepseek_api_key()
     if not api_key:
         # 无 API key 时回退到关键词评分
         return _keyword_score_fallback(query, sections)
@@ -239,16 +252,17 @@ async def _llm_score_relevance(query: str, sections: list[dict]) -> list[dict]:
             client = httpx.AsyncClient(timeout=LLM_SCORE_TIMEOUT)
             try:
                 response = await client.post(
-                    "https://api.deepseek.com/v1/chat/completions",
+                    get_deepseek_chat_completions_url(),
                     headers={
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
                     },
                     json={
-                        "model": "deepseek-chat",
+                        "model": get_deepseek_rag_model(),
                         "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0.1,
                         "max_tokens": 2000,
+                        **build_deepseek_thinking_payload(get_deepseek_rag_thinking_mode()),
                     },
                 )
                 response.raise_for_status()
@@ -454,7 +468,7 @@ async def query_knowledge_base(question: str) -> dict:
         }
 
     # 使用 LLM 基于检索到的知识生成回答
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    api_key = get_deepseek_api_key()
     if not api_key:
         return {
             "answer": knowledge,
@@ -478,16 +492,17 @@ async def query_knowledge_base(question: str) -> dict:
         client = httpx.AsyncClient(timeout=60.0)
         try:
             response = await client.post(
-                "https://api.deepseek.com/v1/chat/completions",
+                get_deepseek_chat_completions_url(),
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "deepseek-chat",
+                    "model": get_deepseek_rag_model(),
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3,
                     "max_tokens": 2000,
+                    **build_deepseek_thinking_payload(get_deepseek_rag_thinking_mode()),
                 },
             )
             response.raise_for_status()

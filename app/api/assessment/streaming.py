@@ -2,7 +2,6 @@
 测评报告与 SSE 流式路由：多智能体辩论流、报告生成、历史记录、详细报告
 """
 
-import os
 import json
 import queue
 import threading
@@ -15,6 +14,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import (
+    build_deepseek_thinking_payload,
+    get_deepseek_analysis_model,
+    get_deepseek_analysis_thinking_mode,
+    get_deepseek_api_key,
+    get_deepseek_base_url,
+)
 from app.core.database import get_db, SessionLocal
 from app.core.security import get_current_user
 from app.core.constants import MODULE_DIM_MAP, MODULE_DISPLAY_NAMES, STAGE_NAMES
@@ -206,17 +212,18 @@ def _run_debate_logic(session_id: int, user_id: int, module: str, result_holder:
         async def call_expert(expert_config):
             try:
                 client = AsyncOpenAI(
-                    api_key=os.environ.get("DEEPSEEK_API_KEY"),
-                    base_url="https://api.deepseek.com/v1",
+                    api_key=get_deepseek_api_key(),
+                    base_url=get_deepseek_base_url(),
                 )
                 response = await client.chat.completions.create(
-                    model="deepseek-chat",
+                    model=get_deepseek_analysis_model(),
                     messages=[
                         {"role": "system", "content": "你是ATMR心理测评系统的专家分析师。"},
                         {"role": "user", "content": expert_config["prompt"]},
                     ],
                     temperature=0.7,
                     max_tokens=800,
+                    extra_body=build_deepseek_thinking_payload(get_deepseek_analysis_thinking_mode()),
                 )
                 return {
                     "expert": expert_config["name"],
@@ -258,17 +265,18 @@ def _run_debate_logic(session_id: int, user_id: int, module: str, result_holder:
 
         try:
             client = AsyncOpenAI(
-                api_key=os.environ.get("DEEPSEEK_API_KEY"),
-                base_url="https://api.deepseek.com/v1",
+                api_key=get_deepseek_api_key(),
+                base_url=get_deepseek_base_url(),
             )
             synthesis_response = asyncio.run(client.chat.completions.create(
-                model="deepseek-chat",
+                model=get_deepseek_analysis_model(),
                 messages=[
                     {"role": "system", "content": "你是ATMR测评系统的主分析师。"},
                     {"role": "user", "content": synthesis_prompt},
                 ],
                 temperature=0.5,
                 max_tokens=300,
+                extra_body=build_deepseek_thinking_payload(get_deepseek_analysis_thinking_mode()),
             ))
             final_conclusion = synthesis_response.choices[0].message.content
         except Exception as e:

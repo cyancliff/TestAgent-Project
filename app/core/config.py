@@ -10,6 +10,75 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 load_dotenv()
 
 
+DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEFAULT_DEEPSEEK_CHAT_MODEL = "deepseek-v4-flash"
+DEFAULT_DEEPSEEK_THINKING_MODE = "disabled"
+
+
+def normalize_deepseek_base_url(base_url: str | None) -> str:
+    return (base_url or DEFAULT_DEEPSEEK_BASE_URL).rstrip("/")
+
+
+def normalize_deepseek_thinking_mode(
+    thinking_mode: str | None,
+    default: str = DEFAULT_DEEPSEEK_THINKING_MODE,
+) -> str:
+    normalized = (thinking_mode or default).strip().lower()
+    if normalized in {"enabled", "disabled"}:
+        return normalized
+    return default
+
+
+def build_deepseek_thinking_payload(thinking_mode: str | None) -> dict:
+    return {"thinking": {"type": normalize_deepseek_thinking_mode(thinking_mode)}}
+
+
+def get_deepseek_api_key() -> str:
+    return os.environ.get("DEEPSEEK_API_KEY", "")
+
+
+def get_deepseek_base_url() -> str:
+    return normalize_deepseek_base_url(os.environ.get("DEEPSEEK_BASE_URL"))
+
+
+def get_deepseek_chat_model() -> str:
+    return os.environ.get("DEEPSEEK_CHAT_MODEL", DEFAULT_DEEPSEEK_CHAT_MODEL)
+
+
+def get_deepseek_analysis_model() -> str:
+    return os.environ.get("DEEPSEEK_ANALYSIS_MODEL") or get_deepseek_chat_model()
+
+
+def get_deepseek_rag_model() -> str:
+    return os.environ.get("DEEPSEEK_RAG_MODEL") or get_deepseek_chat_model()
+
+
+def get_deepseek_rag_retrieve_model() -> str:
+    return os.environ.get("DEEPSEEK_RAG_RETRIEVE_MODEL") or get_deepseek_rag_model()
+
+
+def get_deepseek_chat_thinking_mode() -> str:
+    return normalize_deepseek_thinking_mode(os.environ.get("DEEPSEEK_CHAT_THINKING"))
+
+
+def get_deepseek_analysis_thinking_mode() -> str:
+    return normalize_deepseek_thinking_mode(
+        os.environ.get("DEEPSEEK_ANALYSIS_THINKING"),
+        default=get_deepseek_chat_thinking_mode(),
+    )
+
+
+def get_deepseek_rag_thinking_mode() -> str:
+    return normalize_deepseek_thinking_mode(
+        os.environ.get("DEEPSEEK_RAG_THINKING"),
+        default=get_deepseek_chat_thinking_mode(),
+    )
+
+
+def get_deepseek_chat_completions_url() -> str:
+    return f"{get_deepseek_base_url()}/chat/completions"
+
+
 def build_database_url_from_env() -> str:
     database_url = os.environ.get("DATABASE_URL")
     if database_url:
@@ -46,8 +115,15 @@ class Settings(BaseSettings):
 
     APP_ENV: str = os.environ.get("APP_ENV", "development").lower()
 
-    DEEPSEEK_API_KEY: str = os.environ.get("DEEPSEEK_API_KEY", "")
-    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_API_KEY: str = get_deepseek_api_key()
+    DEEPSEEK_BASE_URL: str = get_deepseek_base_url()
+    DEEPSEEK_CHAT_MODEL: str = get_deepseek_chat_model()
+    DEEPSEEK_ANALYSIS_MODEL: str = get_deepseek_analysis_model()
+    DEEPSEEK_RAG_MODEL: str = get_deepseek_rag_model()
+    DEEPSEEK_RAG_RETRIEVE_MODEL: str = get_deepseek_rag_retrieve_model()
+    DEEPSEEK_CHAT_THINKING: str = get_deepseek_chat_thinking_mode()
+    DEEPSEEK_ANALYSIS_THINKING: str = get_deepseek_analysis_thinking_mode()
+    DEEPSEEK_RAG_THINKING: str = get_deepseek_rag_thinking_mode()
     DASHSCOPE_API_KEY: str = os.environ.get("DASHSCOPE_API_KEY", "")
     ZHIPU_API_KEY: str = os.environ.get("ZHIPU_API_KEY", "")
 

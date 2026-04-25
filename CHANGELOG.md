@@ -2,6 +2,24 @@
 
 本文档遵循 Keep a Changelog 风格，按北京时间记录关键变更。
 
+## [2026-04-25] - DeepSeek V4 调用切换与配置收口
+
+### 新增
+
+- 新增 [tests/test_deepseek_config.py](/D:/PythonCode/TestAgent/tests/test_deepseek_config.py)，覆盖 DeepSeek V4 默认模型、链式覆盖和 `thinking` 模式兜底逻辑，避免后续配置回退到旧模型名。
+
+### 变更
+
+- 在 [app/core/config.py](/D:/PythonCode/TestAgent/app/core/config.py) 中统一收口 DeepSeek 配置，新增 `DEEPSEEK_BASE_URL`、`DEEPSEEK_CHAT_MODEL`、`DEEPSEEK_ANALYSIS_MODEL`、`DEEPSEEK_RAG_MODEL`、`DEEPSEEK_RAG_RETRIEVE_MODEL` 以及对应的 `thinking` 配置项，默认切换到 `deepseek-v4-flash` 并显式关闭 thinking，保证线上行为平滑升级。
+- 将 [app/api/chat.py](/D:/PythonCode/TestAgent/app/api/chat.py)、[app/api/assessment/streaming.py](/D:/PythonCode/TestAgent/app/api/assessment/streaming.py)、[app/services/debate_manager.py](/D:/PythonCode/TestAgent/app/services/debate_manager.py) 和 [app/services/rag_service.py](/D:/PythonCode/TestAgent/app/services/rag_service.py) 中散落的 `deepseek-chat`、`https://api.deepseek.com/v1` 调用改为统一读取配置，彻底切到 DeepSeek V4 调用入口。
+- 调整 [app/services/rag_service.py](/D:/PythonCode/TestAgent/app/services/rag_service.py) 的 PageIndex 模型映射逻辑，使检索和回答链路也同步跟随 DeepSeek V4 配置，不再出现“表面切换、底层仍旧模型”的不一致。
+- 更新 [.env.example](/D:/PythonCode/TestAgent/.env.example)，补齐 DeepSeek V4 的默认环境变量和说明，后续如需将报告/辩论单独切到 `deepseek-v4-pro`，仅需修改环境变量即可。
+
+### 测试
+
+- 执行 `python -m pytest -q`，结果为 `74 passed, 3 warnings`。
+- 执行 `python -m pytest -q tests/test_deepseek_config.py tests/test_rag_service.py tests/test_chat_api.py`，结果为 `9 passed, 1 warning`。
+
 ## [2026-04-24] - 切换多模态最佳模型并完成在线验证
 ### 变更
 

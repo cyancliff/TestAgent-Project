@@ -1,7 +1,6 @@
 # app/api/chat.py
 
 import json
-import os
 import re
 from typing import Optional
 
@@ -11,6 +10,13 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.config import (
+    build_deepseek_thinking_payload,
+    get_deepseek_api_key,
+    get_deepseek_chat_completions_url,
+    get_deepseek_chat_model,
+    get_deepseek_chat_thinking_mode,
+)
 from app.core.constants import MODULE_DIM_MAP, MODULE_DISPLAY_NAMES
 from app.core.database import SessionLocal, get_db
 from app.core.security import get_current_user
@@ -23,9 +29,6 @@ from app.services.rag_service import retrieve_knowledge
 router = APIRouter()
 
 # LLM API 配置
-LLM_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-LLM_BASE_URL = "https://api.deepseek.com/v1"
-LLM_MODEL = "deepseek-chat"
 
 
 # --- Schema ---
@@ -333,16 +336,23 @@ def init_chat_with_context(
 
 async def generate_reply(messages: list[dict]) -> str:
     """调用 LLM API 生成回复"""
-    if not LLM_API_KEY:
+    api_key = get_deepseek_api_key()
+    if not api_key:
         return "【错误】未配置 API 密钥"
 
     try:
         client = httpx.AsyncClient(timeout=60.0)
         try:
             response = await client.post(
-                f"{LLM_BASE_URL}/chat/completions",
-                headers={"Authorization": f"Bearer {LLM_API_KEY}", "Content-Type": "application/json"},
-                json={"model": LLM_MODEL, "messages": messages, "temperature": 1, "max_tokens": 2000},
+                get_deepseek_chat_completions_url(),
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": get_deepseek_chat_model(),
+                    "messages": messages,
+                    "temperature": 1,
+                    "max_tokens": 2000,
+                    **build_deepseek_thinking_payload(get_deepseek_chat_thinking_mode()),
+                },
             )
             response.raise_for_status()
             result = response.json()
@@ -360,21 +370,23 @@ async def generate_reply(messages: list[dict]) -> str:
 
 async def stream_reply_chunks(messages: list[dict]):
     """调用 LLM API 并按增量片段流式返回回复内容。"""
-    if not LLM_API_KEY:
+    api_key = get_deepseek_api_key()
+    if not api_key:
         raise RuntimeError("未配置 API 密钥")
 
     timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream(
             "POST",
-            f"{LLM_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {LLM_API_KEY}", "Content-Type": "application/json"},
+            get_deepseek_chat_completions_url(),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
-                "model": LLM_MODEL,
+                "model": get_deepseek_chat_model(),
                 "messages": messages,
                 "temperature": 1,
                 "max_tokens": 2000,
                 "stream": True,
+                **build_deepseek_thinking_payload(get_deepseek_chat_thinking_mode()),
             },
         ) as response:
             response.raise_for_status()

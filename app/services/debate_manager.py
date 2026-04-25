@@ -5,6 +5,13 @@ import queue
 
 from openai import OpenAI
 
+from app.core.config import (
+    build_deepseek_thinking_payload,
+    get_deepseek_analysis_model,
+    get_deepseek_analysis_thinking_mode,
+    get_deepseek_base_url,
+)
+
 # 评分标准（注入到辩论专家 prompt 中）
 SCORING_STANDARD = """
 【评分标准参考】测评采用 1-5 分李克特量表，四个维度各 10 题，单维度基础满分 50 分。
@@ -48,23 +55,37 @@ def _retrieve_rag_evidence(user_data_context: str) -> str:
         return ""
 
 
-def _build_client_config(model: str, api_key_env: str, base_url: str) -> dict:
+def _build_client_config(
+    model: str,
+    api_key_env: str,
+    base_url: str,
+    *,
+    extra_body: dict | None = None,
+) -> dict:
     api_key = os.environ.get(api_key_env, "")
     if not api_key:
         raise RuntimeError(f"未配置 {api_key_env}")
-    return {"model": model, "api_key": api_key, "base_url": base_url}
+    config = {"model": model, "api_key": api_key, "base_url": base_url}
+    if extra_body is not None:
+        config["extra_body"] = extra_body
+    return config
 
 
 def _call_agent(agent_name: str, config: dict, system_prompt: str, user_prompt: str, *, temperature: float, max_tokens: int) -> str:
     client = OpenAI(api_key=config["api_key"], base_url=config["base_url"], timeout=120.0)
-    response = client.chat.completions.create(
-        model=config["model"],
-        messages=[
+    request_kwargs = {
+        "model": config["model"],
+        "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        temperature=temperature,
-        max_tokens=max_tokens,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if config.get("extra_body") is not None:
+        request_kwargs["extra_body"] = config["extra_body"]
+    response = client.chat.completions.create(
+        **request_kwargs,
     )
     content = (response.choices[0].message.content or "").strip()
     if not content:
@@ -88,15 +109,18 @@ def _call_agent_with_fallback(
         timeout=120.0,
     )
     try:
-        response = client.chat.completions.create(
-            model=primary_config["model"],
-            messages=[
+        request_kwargs = {
+            "model": primary_config["model"],
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if primary_config.get("extra_body") is not None:
+            request_kwargs["extra_body"] = primary_config["extra_body"]
+        response = client.chat.completions.create(**request_kwargs)
         message = response.choices[0].message
         content = (message.content or "").strip()
         if content:
@@ -187,9 +211,10 @@ def run_debate_streaming(user_data_context: str, message_queue: queue.Queue):
             "https://dashscope.aliyuncs.com/compatible-mode/v1",
         )
         deepseek_cfg = _build_client_config(
-            "deepseek-chat",
+            get_deepseek_analysis_model(),
             "DEEPSEEK_API_KEY",
-            "https://api.deepseek.com/v1",
+            get_deepseek_base_url(),
+            extra_body=build_deepseek_thinking_payload(get_deepseek_analysis_thinking_mode()),
         )
 
         print(
