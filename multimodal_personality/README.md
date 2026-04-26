@@ -1,13 +1,13 @@
 # 多模态人格子系统说明
 
-更新时间：2026-04-20
+更新时间：2026-04-25
 
 这个目录负责“视频多模态人格预测”的离线工程闭环。它和在线 ATMR 主系统并列存在，但当前主要作用是：
 
 1. 完成数据预处理与特征提取
 2. 跑通 AGTN-MTL baseline
 3. 产出真实 checkpoint 与真实 Big Five 分数
-4. 为后续在线接入提供稳定输入输出契约
+4. 为在线主系统提供可调用的真实推理入口
 
 ## 1. 当前真实状态
 
@@ -20,12 +20,13 @@
 - feature bundle 组装
 - AGTN-MTL baseline 训练、评估、推理
 - 可恢复的全量长任务 runner
+- 在线 `run` 流程可调用真实 checkpoint，并保留失败回退
 
 还没有完成的部分：
 
-- 在线服务仍返回 `scaffold-v1` 占位分数
 - `bg_features` 仍未实现
 - 多模态结果尚未正式接入主系统报告页
+- `PCC / CCC / R²` 等论文级评价指标尚未完全补齐
 
 ## 2. 目录结构
 
@@ -46,7 +47,7 @@ multimodal_personality/
 
 ## 3. 已验证环境
 
-截至 2026-04-20，本仓库已经在下列环境上验证：
+截至 2026-04-25，本仓库已经在下列环境上验证：
 
 - Windows + PowerShell
 - Python `3.14`
@@ -143,6 +144,23 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 - `reports/multimodal_live_run/`
 - `reports/multimodal_live_run_100/`
 - `reports/full_multimodal_pipeline/`
+- `reports/night_lr1e4_drop02/`
+- `reports/online_multimodal_smoke_20260425/`
+
+### 全量与调参结果
+
+当前在线默认 checkpoint 为：
+
+- `reports/night_lr1e4_drop02/agtn_mtl_lr1e4_drop02.pt`
+
+该版本在全量测试集上的结果为：
+
+- `test mse=0.011543`
+- `test mae=0.086074`
+
+在线真实推理 smoke 已通过，归档位置：
+
+- `reports/online_multimodal_smoke_20260425/smoke_result.json`
 
 ## 7. 关键脚本说明
 
@@ -170,13 +188,14 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 - 小样本真实训练结果
 - 全量 runner
 - 当前环境 GPU 可用
+- 全量 baseline 与一轮调参结果
+- 在线真实 checkpoint 推理 smoke 验证
 
 ### 未完成
 
-- 在线 `run` 接口接入真实 checkpoint
 - 报告页展示 Big Five 结果
 - `bg_features`
-- 更系统的调参与论文级对比实验
+- `PCC / CCC / R²` 等论文级指标和更系统的对比实验
 
 ## 9. 与在线系统的关系
 
@@ -184,13 +203,14 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 
 - 主系统已经有接口和 service 边界
 - 离线模块已经能产出真实 checkpoint 和真实分数
-- 但二者还没有正式合并到同一条在线推理链上
+- 在线服务已经能调用真实 checkpoint 返回 Big Five 分数
+- 但多模态结果还没有正式进入主系统报告页、历史记录和会话实体
 
 所以现阶段最合理的推进顺序是：
 
-1. 跑完全量 baseline
-2. 固定 checkpoint
-3. 再接回 `app/services/multimodal_personality_service.py`
+1. 将多模态结果接入报告页和历史记录
+2. 补齐论文级评价指标与实验表格
+3. 再评估是否实现真实 `bg_features` 和更完整的论文结构
 
 ## 10. 运行中的注意事项
 

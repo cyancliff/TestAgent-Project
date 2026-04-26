@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 
 TaskStatus = Literal["pending", "running", "completed", "failed"]
+InterpretationStatus = Literal["pending", "running", "completed", "failed", "skipped"]
 
 
 class MultimodalUploadRequest(BaseModel):
@@ -48,6 +49,37 @@ class MultimodalTaskResponse(BaseModel):
     errors: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+
+class BigFiveReportResponse(BaseModel):
+    """User-facing Big Five personality report response."""
+
+    report_id: int
+    task_id: str
+    title: str | None = None
+    status: TaskStatus
+    message: str
+    original_filename: str | None = None
+    source_assessment_session_id: int | None = None
+    model_version: str = "scaffold-v1"
+    scores: Optional[BigFiveScores] = None
+    artifacts: dict[str, str] = Field(default_factory=dict)
+    errors: list[str] = Field(default_factory=list)
+    is_real_result: bool = False
+    interpretation_status: InterpretationStatus = "pending"
+    interpretation_content: str | None = None
+    interpretation_model: str | None = None
+    interpretation_error: str | None = None
+    interpretation_created_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+
+
+class BigFiveReportListResponse(BaseModel):
+    """List response for Big Five personality reports."""
+
+    reports: list[BigFiveReportResponse]
 
 
 class MultimodalHealthResponse(BaseModel):

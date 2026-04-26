@@ -7,9 +7,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.api.chat import UpdateChatSessionRequest, update_chat_session
+from app.api.chat import get_big_five_context
 from app.core.database import Base
 from app.models.assessment import AssessmentSession
 from app.models.chat import ChatMessage, ChatSession
+from app.models.multimodal import BigFivePersonalityReport
 from app.models.user import User
 
 
@@ -51,6 +53,28 @@ def _seed_chat_session(db, with_history=True):
     db.commit()
     db.refresh(original_assessment)
     db.refresh(replacement_assessment)
+
+    big_five_report = BigFivePersonalityReport(
+        task_id="task-real-1",
+        user_id=user.id,
+        title="视频大五人格报告",
+        status="completed",
+        message="done",
+        original_filename="demo.mp4",
+        video_path="demo.mp4",
+        model_version="agtn-mtl-best-lr1e4-drop02",
+        scores={
+            "openness": 0.61,
+            "conscientiousness": 0.58,
+            "extraversion": 0.54,
+            "agreeableness": 0.57,
+            "neuroticism": 0.49,
+        },
+        is_real_result=True,
+    )
+    db.add(big_five_report)
+    db.commit()
+    db.refresh(big_five_report)
 
     chat_session = ChatSession(
         user_id=user.id,
@@ -96,6 +120,7 @@ def _seed_chat_session(db, with_history=True):
         chat_session=chat_session,
         original_assessment=original_assessment,
         replacement_assessment=replacement_assessment,
+        big_five_report=big_five_report,
     )
 
 
@@ -189,3 +214,56 @@ def test_update_chat_session_title_change_preserves_existing_history(tmp_path):
     assert result["title"] == "重命名后的会话"
     assert [msg.role for msg in messages] == ["system", "user", "assistant"]
     assert [msg.content for msg in messages] == ["old-system", "old-msg", "old-reply"]
+
+
+def test_update_chat_session_can_reset_history_and_attach_big_five_report(tmp_path):
+    engine, db = _build_test_session(tmp_path)
+    try:
+        seeded = _seed_chat_session(db, with_history=True)
+
+        result = asyncio.run(
+            update_chat_session(
+                chat_session_id=seeded.chat_session.id,
+                payload=UpdateChatSessionRequest(
+                    assessment_session_id=seeded.replacement_assessment.id,
+                    big_five_report_id=seeded.big_five_report.id,
+                    reset_history=True,
+                ),
+                db=db,
+                current_user=SimpleNamespace(id=seeded.user.id),
+            )
+        )
+
+        messages = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.chat_session_id == seeded.chat_session.id)
+            .order_by(ChatMessage.id.asc())
+            .all()
+        )
+    finally:
+        db.close()
+        engine.dispose()
+
+    assert result["assessment_session_id"] == seeded.replacement_assessment.id
+    assert result["big_five_report_id"] == seeded.big_five_report.id
+    assert [(msg.role, msg.session_id) for msg in messages] == [("system", seeded.replacement_assessment.id)]
+    assert "new report" in messages[0].content
+    assert "视频大五人格报告" in messages[0].content
+    assert "开放性: 61/100" in messages[0].content
+
+
+def test_big_five_context_prefers_ai_interpretation_when_available(tmp_path):
+    engine, db = _build_test_session(tmp_path)
+    try:
+        seeded = _seed_chat_session(db, with_history=False)
+        seeded.big_five_report.interpretation_status = "completed"
+        seeded.big_five_report.interpretation_content = "# 大五人格详细解读\n\n这是大五 AI 解读正文。"
+        db.commit()
+
+        context = get_big_five_context(seeded.big_five_report.id, db)
+    finally:
+        db.close()
+        engine.dispose()
+
+    assert "【AI 详细解读】" in context
+    assert "这是大五 AI 解读正文" in context

@@ -5,6 +5,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Tex
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.models.multimodal import BigFivePersonalityReport
 
 
 class ChatSession(Base):
@@ -15,12 +16,19 @@ class ChatSession(Base):
     assessment_session_id = Column(
         Integer, ForeignKey("assessment_sessions.id"), nullable=True, comment="关联的测评会话ID（可选）"
     )
+    big_five_report_id = Column(
+        Integer,
+        ForeignKey("big_five_personality_reports.id"),
+        nullable=True,
+        comment="关联的大五人格报告ID（可选）",
+    )
     title = Column(String(100), default="新对话", comment="会话标题")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), comment="更新时间")
 
     user = relationship("User", back_populates="chat_sessions")
     assessment_session = relationship("AssessmentSession", back_populates="chat_sessions")
+    big_five_report = relationship("BigFivePersonalityReport", back_populates="chat_sessions")
     messages = relationship("ChatMessage", back_populates="chat_session", cascade="all, delete-orphan")
 
 

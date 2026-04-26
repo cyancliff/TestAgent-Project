@@ -25,5 +25,12 @@
     "doc_description": "",
     "path": "D:\\PythonCode\\TestAgent\\PageIndex\\MinerU_markdown_ATMR_Longtext.md",
     "line_count": 2036
+  },
+  "81a0495f-e454-4ede-8c78-5753d4097168": {
+    "type": "md",
+    "doc_name": "BigFive_Personality_Knowledge",
+    "doc_description": "该文档是一个基于BFI-2和IPIP的大五人格知识库，用于RAG检索和AI生成多模态视频人格报告的详细解读、解释原则及行动建议。",
+    "path": "D:\\PythonCode\\TestAgent\\PageIndex\\BigFive_Personality_Knowledge.md",
+    "line_count": 1351
   }
 }

@@ -2,11 +2,12 @@
 
 本文档遵循 Keep a Changelog 风格，按北京时间记录关键变更。
 
-## [2026-04-25] - DeepSeek V4 调用切换与配置收口
+## [2026-04-25] - DeepSeek V4 调用切换、多模态 smoke 与文档收口
 
 ### 新增
 
 - 新增 [tests/test_deepseek_config.py](/D:/PythonCode/TestAgent/tests/test_deepseek_config.py)，覆盖 DeepSeek V4 默认模型、链式覆盖和 `thinking` 模式兜底逻辑，避免后续配置回退到旧模型名。
+- 新增本轮多模态在线 smoke 归档：[smoke_result.json](/D:/PythonCode/TestAgent/reports/online_multimodal_smoke_20260425/smoke_result.json)、[smoke_summary.json](/D:/PythonCode/TestAgent/reports/online_multimodal_smoke_20260425/smoke_summary.json)，确认真实视频样本已通过 `agtn-mtl-best-lr1e4-drop02` 返回非占位 Big Five 分数。
 
 ### 变更
 
@@ -14,11 +15,15 @@
 - 将 [app/api/chat.py](/D:/PythonCode/TestAgent/app/api/chat.py)、[app/api/assessment/streaming.py](/D:/PythonCode/TestAgent/app/api/assessment/streaming.py)、[app/services/debate_manager.py](/D:/PythonCode/TestAgent/app/services/debate_manager.py) 和 [app/services/rag_service.py](/D:/PythonCode/TestAgent/app/services/rag_service.py) 中散落的 `deepseek-chat`、`https://api.deepseek.com/v1` 调用改为统一读取配置，彻底切到 DeepSeek V4 调用入口。
 - 调整 [app/services/rag_service.py](/D:/PythonCode/TestAgent/app/services/rag_service.py) 的 PageIndex 模型映射逻辑，使检索和回答链路也同步跟随 DeepSeek V4 配置，不再出现“表面切换、底层仍旧模型”的不一致。
 - 更新 [.env.example](/D:/PythonCode/TestAgent/.env.example)，补齐 DeepSeek V4 的默认环境变量和说明，后续如需将报告/辩论单独切到 `deepseek-v4-pro`，仅需修改环境变量即可。
+- 调整 [multimodal_personality/feature_extractors/clip_extractor.py](/D:/PythonCode/TestAgent/multimodal_personality/feature_extractors/clip_extractor.py)，加载 CLIP 时优先使用本地 Hugging Face 缓存，缺缓存时再走正常下载，避免在线 smoke 因网络解析失败而回退到占位分数。
+- 同步更新 [README.md](/D:/PythonCode/TestAgent/README.md)、[docs/DEPLOY.md](/D:/PythonCode/TestAgent/docs/DEPLOY.md)、[docs/待完成任务.md](/D:/PythonCode/TestAgent/docs/待完成任务.md)、[docs/毕设开发目标和进度.md](/D:/PythonCode/TestAgent/docs/毕设开发目标和进度.md)、[docs/开发者日志.md](/D:/PythonCode/TestAgent/docs/开发者日志.md)、[docs/多模态论文研究与复现成果汇报.md](/D:/PythonCode/TestAgent/docs/多模态论文研究与复现成果汇报.md) 和 [multimodal_personality/README.md](/D:/PythonCode/TestAgent/multimodal_personality/README.md)，将当前口径统一为“真实 checkpoint 已接入并通过 smoke，下一步接报告页和补论文指标”。
 
 ### 测试
 
 - 执行 `python -m pytest -q`，结果为 `74 passed, 3 warnings`。
 - 执行 `python -m pytest -q tests/test_deepseek_config.py tests/test_rag_service.py tests/test_chat_api.py`，结果为 `9 passed, 1 warning`。
+- 执行 `python -m pytest -q tests/test_multimodal_feature_extractors.py tests/test_multimodal_models.py tests/test_multimodal_service.py tests/test_multimodal_training_pipeline.py`，结果为 `9 passed`。
+- 执行多模态在线真实推理 smoke，结果 `passed=true`，模型版本为 `agtn-mtl-best-lr1e4-drop02`。
 
 ## [2026-04-24] - 切换多模态最佳模型并完成在线验证
 ### 变更

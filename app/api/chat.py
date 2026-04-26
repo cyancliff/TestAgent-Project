@@ -22,13 +22,22 @@ from app.core.database import SessionLocal, get_db
 from app.core.security import get_current_user
 from app.models.assessment import AnswerRecord, AssessmentSession, Question
 from app.models.chat import ChatSession, ChatMessage as ChatMessageModel
+from app.models.multimodal import BigFivePersonalityReport
 from app.models.user import User
 from app.services.scoring import calculate_weight_bonus, clamp_score
-from app.services.rag_service import retrieve_knowledge
+from app.services.rag_service import retrieve_big_five_knowledge, retrieve_knowledge
 
 router = APIRouter()
 
 # LLM API 配置
+
+BIG_FIVE_DIMENSIONS = [
+    ("openness", "开放性"),
+    ("conscientiousness", "尽责性"),
+    ("extraversion", "外向性"),
+    ("agreeableness", "宜人性"),
+    ("neuroticism", "神经质"),
+]
 
 
 # --- Schema ---
@@ -40,11 +49,14 @@ class ChatMessageSchema(BaseModel):
 
 class CreateChatSessionRequest(BaseModel):
     assessment_session_id: int | None = None
+    big_five_report_id: int | None = None
     title: str | None = None
 
 
 class UpdateChatSessionRequest(BaseModel):
     assessment_session_id: int | None = None
+    big_five_report_id: int | None = None
+    reset_history: bool = False
     title: str | None = None
 
 
@@ -72,10 +84,33 @@ def build_assessment_title(assessment_session: AssessmentSession | None) -> str:
     return "未命名测评"
 
 
-def build_default_chat_title(assessment_session: AssessmentSession | None) -> str:
-    if assessment_session is None:
-        return "新对话"
-    return f"{build_assessment_title(assessment_session)} 咨询"
+def build_big_five_report_title(report: BigFivePersonalityReport | None) -> str:
+    if report is None:
+        return "未命名大五报告"
+
+    title = (report.title or "").strip()
+    if title:
+        return title
+
+    if report.original_filename:
+        return f"{report.original_filename} 大五报告"
+
+    if report.id is not None:
+        return f"大五报告 #{report.id}"
+    return "未命名大五报告"
+
+
+def build_default_chat_title(
+    assessment_session: AssessmentSession | None,
+    big_five_report: BigFivePersonalityReport | None = None,
+) -> str:
+    if assessment_session is not None and big_five_report is not None:
+        return f"{build_assessment_title(assessment_session)} + 大五报告咨询"
+    if assessment_session is not None:
+        return f"{build_assessment_title(assessment_session)} 咨询"
+    if big_five_report is not None:
+        return f"{build_big_five_report_title(big_five_report)} 咨询"
+    return "新对话"
 
 
 def get_assessment_dominant_dimension(db: Session, assessment_session_id: int | None) -> dict | None:
@@ -137,6 +172,28 @@ def serialize_assessment_info(assessment_session: AssessmentSession | None, db: 
     return info
 
 
+def serialize_big_five_report_info(report: BigFivePersonalityReport | None) -> dict | None:
+    if report is None:
+        return None
+
+    return {
+        "report_id": report.id,
+        "title": build_big_five_report_title(report),
+        "status": report.status,
+        "created_at": report.created_at.isoformat() if report.created_at else None,
+        "completed_at": report.completed_at.isoformat() if report.completed_at else None,
+        "model_version": report.model_version,
+        "scores": report.scores,
+        "is_real_result": bool(report.is_real_result),
+        "interpretation_status": report.interpretation_status,
+        "has_interpretation": bool(report.interpretation_content),
+    }
+
+
+def is_big_five_report_usable(report: BigFivePersonalityReport | None) -> bool:
+    return bool(report and report.status == "completed" and report.is_real_result and report.scores)
+
+
 def is_auto_generated_chat_title(chat_session: ChatSession) -> bool:
     normalized_title = (chat_session.title or "").strip()
     if not normalized_title:
@@ -146,8 +203,11 @@ def is_auto_generated_chat_title(chat_session: ChatSession) -> bool:
     if chat_session.assessment_session_id:
         candidate_titles.add(f"测评 #{chat_session.assessment_session_id} 咨询")
     if chat_session.assessment_session is not None:
-        candidate_titles.add(build_default_chat_title(chat_session.assessment_session))
+        candidate_titles.add(build_default_chat_title(chat_session.assessment_session, chat_session.big_five_report))
         candidate_titles.add(build_assessment_title(chat_session.assessment_session))
+    if chat_session.big_five_report is not None:
+        candidate_titles.add(build_default_chat_title(chat_session.assessment_session, chat_session.big_five_report))
+        candidate_titles.add(build_big_five_report_title(chat_session.big_five_report))
     return normalized_title in candidate_titles
 
 
@@ -267,18 +327,55 @@ def get_assessment_context(assessment_session_id: int, db: Session) -> str:
     return context
 
 
-def build_system_prompt(assessment_context: str = "") -> str:
-    """构建系统提示词"""
-    if assessment_context:
-        return f"""你是一位专业的心理咨询师和心理分析专家。你已经完成了对以下用户的心理测评分析，现在需要基于测评结果与用户进行深入的对话交流。
+def _format_big_five_score(value) -> str:
+    try:
+        return f"{float(value) * 100:.0f}/100"
+    except (TypeError, ValueError):
+        return "暂无"
 
-{assessment_context}
+
+def get_big_five_context(big_five_report_id: int, db: Session) -> str:
+    """获取大五人格报告作为视频多模态上下文。"""
+    report = db.query(BigFivePersonalityReport).filter(BigFivePersonalityReport.id == big_five_report_id).first()
+    if not is_big_five_report_usable(report):
+        return ""
+
+    scores = report.scores or {}
+    lines = [
+        "【视频大五人格报告】",
+        f"报告名称：{build_big_five_report_title(report)}",
+        f"模型版本：{report.model_version}",
+        "五维得分（0-100）：",
+    ]
+    for key, label in BIG_FIVE_DIMENSIONS:
+        lines.append(f"- {label}: {_format_big_five_score(scores.get(key))}")
+    if report.interpretation_status == "completed" and report.interpretation_content:
+        interpretation = extract_text_only_report_content(report.interpretation_content)
+        lines.extend(
+            [
+                "",
+                "【AI 详细解读】",
+                interpretation[:6000],
+            ]
+        )
+    lines.append("说明：该报告来自用户上传视频的多模态分析，可作为人格线索，不应被当作医学诊断或唯一判断依据。")
+    return "\n".join(lines)
+
+
+def build_system_prompt(assessment_context: str = "", big_five_context: str = "") -> str:
+    """构建系统提示词"""
+    context_blocks = [block for block in [assessment_context, big_five_context] if block]
+    if context_blocks:
+        return f"""你是一位专业的心理咨询师和心理分析专家。用户授权关联了以下报告资料，现在需要基于这些资料与用户进行深入的对话交流。
+
+{chr(10).join(context_blocks)}
 
 你的职责：
-1. 根据测评结果，解答用户关于自己心理状态的疑问
+1. 根据已关联报告，解答用户关于自己心理状态和人格特征的疑问
 2. 提供个性化的心理改善建议
 3. 以专业、温暖、支持性的态度与用户交流
-4. 如果用户的问题超出测评范围，可以基于心理学常识回答，但要说明这是通用建议
+4. 区分 ATMR 问卷报告与视频大五人格报告的来源和边界，不把两者强行合并成单一结论
+5. 如果用户的问题超出报告范围，可以基于心理学常识回答，但要说明这是通用建议
 
 请用中文回复，语气要专业且富有同理心。"""
     else:
@@ -308,6 +405,36 @@ def ensure_chat_session_owner(db: Session, chat_session_id: int, user_id: int) -
     return chat_session
 
 
+def ensure_assessment_owner(db: Session, assessment_session_id: int, user_id: int) -> AssessmentSession:
+    assessment = (
+        db.query(AssessmentSession)
+        .filter(
+            AssessmentSession.id == assessment_session_id,
+            AssessmentSession.user_id == user_id,
+        )
+        .first()
+    )
+    if not assessment:
+        raise HTTPException(status_code=404, detail="测评会话不存在")
+    return assessment
+
+
+def ensure_big_five_report_owner(db: Session, report_id: int, user_id: int) -> BigFivePersonalityReport:
+    report = (
+        db.query(BigFivePersonalityReport)
+        .filter(
+            BigFivePersonalityReport.id == report_id,
+            BigFivePersonalityReport.user_id == user_id,
+        )
+        .first()
+    )
+    if not report:
+        raise HTTPException(status_code=404, detail="大五人格报告不存在")
+    if not is_big_five_report_usable(report):
+        raise HTTPException(status_code=400, detail="这份大五人格报告暂时不能用于对话")
+    return report
+
+
 def init_chat_with_context(
     db: Session,
     chat_session: ChatSession,
@@ -322,8 +449,11 @@ def init_chat_with_context(
     assessment_context = ""
     if chat_session.assessment_session_id:
         assessment_context = get_assessment_context(chat_session.assessment_session_id, db)
+    big_five_context = ""
+    if chat_session.big_five_report_id:
+        big_five_context = get_big_five_context(chat_session.big_five_report_id, db)
 
-    system_prompt = build_system_prompt(assessment_context)
+    system_prompt = build_system_prompt(assessment_context, big_five_context)
     append_chat_message(
         db,
         chat_session.id,
@@ -420,11 +550,39 @@ async def prepare_chat_messages(
     if not all_msgs:
         init_chat_with_context(db, chat_session, user_id)
 
-    rag_context = ""
-    try:
-        rag_context = await retrieve_knowledge(message_text, max_sections=3, max_chars=2000)
-    except Exception as e:
-        print(f"[Chat] RAG 检索失败: {e}")
+    rag_contexts: list[dict] = []
+    if chat_session.assessment_session_id:
+        try:
+            atmr_rag_context = await retrieve_knowledge(message_text, max_sections=3, max_chars=2000)
+            if atmr_rag_context:
+                rag_contexts.append(
+                    {
+                        "title": "ATMR 知识库参考资料",
+                        "content": (
+                            "以下是与用户问题相关的 ATMR 心理学专业知识，"
+                            f"请结合这些资料回答用户问题，并在适当时引用理论依据：\n\n{atmr_rag_context}"
+                        ),
+                    }
+                )
+        except Exception as e:
+            print(f"[Chat] ATMR RAG 检索失败: {e}")
+
+    if chat_session.big_five_report_id:
+        try:
+            big_five_rag_context = await retrieve_big_five_knowledge(message_text, max_sections=3, max_chars=2000)
+            if big_five_rag_context:
+                rag_contexts.append(
+                    {
+                        "title": "大五人格知识库参考资料",
+                        "content": (
+                            "以下是与用户问题相关的大五人格知识库资料。"
+                            "请把它作为视频大五报告的解释辅助，不要替代用户真实经历：\n\n"
+                            f"{big_five_rag_context}"
+                        ),
+                    }
+                )
+        except Exception as e:
+            print(f"[Chat] 大五 RAG 检索失败: {e}")
 
     append_chat_message(
         db,
@@ -444,14 +602,11 @@ async def prepare_chat_messages(
 
     persisted = serialize_messages(get_chat_messages(db, chat_session.id, include_system=True), include_system=True)
     llm_messages = list(persisted)
-    if rag_context:
+    for context in rag_contexts:
         llm_messages.append(
             {
                 "role": "system",
-                "content": (
-                    "【ATMR 知识库参考资料】以下是与用户问题相关的 ATMR 心理学专业知识，"
-                    f"请结合这些资料回答用户问题，并在适当时引用理论依据：\n\n{rag_context}"
-                ),
+                "content": f"【{context['title']}】{context['content']}",
             }
         )
     return llm_messages
@@ -498,13 +653,16 @@ async def list_chat_sessions(db: Session = Depends(get_db), current_user: User =
 
         # 获取关联测评的简要信息
         assessment_info = serialize_assessment_info(s.assessment_session, db) if s.assessment_session_id else None
+        big_five_report_info = serialize_big_five_report_info(s.big_five_report) if s.big_five_report_id else None
 
         result.append(
             {
                 "id": s.id,
                 "title": s.title,
                 "assessment_session_id": s.assessment_session_id,
+                "big_five_report_id": s.big_five_report_id,
                 "assessment_info": assessment_info,
+                "big_five_report_info": big_five_report_info,
                 "message_count": msg_count,
                 "last_message": last_msg.content[:50] if last_msg else None,
                 "last_message_role": last_msg.role if last_msg else None,
@@ -524,26 +682,22 @@ async def create_chat_session(
 ):
     """创建新咨询会话"""
     assessment = None
+    big_five_report = None
     # 如果指定了关联测评，校验归属
     if payload.assessment_session_id:
-        assessment = (
-            db.query(AssessmentSession)
-            .filter(
-                AssessmentSession.id == payload.assessment_session_id,
-                AssessmentSession.user_id == current_user.id,
-            )
-            .first()
-        )
-        if not assessment:
-            raise HTTPException(status_code=404, detail="测评会话不存在")
+        assessment = ensure_assessment_owner(db, payload.assessment_session_id, current_user.id)
+
+    if payload.big_five_report_id:
+        big_five_report = ensure_big_five_report_owner(db, payload.big_five_report_id, current_user.id)
 
     title = payload.title or "新对话"
-    if not payload.title and assessment is not None:
-        title = build_default_chat_title(assessment)
+    if not payload.title and (assessment is not None or big_five_report is not None):
+        title = build_default_chat_title(assessment, big_five_report)
 
     chat_session = ChatSession(
         user_id=current_user.id,
-        assessment_session_id=payload.assessment_session_id,
+        assessment_session_id=payload.assessment_session_id if payload.assessment_session_id and payload.assessment_session_id > 0 else None,
+        big_five_report_id=payload.big_five_report_id if payload.big_five_report_id and payload.big_five_report_id > 0 else None,
         title=title,
     )
     db.add(chat_session)
@@ -554,7 +708,9 @@ async def create_chat_session(
         "id": chat_session.id,
         "title": chat_session.title,
         "assessment_session_id": chat_session.assessment_session_id,
+        "big_five_report_id": chat_session.big_five_report_id,
         "assessment_info": serialize_assessment_info(assessment, db),
+        "big_five_report_info": serialize_big_five_report_info(big_five_report),
     }
 
 
@@ -565,60 +721,74 @@ async def update_chat_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """修改咨询会话（切换关联测评、修改标题）"""
+    """修改咨询会话（切换关联报告、修改标题）"""
     chat_session = ensure_chat_session_owner(db, chat_session_id, current_user.id)
     should_refresh_default_title = False
 
-    # 检查关联测评是否变化
     assessment_changed = False
+    big_five_changed = False
+    next_assessment = chat_session.assessment_session
+    next_big_five_report = chat_session.big_five_report
+
     if payload.assessment_session_id is not None:
-        if payload.assessment_session_id != chat_session.assessment_session_id:
-            should_refresh_default_title = is_auto_generated_chat_title(chat_session)
-            if chat_session_has_visible_history(db, chat_session.id):
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "chat_session_has_history",
-                        "message": "当前会话已经有历史消息，切换关联测评时请自动创建新会话。",
-                        "create_new_session": True,
-                    },
-                )
-            # 校验新测评归属
-            if payload.assessment_session_id > 0:
-                assessment = (
-                    db.query(AssessmentSession)
-                    .filter(
-                        AssessmentSession.id == payload.assessment_session_id,
-                        AssessmentSession.user_id == current_user.id,
-                    )
-                    .first()
-                )
-                if not assessment:
-                    raise HTTPException(status_code=404, detail="测评会话不存在")
-                chat_session.assessment_session_id = payload.assessment_session_id
-                chat_session.assessment_session = assessment
-            else:
-                # 传 0 或负数表示取消关联
-                chat_session.assessment_session_id = None
-                chat_session.assessment_session = None
+        next_assessment_id = payload.assessment_session_id if payload.assessment_session_id > 0 else None
+        if next_assessment_id != chat_session.assessment_session_id:
             assessment_changed = True
+            should_refresh_default_title = is_auto_generated_chat_title(chat_session)
+            next_assessment = (
+                ensure_assessment_owner(db, next_assessment_id, current_user.id)
+                if next_assessment_id is not None
+                else None
+            )
+
+    if payload.big_five_report_id is not None:
+        next_report_id = payload.big_five_report_id if payload.big_five_report_id > 0 else None
+        if next_report_id != chat_session.big_five_report_id:
+            big_five_changed = True
+            should_refresh_default_title = should_refresh_default_title or is_auto_generated_chat_title(chat_session)
+            next_big_five_report = (
+                ensure_big_five_report_owner(db, next_report_id, current_user.id)
+                if next_report_id is not None
+                else None
+            )
+
+    association_changed = assessment_changed or big_five_changed
+    if association_changed and chat_session_has_visible_history(db, chat_session.id) and not payload.reset_history:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "chat_session_has_history",
+                "message": "当前会话已经有历史消息，切换关联报告需要重置当前对话。",
+                "reset_required": True,
+            },
+        )
+
+    if assessment_changed:
+        chat_session.assessment_session_id = next_assessment.id if next_assessment is not None else None
+        chat_session.assessment_session = next_assessment
+
+    if big_five_changed:
+        chat_session.big_five_report_id = next_big_five_report.id if next_big_five_report is not None else None
+        chat_session.big_five_report = next_big_five_report
 
     if payload.title is not None:
         chat_session.title = payload.title
-    elif assessment_changed and should_refresh_default_title:
-        chat_session.title = build_default_chat_title(chat_session.assessment_session)
+    elif association_changed and should_refresh_default_title:
+        chat_session.title = build_default_chat_title(chat_session.assessment_session, chat_session.big_five_report)
 
     db.commit()
 
-    # 关联测评变化时，重新初始化系统上下文
-    if assessment_changed:
-        init_chat_with_context(db, chat_session, current_user.id, reset_history=True)
+    if association_changed:
+        init_chat_with_context(db, chat_session, current_user.id, reset_history=payload.reset_history)
+        db.refresh(chat_session)
 
     return {
         "id": chat_session.id,
         "title": chat_session.title,
         "assessment_session_id": chat_session.assessment_session_id,
+        "big_five_report_id": chat_session.big_five_report_id,
         "assessment_info": serialize_assessment_info(chat_session.assessment_session, db),
+        "big_five_report_info": serialize_big_five_report_info(chat_session.big_five_report),
     }
 
 
@@ -647,7 +817,9 @@ async def get_messages(
     return {
         "messages": serialize_messages(get_chat_messages(db, chat_session_id, include_system=False)),
         "assessment_session_id": chat_session.assessment_session_id,
+        "big_five_report_id": chat_session.big_five_report_id,
         "assessment_info": serialize_assessment_info(chat_session.assessment_session, db),
+        "big_five_report_info": serialize_big_five_report_info(chat_session.big_five_report),
         "title": chat_session.title,
     }
 
@@ -773,4 +945,37 @@ async def get_available_assessments(db: Session = Depends(get_db), current_user:
             serialize_assessment_info(s, db)
             for s in sessions
         ]
+    }
+
+
+@router.get("/available-reports")
+async def get_available_reports(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """获取对话可关联的 ATMR 报告和大五人格报告。"""
+    sessions = (
+        db.query(AssessmentSession)
+        .filter(
+            AssessmentSession.user_id == current_user.id,
+            AssessmentSession.status == "completed",
+        )
+        .order_by(AssessmentSession.started_at.desc())
+        .all()
+    )
+    big_five_reports = (
+        db.query(BigFivePersonalityReport)
+        .filter(
+            BigFivePersonalityReport.user_id == current_user.id,
+            BigFivePersonalityReport.status == "completed",
+            BigFivePersonalityReport.is_real_result.is_(True),
+        )
+        .order_by(BigFivePersonalityReport.created_at.desc())
+        .all()
+    )
+
+    return {
+        "atmr_reports": [serialize_assessment_info(session, db) for session in sessions],
+        "big_five_reports": [
+            serialize_big_five_report_info(report)
+            for report in big_five_reports
+            if report.scores
+        ],
     }

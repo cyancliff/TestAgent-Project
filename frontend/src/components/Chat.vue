@@ -15,7 +15,7 @@
       <button class="chat-new-button" type="button" @click="createNewSession">+ 新建对话</button>
 
       <div class="chat-assessment-panel">
-        <label class="chat-assessment-label" for="chat-assessment-select">关联测评结果</label>
+        <label class="chat-assessment-label" for="chat-assessment-select">关联 ATMR 报告</label>
         <select
           id="chat-assessment-select"
           class="chat-assessment-select"
@@ -31,7 +31,23 @@
             {{ formatAssessmentOptionLabel(assessment) }}
           </option>
         </select>
-        <p class="chat-assessment-hint">{{ currentAssessmentLabel }}</p>
+        <label class="chat-assessment-label" for="chat-big-five-select">关联大五人格报告</label>
+        <select
+          id="chat-big-five-select"
+          class="chat-assessment-select"
+          :value="currentBigFiveReportId || 0"
+          @change="changeBigFiveReport($event.target.value)"
+        >
+          <option :value="0">不关联大五人格报告</option>
+          <option
+            v-for="report in availableBigFiveReports"
+            :key="report.report_id"
+            :value="report.report_id"
+          >
+            {{ formatBigFiveOptionLabel(report) }}
+          </option>
+        </select>
+        <p class="chat-assessment-hint">{{ currentContextLabel }}</p>
       </div>
 
       <div class="chat-sidebar-section">
@@ -45,7 +61,7 @@
             <button class="chat-session-main" type="button" @click="switchSession(session.id)">
               <span class="chat-session-item-title">{{ session.title || '新对话' }}</span>
               <span class="chat-session-item-meta">
-                {{ session.assessment_info?.title || (session.assessment_session_id ? '已关联测评' : '未关联测评') }}
+                {{ formatSessionReportMeta(session) }}
                 · {{ session.message_count }} 条消息
               </span>
             </button>
@@ -143,7 +159,7 @@
           </section>
 
           <section v-else-if="!messages.length" class="chat-landing chat-landing--session">
-            <div class="chat-landing-badge">{{ currentAssessmentLabel }}</div>
+            <div class="chat-landing-badge">{{ currentContextLabel }}</div>
             <h2>{{ activeSessionTitle }}</h2>
             <p>输入你的第一个问题，或先从下面的快捷提问开始。</p>
 
@@ -244,6 +260,7 @@ import api from '../api'
 import { buildApiUrl, resolveBackendUrl } from '../config'
 import atmrLogo from '../assets/atmr-logo.png'
 import { showAlertDialog, showConfirmDialog, showPromptDialog } from '../composables/useAppDialog'
+import { formatApiMonthDay } from '../utils/dateTime'
 import { renderSafeMarkdown } from '../utils/markdown'
 
 const route = useRoute()
@@ -262,7 +279,10 @@ const chatSessions = ref([])
 const activeChatId = ref(null)
 const currentAssessmentId = ref(null)
 const currentAssessmentInfo = ref(null)
+const currentBigFiveReportId = ref(null)
+const currentBigFiveReportInfo = ref(null)
 const availableAssessments = ref([])
+const availableBigFiveReports = ref([])
 const messages = ref([])
 const inputMessage = ref('')
 const loadingMessages = ref(false)
@@ -324,12 +344,29 @@ const lookupAssessmentById = (assessmentId) => {
     || null
   )
 }
+const lookupBigFiveReportById = (reportId) => {
+  const normalizedId = Number(reportId) || 0
+  if (!normalizedId) return null
+
+  return (
+    availableBigFiveReports.value.find((report) => report.report_id === normalizedId)
+    || (currentSession.value?.big_five_report_info?.report_id === normalizedId ? currentSession.value.big_five_report_info : null)
+    || (currentBigFiveReportInfo.value?.report_id === normalizedId ? currentBigFiveReportInfo.value : null)
+    || null
+  )
+}
 const getAssessmentDisplayName = (assessment) => {
   if (!assessment) return ''
   const title = String(assessment.title || '').trim()
   return title || (assessment.session_id ? `测评 #${assessment.session_id}` : '未命名测评')
 }
+const getBigFiveDisplayName = (report) => {
+  if (!report) return ''
+  const title = String(report.title || '').trim()
+  return title || (report.report_id ? `大五人格报告 #${report.report_id}` : '未命名大五人格报告')
+}
 const currentAssessment = computed(() => lookupAssessmentById(currentAssessmentId.value))
+const currentBigFiveReport = computed(() => lookupBigFiveReportById(currentBigFiveReportId.value))
 const getDominantDimensionKey = (assessment) => String(assessment?.dominant_dimension?.key || '').toUpperCase()
 const getDominantDimensionLabel = (assessment) => String(assessment?.dominant_dimension?.label || '').trim()
 const buildDominantStarterPrompts = (assessment) => {
@@ -386,26 +423,40 @@ const currentAssessmentLabel = computed(() => (
       ? `首条消息将关联「${getAssessmentDisplayName(currentAssessment.value)}」`
       : '发送首条消息后自动创建对话'
     : currentAssessmentId.value
-    ? `已关联「${getAssessmentDisplayName(currentAssessment.value)}」，切换测评会自动新建会话`
+    ? `ATMR：${getAssessmentDisplayName(currentAssessment.value)}`
     : '未关联测评'
 ))
+const currentBigFiveLabel = computed(() => (
+  currentBigFiveReportId.value
+    ? `大五：${getBigFiveDisplayName(currentBigFiveReport.value)}`
+    : '未关联大五人格报告'
+))
+const currentContextLabel = computed(() => {
+  if (!activeChatId.value && !currentAssessmentId.value && !currentBigFiveReportId.value) {
+    return '发送首条消息后自动创建对话'
+  }
+  const labels = []
+  if (currentAssessmentId.value) labels.push(`ATMR：${getAssessmentDisplayName(currentAssessment.value)}`)
+  if (currentBigFiveReportId.value) labels.push(`大五：${getBigFiveDisplayName(currentBigFiveReport.value)}`)
+  return labels.length ? labels.join(' · ') : '未关联报告'
+})
 const activeSessionTitle = computed(() => {
   if (!activeChatId.value) return 'ATMR AI 心理顾问'
   return currentSession.value?.title || `咨询会话 #${activeChatId.value}`
 })
 const activeSessionDescription = computed(() => {
   if (!activeChatId.value) {
-    return currentAssessmentId.value
-      ? `发送第一条消息后会自动创建对话，并关联「${getAssessmentDisplayName(currentAssessment.value)}」`
+    return currentAssessmentId.value || currentBigFiveReportId.value
+      ? `发送第一条消息后会自动创建对话，并关联：${currentContextLabel.value}`
       : '围绕测评结果、情绪压力和行动建议继续追问'
   }
 
   const messageCount = messages.value.length || currentSession.value?.message_count || 0
   const dominantLabel = getDominantDimensionLabel(currentAssessment.value || currentSession.value?.assessment_info)
   if (dominantLabel) {
-    return `${currentAssessmentLabel.value} · 当前主导维度：${dominantLabel} · ${messageCount} 条消息`
+    return `${currentContextLabel.value} · 当前主导维度：${dominantLabel} · ${messageCount} 条消息`
   }
-  return `${currentAssessmentLabel.value} · ${messageCount} 条消息`
+  return `${currentContextLabel.value} · ${messageCount} 条消息`
 })
 
 const syncLocalUser = () => {
@@ -419,7 +470,9 @@ const fetchSessions = async () => {
     const res = await api.get('/chat/sessions')
     chatSessions.value = res.data.sessions
     if (activeChatId.value) {
-      currentAssessmentInfo.value = chatSessions.value.find((session) => session.id === activeChatId.value)?.assessment_info || currentAssessmentInfo.value
+      const activeSession = chatSessions.value.find((session) => session.id === activeChatId.value)
+      currentAssessmentInfo.value = activeSession?.assessment_info || currentAssessmentInfo.value
+      currentBigFiveReportInfo.value = activeSession?.big_five_report_info || currentBigFiveReportInfo.value
     }
   } catch (err) {
     console.error('获取咨询会话失败:', err)
@@ -428,25 +481,38 @@ const fetchSessions = async () => {
 
 const fetchAssessments = async () => {
   try {
-    const res = await api.get('/chat/available-assessments')
-    availableAssessments.value = res.data.assessments
+    const res = await api.get('/chat/available-reports')
+    availableAssessments.value = res.data.atmr_reports || []
+    availableBigFiveReports.value = res.data.big_five_reports || []
   } catch (err) {
-    console.error('获取测评列表失败:', err)
+    console.error('获取可关联报告失败:', err)
+    try {
+      const fallback = await api.get('/chat/available-assessments')
+      availableAssessments.value = fallback.data.assessments || []
+      availableBigFiveReports.value = []
+    } catch (fallbackErr) {
+      console.error('获取测评列表失败:', fallbackErr)
+    }
   }
 }
 
 let skipNextRouteLoadChatId = null
 
-const createPersistedSession = async (assessmentSessionId = null) => {
+const createPersistedSession = async (assessmentSessionId = null, bigFiveReportId = null) => {
   try {
     const payload = {}
     if (assessmentSessionId && typeof assessmentSessionId === 'number') {
       payload.assessment_session_id = assessmentSessionId
     }
+    if (bigFiveReportId && typeof bigFiveReportId === 'number') {
+      payload.big_five_report_id = bigFiveReportId
+    }
     const res = await api.post('/chat/sessions', payload)
     activeChatId.value = res.data.id
     currentAssessmentId.value = payload.assessment_session_id || null
+    currentBigFiveReportId.value = payload.big_five_report_id || null
     currentAssessmentInfo.value = res.data.assessment_info || lookupAssessmentById(payload.assessment_session_id)
+    currentBigFiveReportInfo.value = res.data.big_five_report_info || lookupBigFiveReportById(payload.big_five_report_id)
     messages.value = []
     skipNextRouteLoadChatId = res.data.id
     await fetchSessions()
@@ -457,12 +523,14 @@ const createPersistedSession = async (assessmentSessionId = null) => {
     console.error('创建会话失败:', err)
     const detail = err.response?.data?.detail || err.message || '未知错误'
 
-    if (assessmentSessionId && typeof assessmentSessionId === 'number') {
+    if ((assessmentSessionId && typeof assessmentSessionId === 'number') || (bigFiveReportId && typeof bigFiveReportId === 'number')) {
       try {
         const fallback = await api.post('/chat/sessions', {})
         activeChatId.value = fallback.data.id
         currentAssessmentId.value = null
+        currentBigFiveReportId.value = null
         currentAssessmentInfo.value = null
+        currentBigFiveReportInfo.value = null
         messages.value = []
         skipNextRouteLoadChatId = fallback.data.id
         await fetchSessions()
@@ -485,18 +553,22 @@ const createPersistedSession = async (assessmentSessionId = null) => {
   }
 }
 
-const createNewSession = async (assessmentSessionId = null) => {
+const createNewSession = async (assessmentSessionId = null, bigFiveReportId = null) => {
   cancelActiveStream()
   closeSessionMenu()
   mobileSidebarOpen.value = false
   activeChatId.value = null
   currentAssessmentId.value = assessmentSessionId && typeof assessmentSessionId === 'number' ? assessmentSessionId : null
+  currentBigFiveReportId.value = bigFiveReportId && typeof bigFiveReportId === 'number' ? bigFiveReportId : null
   currentAssessmentInfo.value = lookupAssessmentById(currentAssessmentId.value)
+  currentBigFiveReportInfo.value = lookupBigFiveReportById(currentBigFiveReportId.value)
   messages.value = []
   inputMessage.value = ''
   resetTextarea()
 
-  const nextQuery = currentAssessmentId.value ? { assessmentSessionId: currentAssessmentId.value } : {}
+  const nextQuery = {}
+  if (currentAssessmentId.value) nextQuery.assessmentSessionId = currentAssessmentId.value
+  if (currentBigFiveReportId.value) nextQuery.bigFiveReportId = currentBigFiveReportId.value
   await router.push({ path: '/chat', query: nextQuery })
   await nextTick()
   inputRef.value?.focus()
@@ -584,7 +656,9 @@ const deleteSession = async (sessionId) => {
     if (activeChatId.value === sessionId) {
       activeChatId.value = null
       currentAssessmentId.value = null
+      currentBigFiveReportId.value = null
       currentAssessmentInfo.value = null
+      currentBigFiveReportInfo.value = null
       messages.value = []
       await router.push('/chat')
     }
@@ -602,7 +676,9 @@ const loadMessages = async (chatId) => {
     const res = await api.get(`/chat/sessions/${chatId}/messages`)
     messages.value = res.data.messages || []
     currentAssessmentId.value = res.data.assessment_session_id
+    currentBigFiveReportId.value = res.data.big_five_report_id
     currentAssessmentInfo.value = res.data.assessment_info || lookupAssessmentById(res.data.assessment_session_id)
+    currentBigFiveReportInfo.value = res.data.big_five_report_info || lookupBigFiveReportById(res.data.big_five_report_id)
   } catch (err) {
     console.error('加载消息失败:', err)
     messages.value = []
@@ -716,7 +792,7 @@ const sendMessage = async () => {
 
   let chatId = activeChatId.value
   if (!chatId) {
-    chatId = await createPersistedSession(currentAssessmentId.value)
+    chatId = await createPersistedSession(currentAssessmentId.value, currentBigFiveReportId.value)
     if (!chatId) return
   }
 
@@ -822,37 +898,64 @@ const sendMessage = async () => {
   }
 }
 
-const changeAssessment = async (value) => {
-  const newId = parseInt(value, 10) || 0
+const changeReportAssociation = async ({ assessmentId = currentAssessmentId.value || 0, bigFiveReportId = currentBigFiveReportId.value || 0 }) => {
   if (!activeChatId.value) {
-    currentAssessmentId.value = newId || null
-    currentAssessmentInfo.value = lookupAssessmentById(newId)
+    currentAssessmentId.value = assessmentId || null
+    currentBigFiveReportId.value = bigFiveReportId || null
+    currentAssessmentInfo.value = lookupAssessmentById(assessmentId)
+    currentBigFiveReportInfo.value = lookupBigFiveReportById(bigFiveReportId)
     return
   }
 
-  if ((currentAssessmentId.value || 0) === newId) {
+  if ((currentAssessmentId.value || 0) === assessmentId && (currentBigFiveReportId.value || 0) === bigFiveReportId) {
     return
   }
 
   const hasVisibleHistory = messages.value.length > 0 || Number(currentSession.value?.message_count || 0) > 0
+  let resetHistory = false
   if (hasVisibleHistory) {
-    await createPersistedSession(newId || null)
-    return
+    resetHistory = await showConfirmDialog('更换关联报告会清空当前会话里的已有消息，并用新的报告重新生成对话背景。', {
+      title: '重建对话背景',
+      confirmText: '重建',
+      cancelText: '取消',
+      destructive: true,
+    })
+    if (!resetHistory) return
   }
 
   try {
     const res = await api.put(`/chat/sessions/${activeChatId.value}`, {
-      assessment_session_id: newId,
+      assessment_session_id: assessmentId,
+      big_five_report_id: bigFiveReportId,
+      reset_history: resetHistory,
     })
-    currentAssessmentId.value = newId || null
-    currentAssessmentInfo.value = res.data?.assessment_info || lookupAssessmentById(newId)
+    currentAssessmentId.value = assessmentId || null
+    currentBigFiveReportId.value = bigFiveReportId || null
+    currentAssessmentInfo.value = res.data?.assessment_info || lookupAssessmentById(assessmentId)
+    currentBigFiveReportInfo.value = res.data?.big_five_report_info || lookupBigFiveReportById(bigFiveReportId)
     await loadMessages(activeChatId.value)
     await fetchSessions()
   } catch (err) {
-    console.error('切换关联测评失败:', err)
+    console.error('切换关联报告失败:', err)
     const detail = err.response?.data?.detail
     if (detail?.code === 'chat_session_has_history') {
-      await createPersistedSession(newId || null)
+      const shouldReset = await showConfirmDialog(detail.message || '当前会话已有消息，是否重建对话背景？', {
+        title: '重建对话背景',
+        confirmText: '重建',
+        cancelText: '取消',
+        destructive: true,
+      })
+      if (shouldReset) {
+        await api.put(`/chat/sessions/${activeChatId.value}`, {
+          assessment_session_id: assessmentId,
+          big_five_report_id: bigFiveReportId,
+          reset_history: true,
+        })
+        currentAssessmentId.value = assessmentId || null
+        currentBigFiveReportId.value = bigFiveReportId || null
+        await loadMessages(activeChatId.value)
+        await fetchSessions()
+      }
       return
     }
     await showAlertDialog('切换失败', {
@@ -860,6 +963,16 @@ const changeAssessment = async (value) => {
       destructive: true,
     })
   }
+}
+
+const changeAssessment = async (value) => {
+  const newId = parseInt(value, 10) || 0
+  await changeReportAssociation({ assessmentId: newId, bigFiveReportId: currentBigFiveReportId.value || 0 })
+}
+
+const changeBigFiveReport = async (value) => {
+  const newId = parseInt(value, 10) || 0
+  await changeReportAssociation({ assessmentId: currentAssessmentId.value || 0, bigFiveReportId: newId })
 }
 
 const sanitizeRenderedMarkdown = (html) => {
@@ -913,8 +1026,7 @@ const formatMessage = (text) => {
 const renderChatMessage = (text) => renderSafeMarkdown(text)
 
 const formatDate = (isoStr) => {
-  if (!isoStr) return ''
-  return new Date(isoStr).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+  return formatApiMonthDay(isoStr)
 }
 
 const formatAssessmentOptionLabel = (assessment) => {
@@ -922,6 +1034,21 @@ const formatAssessmentOptionLabel = (assessment) => {
   const dateLabel = formatDate(assessment.started_at)
   const suffix = assessment.has_report ? '' : ' [无报告]'
   return dateLabel ? `${title} · ${dateLabel}${suffix}` : `${title}${suffix}`
+}
+
+const formatBigFiveOptionLabel = (report) => {
+  const title = getBigFiveDisplayName(report)
+  const dateLabel = formatDate(report.created_at)
+  return dateLabel ? `${title} · ${dateLabel}` : title
+}
+
+const formatSessionReportMeta = (session) => {
+  const labels = []
+  if (session.assessment_info) labels.push(`ATMR：${session.assessment_info.title}`)
+  else if (session.assessment_session_id) labels.push('ATMR：已关联')
+  if (session.big_five_report_info) labels.push(`大五：${session.big_five_report_info.title}`)
+  else if (session.big_five_report_id) labels.push('大五：已关联')
+  return labels.length ? labels.join(' · ') : '未关联报告'
 }
 
 const autoResize = () => {
@@ -980,7 +1107,9 @@ watch(
     } else {
       activeChatId.value = null
       currentAssessmentId.value = parseInt(route.query.assessmentSessionId, 10) || null
+      currentBigFiveReportId.value = parseInt(route.query.bigFiveReportId, 10) || null
       currentAssessmentInfo.value = lookupAssessmentById(currentAssessmentId.value)
+      currentBigFiveReportInfo.value = lookupBigFiveReportById(currentBigFiveReportId.value)
       messages.value = []
     }
   },

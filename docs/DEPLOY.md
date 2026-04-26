@@ -1,6 +1,6 @@
 # TestAgent 部署与运行说明
 
-更新时间：2026-04-20
+更新时间：2026-04-25
 
 这份文档专门解决一件事：把“在线 Web 服务部署”和“离线多模态训练/推理”彻底分开讲清楚。
 
@@ -29,9 +29,9 @@
 
 ### 当前最重要的现实限制
 
-- 在线接口里的多模态服务目前仍是 `scaffold-v1`，还没有接入真实 checkpoint。
-- 因此，哪怕你把 Web 服务部署起来，在线 `run` 接口也还不是论文级真实模型结果。
-- 真实多模态结果目前以离线运行和本地产物为主。
+- 本地多模态环境已经可以使用真实 checkpoint 完成在线 service 推理，当前默认模型为 `agtn-mtl-best-lr1e4-drop02`。
+- 真实推理依赖 `ffmpeg / whisper / torch / transformers / PIL / wav2clip / librosa` 和本地 checkpoint，不等同于轻量 Web 部署环境。
+- 如果在线部署环境没有安装多模态依赖或没有挂载 checkpoint，服务仍会通过回退机制返回占位分数；演示真实多模态结果时应使用已验证的本地 GPU 环境。
 
 ## 2. 在线主系统部署
 
@@ -125,7 +125,7 @@ docker compose up -d --build backend frontend
 
 ### 3.2 当前已经验证过的本地环境
 
-截至 2026-04-20，本仓库已经在下面这套环境上验证通过：
+截至 2026-04-25，本仓库已经在下面这套环境上验证通过：
 
 - Windows + PowerShell
 - Python `3.14`
@@ -198,11 +198,15 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 默认输出目录：
 
 - `reports/full_multimodal_pipeline/`
+- `reports/night_lr1e4_drop02/`
+- `reports/online_multimodal_smoke_20260425/`
 
 重点查看：
 
 - `reports/full_multimodal_pipeline/stderr.log`
 - `reports/full_multimodal_pipeline/stdout.log`
+- `reports/night_lr1e4_drop02/test_eval.json`
+- `reports/online_multimodal_smoke_20260425/smoke_result.json`
 
 不要在任务运行时删除这些目录：
 
@@ -232,18 +236,18 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 
 1. 用 Docker 跑在线主系统
 2. 用当前前后端主流程做演示
-3. 单独展示多模态离线运行结果和日志产物
+3. 如果要演示真实多模态分数，使用本地已验证环境跑在线 service smoke 或展示 `reports/online_multimodal_smoke_20260425/smoke_result.json`
 
 ### 如果你现在要做论文实验
 
 优先做：
 
-1. 用本地 GPU 环境继续跑多模态全量 baseline
-2. 记录 `val / test` 结果
-3. 再把 checkpoint 接进在线服务
+1. 基于 `reports/night_lr1e4_drop02/` 整理当前最优全量结果
+2. 补齐 `PCC / CCC / R²` 等论文指标
+3. 继续评估 `bg_features`、多任务损失和更多随机种子的必要性
 
 ## 6. 仍需注意的事情
 
-- 在线部署成功，不代表多模态真实推理已经接入。
-- 当前多模态在线接口仍返回占位分数，这一点答辩和汇报时要说清楚。
+- 在线部署成功不代表部署环境具备完整多模态依赖；真实推理要看 `health` 中的 `model_ready` 和 `system_tools`。
+- 当前仓库已完成本地在线真实推理 smoke，归档为 `reports/online_multimodal_smoke_20260425/smoke_result.json`。
 - 真正的多模态研究结果，应以 `reports/` 目录中的训练、评估和推理产物为准。

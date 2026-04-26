@@ -69,3 +69,13 @@ async def test_llm_score_relevance_retries_once_then_succeeds(monkeypatch):
     assert scored_sections[0]["section"] == sections[0]
     assert scored_sections[0]["score"] == pytest.approx(0.91)
     assert scored_sections[0]["reason"] == "语义匹配"
+
+
+@pytest.mark.asyncio
+async def test_big_five_retrieval_uses_builtin_markdown_without_api_key(monkeypatch):
+    monkeypatch.setattr(rag_service, "get_deepseek_api_key", lambda: "")
+
+    content = await rag_service.retrieve_big_five_knowledge("开放性 高分 建议", max_sections=2, max_chars=1200)
+
+    assert "开放性" in content
+    assert "建议" in content or "成长" in content

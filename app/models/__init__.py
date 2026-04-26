@@ -14,6 +14,7 @@ from sqlalchemy import inspect, text
 from app.core.database import Base, SessionLocal, engine
 from app.models.assessment import AnswerRecord, AssessmentSession, ModuleDebateResult, Question
 from app.models.chat import ChatMessage, ChatSession
+from app.models.multimodal import BigFivePersonalityReport
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ __all__ = [
     "AssessmentSession",
     "AnswerRecord",
     "ModuleDebateResult",
+    "BigFivePersonalityReport",
     "ChatSession",
     "ChatMessage",
     "init_db",
@@ -37,6 +39,8 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_assessment_session_title_column()
     _ensure_assessment_session_revision_columns()
+    _ensure_chat_session_big_five_report_column()
+    _ensure_big_five_interpretation_columns()
     _ensure_user_nickname_column()
     from app.services.question_sanitizer import repair_question_contents
 
@@ -107,6 +111,58 @@ def _ensure_assessment_session_revision_columns() -> None:
                 "ON assessment_sessions (parent_session_id)"
             )
         )
+
+
+def _ensure_chat_session_big_five_report_column() -> None:
+    inspector = inspect(engine)
+    if "chat_sessions" not in inspector.get_table_names():
+        return
+
+    column_names = {column["name"] for column in inspector.get_columns("chat_sessions")}
+    with engine.begin() as connection:
+        if "big_five_report_id" not in column_names:
+            connection.execute(text("ALTER TABLE chat_sessions ADD COLUMN big_five_report_id INTEGER"))
+            logger.info("Added missing chat_sessions.big_five_report_id column")
+
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_chat_sessions_big_five_report_id "
+                "ON chat_sessions (big_five_report_id)"
+            )
+        )
+
+
+def _ensure_big_five_interpretation_columns() -> None:
+    inspector = inspect(engine)
+    if "big_five_personality_reports" not in inspector.get_table_names():
+        return
+
+    column_names = {column["name"] for column in inspector.get_columns("big_five_personality_reports")}
+    statements = []
+    if "interpretation_status" not in column_names:
+        statements.append(
+            "ALTER TABLE big_five_personality_reports "
+            "ADD COLUMN interpretation_status VARCHAR(20) DEFAULT 'pending' NOT NULL"
+        )
+    if "interpretation_content" not in column_names:
+        statements.append("ALTER TABLE big_five_personality_reports ADD COLUMN interpretation_content TEXT")
+    if "interpretation_file_path" not in column_names:
+        statements.append("ALTER TABLE big_five_personality_reports ADD COLUMN interpretation_file_path VARCHAR(255)")
+    if "interpretation_model" not in column_names:
+        statements.append("ALTER TABLE big_five_personality_reports ADD COLUMN interpretation_model VARCHAR(100)")
+    if "interpretation_error" not in column_names:
+        statements.append("ALTER TABLE big_five_personality_reports ADD COLUMN interpretation_error TEXT")
+    if "interpretation_created_at" not in column_names:
+        timestamp_type = "TIMESTAMP WITH TIME ZONE" if engine.dialect.name == "postgresql" else "DATETIME"
+        statements.append(f"ALTER TABLE big_five_personality_reports ADD COLUMN interpretation_created_at {timestamp_type}")
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+    logger.info("Added missing big_five_personality_reports interpretation columns")
 
 
 def _ensure_user_nickname_column() -> None:

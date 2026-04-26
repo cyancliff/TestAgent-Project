@@ -3,6 +3,7 @@ import Login from '../components/Login.vue'
 import History from '../components/History.vue'
 import Assessment from '../components/Assessment.vue'
 import Report from '../components/Report.vue'
+import BigFiveReport from '../components/BigFiveReport.vue'
 import Chat from '../components/Chat.vue'
 
 const routes = [
@@ -11,6 +12,7 @@ const routes = [
   { path: '/history', component: History },
   { path: '/assessment', component: Assessment },
   { path: '/report/:sessionId', component: Report, props: true },
+  { path: '/big-five-report/:reportId', component: BigFiveReport, props: true },
   { path: '/chat', component: Chat },
   { path: '/chat/:chatId', component: Chat, props: true },
 ]

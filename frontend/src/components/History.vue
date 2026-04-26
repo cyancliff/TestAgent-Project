@@ -5,17 +5,18 @@
         <div class="history-sidebar-home">
           <img :src="atmrLogo" class="history-sidebar-mark" alt="ATMR logo" />
           <span class="history-sidebar-copy">
-            <strong>ATMR 档案</strong>
-            <small>{{ sessions.length }} 条测评记录</small>
+            <strong>{{ currentHistoryTitle }}</strong>
+            <small>{{ currentSidebarSubtitle }}</small>
           </span>
         </div>
         <button class="history-sidebar-close" type="button" aria-label="关闭测评档案" @click="closeMobileSidebar">×</button>
       </div>
 
-      <button class="history-new-button" type="button" @click="startNewSession">{{ historyStartLabel }}</button>
+      <button v-if="isAtmrHistory" class="history-new-button" type="button" @click="startNewSession">{{ historyStartLabel }}</button>
+      <button v-else class="history-new-button" type="button" @click="openBigFiveUpload">上传大五视频</button>
 
       <div class="history-sidebar-section">
-        <div class="history-sidebar-label">测评档案</div>
+        <div class="history-sidebar-label">{{ currentSidebarLabel }}</div>
         <div class="history-session-list">
           <div v-if="loading" class="history-session-list-state">
             <div v-for="n in 3" :key="`history-loading-${n}`" class="history-session-skeleton">
@@ -23,11 +24,11 @@
               <span class="history-session-skeleton-line"></span>
             </div>
           </div>
-          <div v-else-if="sessions.length === 0" class="history-session-list-state history-session-list-state--empty">
-            <strong>{{ sidebarEmptyTitle }}</strong>
-            <span>{{ sidebarEmptyNote }}</span>
+          <div v-else-if="!hasCurrentSidebarItems" class="history-session-list-state history-session-list-state--empty">
+            <strong>{{ currentSidebarEmptyTitle }}</strong>
+            <span>{{ currentSidebarEmptyNote }}</span>
           </div>
-          <template v-else>
+          <template v-else-if="isAtmrHistory">
             <div v-if="inProgressSessions.length" class="history-session-group">
               <div class="history-session-group-label">进行中</div>
               <div
@@ -37,7 +38,7 @@
                   'history-session-item',
                   {
                     active: activeHistorySessionId === session.session_id,
-                    'history-session-item--menu-open': openSessionMenuId === session.session_id,
+                    'history-session-item--menu-open': openSessionMenuId === atmrMenuKey(session.session_id),
                   },
                 ]"
               >
@@ -50,14 +51,17 @@
                   <button
                     class="history-session-menu-trigger"
                     type="button"
-                    :aria-expanded="openSessionMenuId === session.session_id"
+                    :aria-expanded="openSessionMenuId === atmrMenuKey(session.session_id)"
                     aria-label="管理测评记录"
-                    @click.stop="toggleSessionMenu(session.session_id)"
+                    @click.stop="toggleSessionMenu(atmrMenuKey(session.session_id))"
                   >
                     ⋯
                   </button>
 
-                  <div v-if="openSessionMenuId === session.session_id" class="history-session-menu">
+                  <div v-if="openSessionMenuId === atmrMenuKey(session.session_id)" class="history-session-menu">
+                    <button class="history-session-menu-item" type="button" @click.stop="continueSession(session.session_id)">
+                      继续测评
+                    </button>
                     <button class="history-session-menu-item" type="button" @click.stop="renameSession(session)">
                       重命名
                     </button>
@@ -82,7 +86,7 @@
                   'history-session-item',
                   {
                     active: activeHistorySessionId === session.session_id,
-                    'history-session-item--menu-open': openSessionMenuId === session.session_id,
+                    'history-session-item--menu-open': openSessionMenuId === atmrMenuKey(session.session_id),
                   },
                 ]"
               >
@@ -95,14 +99,20 @@
                   <button
                     class="history-session-menu-trigger"
                     type="button"
-                    :aria-expanded="openSessionMenuId === session.session_id"
+                    :aria-expanded="openSessionMenuId === atmrMenuKey(session.session_id)"
                     aria-label="管理测评记录"
-                    @click.stop="toggleSessionMenu(session.session_id)"
+                    @click.stop="toggleSessionMenu(atmrMenuKey(session.session_id))"
                   >
                     ⋯
                   </button>
 
-                  <div v-if="openSessionMenuId === session.session_id" class="history-session-menu">
+                  <div v-if="openSessionMenuId === atmrMenuKey(session.session_id)" class="history-session-menu">
+                    <button v-if="session.has_report" class="history-session-menu-item" type="button" @click.stop="viewReport(session.session_id)">
+                      查看报告
+                    </button>
+                    <button class="history-session-menu-item" type="button" @click.stop="editAnswers(session.session_id)">
+                      修改答案
+                    </button>
                     <button class="history-session-menu-item" type="button" @click.stop="renameSession(session)">
                       重命名
                     </button>
@@ -112,6 +122,55 @@
                       @click.stop="deleteSession(session.session_id)"
                     >
                       删除记录
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+            <div class="history-session-group">
+              <div class="history-session-group-label">大五人格报告</div>
+              <div
+                v-for="report in bigFiveReports"
+                :key="`big-five-sidebar-${report.report_id}`"
+                :class="[
+                  'history-session-item',
+                  {
+                    active: activeBigFiveReportId === report.report_id,
+                    'history-session-item--menu-open': openSessionMenuId === bigFiveMenuKey(report.report_id),
+                  },
+                ]"
+              >
+                <button class="history-session-main" type="button" @click="scrollToBigFiveReport(report.report_id)">
+                  <span class="history-session-item-title">{{ displayBigFiveReportTitle(report) }}</span>
+                  <span class="history-session-item-meta">{{ formatBigFiveSidebarMeta(report) }}</span>
+                </button>
+
+                <div class="history-session-actions">
+                  <button
+                    class="history-session-menu-trigger"
+                    type="button"
+                    :aria-expanded="openSessionMenuId === bigFiveMenuKey(report.report_id)"
+                    aria-label="管理大五人格报告"
+                    @click.stop="toggleSessionMenu(bigFiveMenuKey(report.report_id))"
+                  >
+                    ⋯
+                  </button>
+
+                  <div v-if="openSessionMenuId === bigFiveMenuKey(report.report_id)" class="history-session-menu">
+                    <button class="history-session-menu-item" type="button" @click.stop="viewBigFiveReport(report.report_id)">
+                      查看报告
+                    </button>
+                    <button v-if="canRetryBigFive(report)" class="history-session-menu-item" type="button" @click.stop="retryBigFiveReport(report.report_id)">
+                      重新生成
+                    </button>
+                    <button
+                      class="history-session-menu-item history-session-menu-item--danger"
+                      type="button"
+                      @click.stop="deleteBigFiveReport(report.report_id)"
+                    >
+                      删除报告
                     </button>
                   </div>
                 </div>
@@ -145,20 +204,48 @@
               </button>
 
               <div class="history-stage-titles">
-                <h1>ATMR 档案</h1>
+                <h1>{{ currentHistoryTitle }}</h1>
               </div>
             </div>
 
-            <button class="btn-new" type="button" @click="startNewSession">
-              <span class="btn-icon">+</span>
-              <span>{{ historyStartLabel }}</span>
-            </button>
+            <div class="history-header-actions">
+              <button v-if="isBigFiveHistory" class="btn-new" type="button" @click="openBigFiveUpload">
+                <span class="btn-icon">+</span>
+                <span>上传大五视频</span>
+              </button>
+              <button v-else class="btn-new" type="button" @click="startNewSession">
+                <span class="btn-icon">+</span>
+                <span>{{ historyStartLabel }}</span>
+              </button>
+            </div>
           </header>
+          <input
+            ref="bigFiveFileInput"
+            class="history-file-input"
+            type="file"
+            accept="video/*"
+            @change="handleBigFiveUpload"
+          />
+
+          <div class="history-type-tabs" role="tablist" aria-label="历史记录类型">
+            <button
+              v-for="type in historyTypes"
+              :key="type.value"
+              :class="['history-type-tab', { active: activeHistoryType === type.value }]"
+              type="button"
+              role="tab"
+              :aria-selected="activeHistoryType === type.value"
+              @click="setHistoryType(type.value)"
+            >
+              <span>{{ type.label }}</span>
+              <strong>{{ type.count }}</strong>
+            </button>
+          </div>
 
           <section class="history-command-card">
             <div class="history-summary-grid">
               <article
-                v-for="panel in dashboardPanels"
+                v-for="panel in currentDashboardPanels"
                 :key="panel.label"
                 :class="['history-summary-card', { 'history-summary-card--recent': panel.featured }]"
               >
@@ -179,29 +266,34 @@
           <p>正在加载测评记录...</p>
         </div>
 
-        <div v-else-if="sessions.length === 0" class="history-state-card empty-state">
+        <div v-else-if="!hasCurrentHistoryItems" class="history-state-card empty-state">
           <div class="empty-circle">◎</div>
-          <h3>还没有测评记录</h3>
-          <p>完成一次测评后，这里会自动整理你的历史档案。</p>
-          <button class="btn-new btn-new-big" type="button" @click="startNewSession">
+          <h3>{{ currentEmptyTitle }}</h3>
+          <p>{{ currentEmptyNote }}</p>
+          <button v-if="isAtmrHistory" class="btn-new btn-new-big" type="button" @click="startNewSession">
             <span class="btn-icon">+</span>
             <span>{{ historyStartLabel }}</span>
+          </button>
+          <button v-else class="btn-new btn-new-big" type="button" @click="openBigFiveUpload">
+            <span class="btn-icon">+</span>
+            <span>上传大五视频</span>
           </button>
         </div>
 
         <div v-else class="history-sections">
-          <section v-if="inProgressSessions.length" class="session-section">
-            <div class="session-section-header">
-              <h2>进行中</h2>
-              <p>这些测评还没结束，可以随时继续作答。</p>
-            </div>
-            <div class="sessions-grid">
-              <article
-                v-for="session in inProgressSessions"
-                :key="session.session_id"
-                :id="`session-${session.session_id}`"
-                :class="['session-card', { 'session-card--active': activeHistorySessionId === session.session_id }]"
-              >
+          <template v-if="isAtmrHistory">
+            <section v-if="inProgressSessions.length" class="session-section">
+              <div class="session-section-header">
+                <h2>进行中</h2>
+                <p>这些测评还没结束，可以随时继续作答。</p>
+              </div>
+              <div class="sessions-grid">
+                <article
+                  v-for="session in inProgressSessions"
+                  :key="session.session_id"
+                  :id="`session-${session.session_id}`"
+                  :class="['session-card', { 'session-card--active': activeHistorySessionId === session.session_id }]"
+                >
                 <div class="card-header">
                   <div class="session-identity">
                     <div class="session-date-chip">
@@ -246,27 +338,23 @@
                     <span class="session-time-label">开始时间</span>
                     <span class="session-time">{{ formatFullDate(session.started_at) }}</span>
                   </div>
-
-                  <div class="card-actions">
-                    <button class="btn-edit" type="button" @click="continueSession(session.session_id)">继续测评</button>
-                  </div>
                 </div>
-              </article>
-            </div>
-          </section>
+                </article>
+              </div>
+            </section>
 
-          <section v-if="completedSessions.length" class="session-section">
-            <div class="session-section-header">
-              <h2>已完成</h2>
-              <p>这里会保留已经提交完成的测评档案和报告。</p>
-            </div>
-            <div class="sessions-grid">
-              <article
-                v-for="session in completedSessions"
-                :key="session.session_id"
-                :id="`session-${session.session_id}`"
-                :class="['session-card', { 'session-card--active': activeHistorySessionId === session.session_id }]"
-              >
+            <section v-if="completedSessions.length" class="session-section">
+              <div class="session-section-header">
+                <h2>已完成</h2>
+                <p>这里会保留已经提交完成的 ATMR 测评档案和报告。</p>
+              </div>
+              <div class="sessions-grid">
+                <article
+                  v-for="session in completedSessions"
+                  :key="session.session_id"
+                  :id="`session-${session.session_id}`"
+                  :class="['session-card', { 'session-card--active': activeHistorySessionId === session.session_id }]"
+                >
                 <div class="card-header">
                   <div class="session-identity">
                     <div class="session-date-chip">
@@ -318,14 +406,82 @@
                     <span class="session-time-label">测评时间</span>
                     <span class="session-time">{{ formatFullDate(session.started_at) }}</span>
                   </div>
+                </div>
+                </article>
+              </div>
+            </section>
+          </template>
 
-                  <div class="card-actions">
-                    <button v-if="session.has_report" class="btn-view" type="button" @click="viewReport(session.session_id)">查看报告</button>
-                    <span v-else-if="session.report_generating" class="btn-generating">整理中</span>
-                    <button v-if="session.status === 'completed'" class="btn-edit" type="button" @click="editAnswers(session.session_id)">修改答案</button>
+          <section v-else class="session-section">
+            <div class="session-section-header">
+              <p>这里保存从视频生成的独立大五人格报告，可单独查看和管理。</p>
+            </div>
+
+            <div v-if="bigFiveUploading" class="report-generating-bar">
+              <span class="generating-spinner"></span>
+              <span class="generating-text">视频已上传，正在创建大五人格报告。</span>
+            </div>
+
+            <div v-if="bigFiveReports.length" class="sessions-grid">
+              <article
+                v-for="report in bigFiveReports"
+                :key="report.report_id"
+                :id="`big-five-report-${report.report_id}`"
+                :class="['session-card', 'big-five-card', { 'session-card--active': activeBigFiveReportId === report.report_id }]"
+              >
+                <div class="card-header">
+                  <div class="session-identity">
+                    <div class="session-date-chip">
+                      <span class="session-archive-label">大五人格</span>
+                      <span class="session-archive-code">#{{ String(report.report_id).padStart(3, '0') }}</span>
+                    </div>
+                  </div>
+
+                  <div class="session-header-badges">
+                    <span v-if="hasBigFiveInterpretation(report)" class="intel-badge">报告可查看</span>
+                    <span :class="['status-badge', bigFiveStatusClass(report)]">{{ bigFiveStatusLabel(report) }}</span>
+                  </div>
+                </div>
+
+                <div class="card-body big-five-card-body">
+                  <div class="session-score-block">
+                    <span class="session-score-label">报告状态</span>
+                    <strong class="session-score-value big-five-status-value">{{ bigFiveMainValue(report) }}</strong>
+                  </div>
+
+                  <div class="session-dim-grid big-five-dim-grid">
+                    <div v-for="dim in bigFiveDimensions" :key="dim.key" class="dim-panel">
+                      <div class="dim-panel-top">
+                        <span class="dim-panel-key">{{ dim.short }}</span>
+                      </div>
+                      <span class="dim-panel-label">{{ dim.name }}</span>
+                      <strong class="dim-panel-score">{{ getBigFiveScore(report, dim.key) }}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="isBigFiveProcessing(report)" class="report-generating-bar">
+                  <span class="generating-spinner"></span>
+                  <span class="generating-text">{{ bigFiveProcessingText(report) }}</span>
+                </div>
+
+                <div class="card-footer">
+                  <div class="session-time-block">
+                    <span class="session-time-label">生成时间</span>
+                    <span class="session-time">{{ formatFullDate(report.created_at) }}</span>
                   </div>
                 </div>
               </article>
+            </div>
+
+            <div v-else-if="!bigFiveUploading" class="history-state-card empty-state big-five-empty-state">
+              <div class="empty-circle">◎</div>
+              <h3>还没有大五人格报告</h3>
+              <p>上传一段视频后，系统会在后台生成独立的大五人格报告。</p>
+              <button class="btn-new btn-new-big" type="button" @click="openBigFiveUpload">
+                <span class="btn-icon">+</span>
+                <span>上传大五视频</span>
+              </button>
             </div>
           </section>
         </div>
@@ -335,19 +491,26 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
 import atmrLogo from '../assets/atmr-logo.png'
 import { showAlertDialog, showConfirmDialog, showPromptDialog } from '../composables/useAppDialog'
+import { formatApiDotDateTime, parseApiDate } from '../utils/dateTime'
 
+const route = useRoute()
 const router = useRouter()
 
 const sessions = ref([])
+const bigFiveReports = ref([])
 const loading = ref(true)
+const bigFiveUploading = ref(false)
 const activeHistorySessionId = ref(null)
+const activeBigFiveReportId = ref(null)
 const mobileSidebarOpen = ref(false)
 const openSessionMenuId = ref(null)
+const bigFiveFileInput = ref(null)
+const activeHistoryType = ref(route.query.type === 'big-five' ? 'big-five' : 'atmr')
 const historyStartLabel = '开始测评'
 let pollTimer = null
 
@@ -356,6 +519,14 @@ const atmrDimensions = [
   { key: 'T', name: '目标型' },
   { key: 'M', name: '包容型' },
   { key: 'R', name: '责任型' },
+]
+
+const bigFiveDimensions = [
+  { key: 'openness', short: 'O', name: '开放性' },
+  { key: 'conscientiousness', short: 'C', name: '尽责性' },
+  { key: 'extraversion', short: 'E', name: '外向性' },
+  { key: 'agreeableness', short: 'A', name: '宜人性' },
+  { key: 'neuroticism', short: 'N', name: '神经质' },
 ]
 
 const getDimScore = (session, key) => {
@@ -378,9 +549,45 @@ const completedCount = computed(() => sessions.value.filter((session) => session
 const completedSessions = computed(() => sessions.value.filter((session) => session.status === 'completed'))
 const reportReadyCount = computed(() => sessions.value.filter((session) => session.has_report).length)
 const generatingCount = computed(() => sessions.value.filter((session) => session.report_generating).length)
+const bigFiveProcessingCount = computed(() => bigFiveReports.value.filter((report) => isBigFiveProcessing(report)).length)
+const bigFiveReadyCount = computed(() => bigFiveReports.value.filter((report) => isBigFiveReady(report)).length)
+const bigFiveIssueCount = computed(() => bigFiveReports.value.filter((report) => (
+  report.status === 'failed'
+  || (report.status === 'completed' && !report.is_real_result)
+  || report.interpretation_status === 'failed'
+)).length)
 const latestSession = computed(() => sessions.value[0] || null)
-const sidebarEmptyTitle = '\u6682\u65e0\u8bb0\u5f55'
-const sidebarEmptyNote = '\u5b8c\u6210\u6d4b\u8bc4\u540e\uff0c\u5de6\u4fa7\u4f1a\u5728\u8fd9\u91cc\u5c55\u793a\u5386\u53f2\u5217\u8868'
+const isAtmrHistory = computed(() => activeHistoryType.value === 'atmr')
+const isBigFiveHistory = computed(() => activeHistoryType.value === 'big-five')
+const currentHistoryTitle = computed(() => (isAtmrHistory.value ? 'ATMR 测评' : '大五人格报告'))
+const currentSidebarSubtitle = computed(() => (
+  isAtmrHistory.value
+    ? `${sessions.value.length} 条测评记录`
+    : `${bigFiveReports.value.length} 份视频人格报告`
+))
+const currentSidebarLabel = computed(() => (isAtmrHistory.value ? 'ATMR 测评档案' : '大五人格报告'))
+const hasCurrentSidebarItems = computed(() => (isAtmrHistory.value ? sessions.value.length > 0 : bigFiveReports.value.length > 0))
+const hasCurrentHistoryItems = computed(() => (
+  isAtmrHistory.value
+    ? sessions.value.length > 0
+    : bigFiveReports.value.length > 0 || bigFiveUploading.value
+))
+const currentSidebarEmptyTitle = computed(() => (isAtmrHistory.value ? '暂无测评记录' : '暂无大五人格报告'))
+const currentSidebarEmptyNote = computed(() => (
+  isAtmrHistory.value
+    ? '完成测评后，左侧会显示 ATMR 历史列表'
+    : '上传视频后，左侧会显示大五人格报告列表'
+))
+const currentEmptyTitle = computed(() => (isAtmrHistory.value ? '还没有 ATMR 测评记录' : '还没有大五人格报告'))
+const currentEmptyNote = computed(() => (
+  isAtmrHistory.value
+    ? '完成一次测评后，这里会自动整理你的 ATMR 历史档案。'
+    : '上传一段视频后，系统会在后台生成独立的大五人格报告。'
+))
+const historyTypes = computed(() => [
+  { value: 'atmr', label: 'ATMR 测评', count: sessions.value.length },
+  { value: 'big-five', label: '大五人格报告', count: bigFiveReports.value.length },
+])
 const archiveCodeMap = computed(() => {
   const total = sessions.value.length
   return new Map(
@@ -388,7 +595,7 @@ const archiveCodeMap = computed(() => {
   )
 })
 
-const dashboardPanels = computed(() => [
+const atmrDashboardPanels = computed(() => [
   {
     label: '测评总数',
     value: String(sessions.value.length).padStart(2, '0'),
@@ -400,37 +607,48 @@ const dashboardPanels = computed(() => [
     note: '已完成并归档的记录',
   },
   {
-    label: '报告数量',
+    label: 'ATMR 报告',
     value: String(reportReadyCount.value).padStart(2, '0'),
     note: generatingCount.value ? `另有 ${generatingCount.value} 份报告仍在整理中` : '已整理完成的分析报告',
   },
   {
-    label: '最近记录',
-    value: latestSessionArchiveHeadline.value,
-    note: latestSessionNote.value,
+    label: '生成中',
+    value: String(generatingCount.value).padStart(2, '0'),
+    note: generatingCount.value ? '正在整理中的 ATMR 报告' : '当前没有等待生成的报告',
     featured: true,
   },
 ])
 
-const getDateValue = (isoStr) => {
-  if (!isoStr) return null
-  const date = new Date(isoStr)
-  return Number.isNaN(date.getTime()) ? null : date
-}
+const bigFiveDashboardPanels = computed(() => [
+  {
+    label: '大五人格报告',
+    value: String(bigFiveReports.value.length).padStart(2, '0'),
+    note: '独立的视频人格报告',
+  },
+  {
+    label: '已完成',
+    value: String(bigFiveReadyCount.value).padStart(2, '0'),
+    note: '真实模型输出且已完成的报告',
+  },
+  {
+    label: '生成中',
+    value: String(bigFiveProcessingCount.value).padStart(2, '0'),
+    note: bigFiveProcessingCount.value ? '后台正在分析视频' : '当前没有等待生成的报告',
+  },
+  {
+    label: '失败/参考',
+    value: String(bigFiveIssueCount.value).padStart(2, '0'),
+    note: '需要重试或仅作参考的报告',
+    featured: true,
+  },
+])
 
-const padDatePart = (value) => String(value).padStart(2, '0')
+const currentDashboardPanels = computed(() => (
+  isAtmrHistory.value ? atmrDashboardPanels.value : bigFiveDashboardPanels.value
+))
 
-const formatTime = (isoStr) => {
-  const date = getDateValue(isoStr)
-  if (!date) return ''
-  return `${padDatePart(date.getHours())}:${padDatePart(date.getMinutes())}`
-}
-
-const formatFullDate = (isoStr) => {
-  const date = getDateValue(isoStr)
-  if (!date) return '未命名测评'
-  return `${date.getFullYear()}.${padDatePart(date.getMonth() + 1)}.${padDatePart(date.getDate())} ${formatTime(isoStr)}`
-}
+const getDateValue = (isoStr) => parseApiDate(isoStr)
+const formatFullDate = (isoStr) => formatApiDotDateTime(isoStr, '未命名测评')
 
 const formatArchiveCode = (sessionId) => `#${archiveCodeMap.value.get(sessionId) || '000'}`
 const formatStatusLabel = (status) => (status === 'completed' ? '已完成' : '进行中')
@@ -441,10 +659,69 @@ const latestSessionArchiveHeadline = computed(() => (
   latestSession.value ? formatArchiveCode(latestSession.value.session_id) : '\u6682\u65e0\u8bb0\u5f55'
 ))
 
+const atmrMenuKey = (sessionId) => `atmr-${sessionId}`
+const bigFiveMenuKey = (reportId) => `big-five-${reportId}`
+
 const getReportStatusLabel = (session) => {
   if (session.has_report) return '报告可查看'
   if (session.report_generating) return '报告整理中'
   return session.status === 'completed' ? '待整理报告' : '测评进行中'
+}
+
+const hasBigFiveInterpretation = (report) => (
+  report.interpretation_status === 'completed' && !!report.interpretation_content
+)
+const getBigFiveInterpretationStatus = (report) => report.interpretation_status || 'pending'
+const isBigFiveInterpretationProcessing = (report) => (
+  isBigFiveReady(report) && getBigFiveInterpretationStatus(report) === 'running'
+)
+const isBigFiveProcessing = (report) => (
+  ['pending', 'running'].includes(report.status) || isBigFiveInterpretationProcessing(report)
+)
+const isBigFiveReady = (report) => report.status === 'completed' && report.is_real_result && report.scores
+const canRetryBigFive = (report) => report.status === 'failed' || (report.status === 'completed' && !report.is_real_result)
+const bigFiveStatusLabel = (report) => {
+  if (isBigFiveReady(report)) return '已完成'
+  if (report.status === 'completed') return '仅作参考'
+  if (report.status === 'failed') return '生成失败'
+  if (report.status === 'running') return '生成中'
+  return '等待处理'
+}
+const bigFiveStatusClass = (report) => {
+  if (isBigFiveReady(report)) return 'completed'
+  if (report.status === 'failed') return 'failed'
+  return 'active'
+}
+const getBigFiveScore = (report, key) => {
+  const value = Number(report.scores?.[key])
+  if (!Number.isFinite(value)) return '--'
+  return Math.round(Math.max(0, Math.min(1, value)) * 100)
+}
+const bigFiveMainValue = (report) => {
+  if (hasBigFiveInterpretation(report)) return '已解读'
+  if (isBigFiveReady(report)) return '可查看'
+  if (report.status === 'failed') return '失败'
+  if (report.status === 'completed') return '参考'
+  return '生成中'
+}
+const bigFiveProcessingText = (report) => (
+  isBigFiveInterpretationProcessing(report)
+    ? '视频分析已完成，正在生成 AI 详细解读。'
+    : '正在后台分析视频，完成后会自动更新。'
+)
+const displayBigFiveReportTitle = (report) => {
+  const title = (report.title || '').trim()
+  if (title) return title
+  if (report.original_filename) return report.original_filename
+  return `大五人格报告 #${report.report_id}`
+}
+const formatBigFiveSidebarMeta = (report) => {
+  const parts = [bigFiveStatusLabel(report)]
+  const dateLabel = formatFullDate(report.created_at)
+  if (dateLabel && dateLabel !== '未命名测评') {
+    parts.push(dateLabel)
+  }
+  return parts.join(' · ')
 }
 
 const getSessionStageLabel = (session) => session.stage_display_name || session.current_stage || '未开始'
@@ -489,8 +766,25 @@ const toggleSessionMenu = (sessionId) => {
   openSessionMenuId.value = openSessionMenuId.value === sessionId ? null : sessionId
 }
 
+const setHistoryType = async (type) => {
+  const nextType = type === 'big-five' ? 'big-five' : 'atmr'
+  if (activeHistoryType.value === nextType) return
+
+  activeHistoryType.value = nextType
+  closeSessionMenu()
+  closeMobileSidebar()
+
+  await router.replace({
+    path: '/history',
+    query: {
+      ...route.query,
+      type: nextType,
+    },
+  })
+}
+
 const syncPollingState = () => {
-  const hasGenerating = sessions.value.some((session) => session.report_generating)
+  const hasGenerating = sessions.value.some((session) => session.report_generating) || bigFiveReports.value.some((report) => isBigFiveProcessing(report))
   if (hasGenerating && !pollTimer) {
     pollTimer = setInterval(pollForReports, 15000)
   } else if (!hasGenerating && pollTimer) {
@@ -511,19 +805,50 @@ const syncActiveHistorySession = () => {
   }
 }
 
+const syncActiveBigFiveReport = () => {
+  if (!bigFiveReports.value.length) {
+    activeBigFiveReportId.value = null
+    return
+  }
+
+  const hasActive = bigFiveReports.value.some((report) => report.report_id === activeBigFiveReportId.value)
+  if (!hasActive) {
+    activeBigFiveReportId.value = bigFiveReports.value[0].report_id
+  }
+}
+
 const applySessions = (items) => {
   sessions.value = items || []
-  if (!sessions.value.some((session) => session.session_id === openSessionMenuId.value)) {
+  if (
+    String(openSessionMenuId.value || '').startsWith('atmr-')
+    && !sessions.value.some((session) => atmrMenuKey(session.session_id) === openSessionMenuId.value)
+  ) {
     closeSessionMenu()
   }
   syncActiveHistorySession()
   syncPollingState()
 }
 
+const applyBigFiveReports = (items) => {
+  bigFiveReports.value = items || []
+  if (
+    String(openSessionMenuId.value || '').startsWith('big-five-')
+    && !bigFiveReports.value.some((report) => bigFiveMenuKey(report.report_id) === openSessionMenuId.value)
+  ) {
+    closeSessionMenu()
+  }
+  syncActiveBigFiveReport()
+  syncPollingState()
+}
+
 const fetchHistory = async () => {
   try {
-    const res = await api.get('/assessment/history')
-    applySessions(res.data.sessions)
+    const [historyRes, bigFiveRes] = await Promise.all([
+      api.get('/assessment/history'),
+      api.get('/multimodal-personality/reports'),
+    ])
+    applySessions(historyRes.data.sessions)
+    applyBigFiveReports(bigFiveRes.data.reports)
   } catch (err) {
     console.error('获取历史记录失败:', err)
   } finally {
@@ -533,8 +858,12 @@ const fetchHistory = async () => {
 
 const pollForReports = async () => {
   try {
-    const res = await api.get('/assessment/history')
-    applySessions(res.data.sessions)
+    const [historyRes, bigFiveRes] = await Promise.all([
+      api.get('/assessment/history'),
+      api.get('/multimodal-personality/reports'),
+    ])
+    applySessions(historyRes.data.sessions)
+    applyBigFiveReports(bigFiveRes.data.reports)
   } catch (err) {
     console.error('轮询历史记录失败:', err)
   }
@@ -592,8 +921,82 @@ const startNewSession = async () => {
 }
 
 const viewReport = (sessionId) => {
+  closeSessionMenu()
   closeMobileSidebar()
   router.push(`/report/${sessionId}`)
+}
+
+const openBigFiveUpload = () => {
+  closeMobileSidebar()
+  bigFiveFileInput.value?.click()
+}
+
+const handleBigFiveUpload = async (event) => {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+
+  if (!isBigFiveHistory.value) {
+    await setHistoryType('big-five')
+  }
+  bigFiveUploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    await api.post('/multimodal-personality/reports/upload-file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    await fetchHistory()
+  } catch (err) {
+    console.error('上传大五视频失败:', err)
+    await showAlertDialog(err.response?.data?.detail || '上传失败，请稍后再试', {
+      title: '上传失败',
+      destructive: true,
+    })
+  } finally {
+    bigFiveUploading.value = false
+  }
+}
+
+const viewBigFiveReport = (reportId) => {
+  closeSessionMenu()
+  closeMobileSidebar()
+  router.push(`/big-five-report/${reportId}`)
+}
+
+const retryBigFiveReport = async (reportId) => {
+  closeSessionMenu()
+  closeMobileSidebar()
+  try {
+    await api.post(`/multimodal-personality/reports/${reportId}/run-background`)
+    await fetchHistory()
+  } catch (err) {
+    await showAlertDialog(err.response?.data?.detail || '重新生成失败', {
+      title: '操作失败',
+      destructive: true,
+    })
+  }
+}
+
+const deleteBigFiveReport = async (reportId) => {
+  closeSessionMenu()
+  const shouldDelete = await showConfirmDialog('确定要删除这份大五人格报告吗？删除后无法恢复。', {
+    title: '删除大五人格报告',
+    confirmText: '删除',
+    cancelText: '取消',
+    destructive: true,
+  })
+  if (!shouldDelete) return
+
+  try {
+    await api.delete(`/multimodal-personality/reports/${reportId}`)
+    applyBigFiveReports(bigFiveReports.value.filter((report) => report.report_id !== reportId))
+  } catch (err) {
+    await showAlertDialog(err.response?.data?.detail || '删除失败', {
+      title: '删除失败',
+      destructive: true,
+    })
+  }
 }
 
 const continueSession = (sessionId) => {
@@ -687,12 +1090,34 @@ const scrollToSession = (sessionId) => {
   window.scrollTo({ top: offsetPosition, behavior: 'smooth' })
 }
 
+const scrollToBigFiveReport = (reportId) => {
+  closeSessionMenu()
+  closeMobileSidebar()
+  activeBigFiveReportId.value = reportId
+  const el = document.getElementById(`big-five-report-${reportId}`)
+  if (!el) return
+
+  const navHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--nav-height')) || 100
+  const offset = navHeight + 112
+  const elementPosition = el.getBoundingClientRect().top + window.pageYOffset
+  const offsetPosition = elementPosition - offset
+  window.scrollTo({ top: offsetPosition, behavior: 'smooth' })
+}
+
 const handleDocumentClick = (event) => {
   const target = event.target instanceof Element ? event.target : null
   if (!target?.closest('.history-session-actions')) {
     closeSessionMenu()
   }
 }
+
+watch(
+  () => route.query.type,
+  (type) => {
+    activeHistoryType.value = type === 'big-five' ? 'big-five' : 'atmr'
+    closeSessionMenu()
+  }
+)
 
 onMounted(() => {
   document.addEventListener('click', handleDocumentClick)
@@ -810,6 +1235,18 @@ onUnmounted(() => {
   font-weight: 600;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.history-upload-button {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #111827;
+  border-radius: 16px;
+  background: #ffffff;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .history-new-button:hover,
@@ -985,8 +1422,8 @@ onUnmounted(() => {
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
+  opacity: 0.72;
+  pointer-events: auto;
   transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
 }
 
@@ -1007,7 +1444,7 @@ onUnmounted(() => {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  min-width: 132px;
+  min-width: 148px;
   padding: 6px;
   border: 1px solid var(--history-border);
   border-radius: 14px;
@@ -1138,6 +1575,64 @@ onUnmounted(() => {
   margin-bottom: 22px;
   padding-bottom: 22px;
   border-bottom: 1px solid var(--history-border);
+}
+
+.history-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.history-file-input {
+  display: none;
+}
+
+.history-type-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 6px;
+  border: 1px solid var(--history-border);
+  border-radius: 18px;
+  background: #f7f7f8;
+}
+
+.history-type-tab {
+  min-width: 0;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--history-muted);
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.history-type-tab strong {
+  min-width: 30px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.08);
+  color: var(--history-copy);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.history-type-tab:hover,
+.history-type-tab.active {
+  background: #ffffff;
+  border-color: var(--history-border-strong);
+  color: var(--history-copy);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
 }
 
 .history-command-card {
@@ -1518,6 +2013,12 @@ onUnmounted(() => {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+.btn-new--secondary {
+  border: 1px solid #111827;
+  background: #ffffff;
+  color: #111827;
+}
+
 .btn-new-big {
   margin-top: 8px;
 }
@@ -1530,6 +2031,11 @@ onUnmounted(() => {
   border-radius: 999px;
   font-size: 13px;
   font-weight: 700;
+}
+
+.btn-edit--danger {
+  color: #dc2626;
+  border-color: #dc2626;
 }
 
 .btn-view,
@@ -1554,6 +2060,27 @@ onUnmounted(() => {
   border: 1px dashed #111111;
   background: #ffffff;
   color: #71717a;
+}
+
+.big-five-card-body {
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+}
+
+.big-five-dim-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.big-five-status-value {
+  font-size: clamp(28px, 4vw, 42px);
+}
+
+.big-five-empty-state {
+  padding: 40px 24px;
+}
+
+.status-badge.failed {
+  background: rgba(239, 68, 68, 0.12);
+  color: #991b1b;
 }
 
 .history-sidebar-backdrop {
@@ -1583,6 +2110,10 @@ onUnmounted(() => {
 
   .card-body {
     grid-template-columns: 1fr;
+  }
+
+  .big-five-dim-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .session-score-block,
@@ -1627,6 +2158,10 @@ onUnmounted(() => {
   }
 
   .btn-new {
+    width: 100%;
+  }
+
+  .history-header-actions {
     width: 100%;
   }
 }
@@ -1716,6 +2251,16 @@ onUnmounted(() => {
     gap: 10px;
   }
 
+  .big-five-dim-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .big-five-dim-grid .dim-panel {
+    min-height: 112px;
+    padding: 12px 10px 10px;
+  }
+
   .dim-panel {
     min-height: 136px;
     padding: 14px 12px 12px;
@@ -1803,14 +2348,31 @@ onUnmounted(() => {
     gap: 8px;
   }
 
+  .big-five-dim-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+  }
+
   .dim-panel {
     min-height: 124px;
     padding: 12px 10px 10px;
   }
 
+  .big-five-dim-grid .dim-panel {
+    min-height: 104px;
+    padding: 10px 8px 8px;
+    border-radius: 16px;
+    gap: 7px;
+  }
+
   .dim-panel-key,
   .dim-panel-score {
     font-size: 26px;
+  }
+
+  .big-five-dim-grid .dim-panel-key,
+  .big-five-dim-grid .dim-panel-score {
+    font-size: 24px;
   }
 
   .dim-panel-label {

@@ -9,8 +9,13 @@ from pydantic import BaseModel
 
 from app.core.security import get_current_user
 from app.services.rag_service import (
+    BIG_FIVE_DOC_NAME,
+    get_big_five_document_structure,
+    get_big_five_rag_client,
     get_document_structure,
+    query_big_five_knowledge_base,
     query_knowledge_base,
+    retrieve_big_five_knowledge,
     retrieve_knowledge,
 )
 
@@ -31,6 +36,16 @@ class RAGRetrieveRequest(BaseModel):
     query: str
     max_sections: int = 3
     max_chars: int = 3000
+
+
+def _count_structure_sections(sections: list[dict]) -> int:
+    total = 0
+    for section in sections:
+        total += 1
+        children = section.get("nodes") or []
+        if children:
+            total += _count_structure_sections(children)
+    return total
 
 
 @router.post("/query", response_model=RAGQueryResponse)
@@ -106,5 +121,70 @@ async def rag_status():
     except Exception as e:
         return {
             "status": "error",
+            "message": str(e),
+        }
+
+
+@router.post("/big-five/query", response_model=RAGQueryResponse)
+async def big_five_rag_query(payload: RAGQueryRequest):
+    """Query the Big Five personality knowledge base."""
+    if not payload.question.strip():
+        raise HTTPException(status_code=400, detail="问题不能为空")
+
+    try:
+        result = await query_big_five_knowledge_base(payload.question)
+        return result
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@router.post("/big-five/retrieve")
+async def big_five_rag_retrieve(payload: RAGRetrieveRequest):
+    """Retrieve raw Big Five personality knowledge snippets."""
+    if not payload.query.strip():
+        raise HTTPException(status_code=400, detail="查询不能为空")
+
+    try:
+        content = await retrieve_big_five_knowledge(
+            payload.query,
+            max_sections=payload.max_sections,
+            max_chars=payload.max_chars,
+        )
+        return {
+            "query": payload.query,
+            "content": content,
+            "has_results": bool(content),
+        }
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@router.get("/big-five/status")
+async def big_five_rag_status():
+    """Check whether the Big Five knowledge base is available."""
+    try:
+        client, doc_id = get_big_five_rag_client()
+        doc_meta = client.get_document(doc_id)
+        import json
+
+        structure = get_big_five_document_structure()
+        sections = structure.get("structure", structure) if isinstance(structure, dict) else structure
+        return {
+            "status": "ok" if sections else "empty",
+            "doc": BIG_FIVE_DOC_NAME,
+            "doc_id": doc_id,
+            "document": json.loads(doc_meta),
+            "fallback": False,
+            "section_count": _count_structure_sections(sections),
+        }
+    except Exception as e:
+        structure = get_big_five_document_structure()
+        sections = structure.get("structure", []) if isinstance(structure, dict) else []
+        return {
+            "status": "ok" if sections else "error",
+            "doc": BIG_FIVE_DOC_NAME,
+            "doc_id": None,
+            "fallback": True,
+            "section_count": _count_structure_sections(sections),
             "message": str(e),
         }

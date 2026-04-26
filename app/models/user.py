@@ -23,3 +23,4 @@ class User(Base):
     debate_results = relationship("ModuleDebateResult", back_populates="user")
     chat_sessions = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")
     chat_messages = relationship("ChatMessage", back_populates="user", cascade="all, delete-orphan")
+    big_five_reports = relationship("BigFivePersonalityReport", back_populates="user", cascade="all, delete-orphan")

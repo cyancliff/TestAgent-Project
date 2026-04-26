@@ -39,6 +39,11 @@ logger = logging.getLogger(__name__)
 
 WORKSPACE = PAGEINDEX_DIR / "results"
 ATMR_DOC_NAME = "MinerU_markdown_ATMR_Longtext"
+BIG_FIVE_DOC_NAME = "BigFive_Personality_Knowledge"
+BIG_FIVE_SOURCE_PATH = PAGEINDEX_DIR / f"{BIG_FIVE_DOC_NAME}.md"
+
+_big_five_client: PageIndexClient | None = None
+_big_five_doc_id: str | None = None
 
 # LLM 语义评分检索配置
 RELEVANCE_THRESHOLD = 0.3  # 相关性阈值，低于此分数视为不相关
@@ -522,3 +527,267 @@ async def query_knowledge_base(question: str) -> dict:
         "sources": [{"title": "ATMR 心理学知识库", "doc": ATMR_DOC_NAME}],
         "query": question,
     }
+
+
+# ── Big Five knowledge base ────────────────────────────────────────────────
+
+BIG_FIVE_KEYWORD_MAP = {
+    "big five": ["big five", "big-five", "ocean", "五因素", "大五", "人格"],
+    "开放性": ["开放性", "开放", "openness", "想象", "创意", "新体验", "变化", "审美"],
+    "尽责性": ["尽责性", "尽责", "责任心", "conscientiousness", "自律", "计划", "责任", "目标", "执行"],
+    "外向性": ["外向性", "外向", "外倾", "extraversion", "社交", "表达", "能量", "主动", "互动"],
+    "宜人性": ["宜人性", "宜人", "亲和", "agreeableness", "合作", "信任", "共情", "关系"],
+    "神经质": ["神经质", "神经", "情绪稳定", "neuroticism", "情绪", "压力", "焦虑", "担忧", "敏感"],
+    "高分": ["高分", "偏高", "高", "明显", "优势", "风险"],
+    "低分": ["低分", "偏低", "低", "不足", "稳定", "边界"],
+    "组合": ["组合", "交互", "搭配", "同时", "高开放", "高尽责", "高神经质"],
+    "建议": ["建议", "成长", "改善", "行动", "练习", "策略"],
+    "视频": ["视频", "多模态", "模型", "线索", "表情", "语音", "姿态", "边界"],
+}
+
+
+def get_big_five_rag_client() -> tuple[PageIndexClient, str]:
+    """Return the indexed Big Five PageIndex document when it exists."""
+    global _big_five_client, _big_five_doc_id
+
+    if _big_five_client is not None and _big_five_doc_id is not None:
+        return _big_five_client, _big_five_doc_id
+
+    api_key = get_deepseek_api_key()
+    if not api_key:
+        raise RuntimeError("未配置 DEEPSEEK_API_KEY，无法初始化 Big Five RAG 索引客户端")
+
+    os.environ.setdefault("OPENAI_API_KEY", api_key)
+    _big_five_client = PageIndexClient(
+        api_key=api_key,
+        model=_to_pageindex_model_name(get_deepseek_rag_model()),
+        retrieve_model=_to_pageindex_model_name(get_deepseek_rag_retrieve_model()),
+        workspace=str(WORKSPACE),
+    )
+
+    for did, doc in _big_five_client.documents.items():
+        if doc.get("doc_name") == BIG_FIVE_DOC_NAME:
+            _big_five_doc_id = did
+            break
+
+    if _big_five_doc_id is None:
+        raise RuntimeError(
+            f"未找到已索引的 Big Five 文档 '{BIG_FIVE_DOC_NAME}'，将使用内置 Markdown 知识库兜底"
+        )
+
+    return _big_five_client, _big_five_doc_id
+
+
+def _parse_big_five_markdown_sections() -> list[dict]:
+    """Parse the built-in Big Five markdown into PageIndex-like sections."""
+    if not BIG_FIVE_SOURCE_PATH.exists():
+        return []
+
+    text = BIG_FIVE_SOURCE_PATH.read_text(encoding="utf-8")
+    sections: list[dict] = []
+    current: dict | None = None
+    body_lines: list[str] = []
+
+    for line_num, line in enumerate(text.splitlines(), start=1):
+        if line.startswith("## "):
+            if current is not None:
+                current["text"] = "\n".join(body_lines).strip()
+                current["summary"] = current["text"][:180]
+                sections.append(current)
+            current = {
+                "node_id": f"big-five-{len(sections) + 1:03d}",
+                "title": line.removeprefix("## ").strip(),
+                "line_num": line_num,
+                "summary": "",
+                "text": "",
+                "depth": 0,
+            }
+            body_lines = []
+        elif current is not None:
+            body_lines.append(line)
+
+    if current is not None:
+        current["text"] = "\n".join(body_lines).strip()
+        current["summary"] = current["text"][:180]
+        sections.append(current)
+
+    return sections
+
+
+def _keyword_coarse_filter_with_map(sections: list[dict], query: str, keyword_map: dict[str, list[str]]) -> list[dict]:
+    query_lower = query.lower()
+    keywords = {word for word in re.split(r"[\s,，。；;：:、/]+", query_lower) if word}
+    for key, synonyms in keyword_map.items():
+        if key.lower() in query_lower or any(s.lower() in query_lower for s in synonyms):
+            keywords.add(key.lower())
+            keywords.update(s.lower() for s in synonyms)
+
+    if not keywords:
+        return sections[:20]
+
+    scored = []
+    for section in sections:
+        match_text = " ".join(
+            [
+                str(section.get("title", "")),
+                str(section.get("summary", "")),
+                str(section.get("text", ""))[:1000],
+            ]
+        ).lower()
+        score = sum(1 for keyword in keywords if keyword and keyword in match_text)
+        if score:
+            scored.append((score, section))
+
+    scored.sort(key=lambda item: (-item[0], item[1].get("line_num") or 0))
+    return [section for _, section in scored] if scored else sections[:20]
+
+
+def _get_big_five_full_structure() -> list[dict]:
+    client, doc_id = get_big_five_rag_client()
+    if hasattr(client, "_ensure_doc_loaded"):
+        client._ensure_doc_loaded(doc_id)
+    doc = client.documents.get(doc_id, {})
+    return doc.get("structure", [])
+
+
+def get_big_five_document_structure() -> dict:
+    """Return Big Five knowledge structure, using the markdown fallback if needed."""
+    try:
+        client, doc_id = get_big_five_rag_client()
+        return json.loads(client.get_document_structure(doc_id))
+    except Exception:
+        return {"structure": _parse_big_five_markdown_sections(), "fallback": True}
+
+
+async def retrieve_big_five_knowledge(query: str, max_sections: int = 3, max_chars: int = 3000) -> str:
+    """Retrieve Big Five personality knowledge from the indexed or built-in knowledge base."""
+    try:
+        structure = _get_big_five_full_structure()
+        all_sections = _collect_all_sections(structure) if structure else []
+    except Exception as exc:
+        logger.info("[RAG] Big Five PageIndex unavailable, using markdown fallback: %s", _describe_exception(exc))
+        all_sections = _parse_big_five_markdown_sections()
+
+    if not all_sections:
+        return ""
+
+    candidate_sections = _keyword_coarse_filter_with_map(all_sections, query, BIG_FIVE_KEYWORD_MAP)
+    scored_sections = await _llm_score_relevance(query, candidate_sections[:MAX_SECTIONS_TO_SCORE])
+    scored_sections.sort(key=lambda x: -x["score"])
+    relevant_sections = [item for item in scored_sections if item["score"] >= RELEVANCE_THRESHOLD]
+    if not relevant_sections:
+        relevant_sections = scored_sections[:max_sections]
+
+    contents = []
+    total_chars = 0
+    for item in relevant_sections[:max_sections]:
+        section = item["section"]
+        content = str(section.get("text", "")).strip() or str(section.get("summary", "")).strip()
+        if not content:
+            continue
+
+        remaining_budget = max_chars - total_chars
+        if remaining_budget <= 0:
+            break
+        if len(content) > remaining_budget:
+            content = content[:remaining_budget].rsplit("\n", 1)[0] or content[:remaining_budget]
+
+        contents.append(f"【{section.get('title', '大五人格知识')}】（相关性 {item['score']:.2f}）\n{content}")
+        total_chars += len(content)
+
+    return "\n\n---\n\n".join(contents)
+
+
+def _build_big_five_qa_prompt(question: str, knowledge: str) -> str:
+    return f"""你是一位大五人格解释助手。请只基于给定知识库内容回答用户问题，不做医学诊断，不给用户贴固定标签。
+
+回答要求：
+1. 用中文，专业但容易理解
+2. 先说明人格倾向，再说明适用边界
+3. 如果知识库内容不足，请明确说明
+
+【Big Five 知识库内容】
+{knowledge}
+
+【用户问题】
+{question}"""
+
+
+async def query_big_five_knowledge_base(question: str) -> dict:
+    knowledge = await retrieve_big_five_knowledge(question, max_sections=5, max_chars=5000)
+    if not knowledge:
+        return {
+            "answer": "抱歉，当前大五人格知识库中没有找到足够相关的内容。",
+            "sources": [],
+            "query": question,
+        }
+
+    api_key = get_deepseek_api_key()
+    if not api_key:
+        return {
+            "answer": knowledge,
+            "sources": [{"title": "大五人格知识库", "doc": BIG_FIVE_DOC_NAME}],
+            "query": question,
+        }
+
+    prompt = _build_big_five_qa_prompt(question, knowledge)
+    try:
+        client = httpx.AsyncClient(timeout=60.0)
+        try:
+            response = await client.post(
+                get_deepseek_chat_completions_url(),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": get_deepseek_rag_model(),
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 2000,
+                    **build_deepseek_thinking_payload(get_deepseek_rag_thinking_mode()),
+                },
+            )
+            response.raise_for_status()
+            result = response.json()
+            answer = result["choices"][0]["message"]["content"]
+        finally:
+            try:
+                await client.aclose()
+            except RuntimeError:
+                pass
+    except Exception as exc:
+        logger.warning("[RAG] Big Five QA generation failed: %s", _describe_exception(exc))
+        answer = f"以下是从大五人格知识库中检索到的相关内容：\n\n{knowledge}"
+
+    return {
+        "answer": answer,
+        "sources": [{"title": "大五人格知识库", "doc": BIG_FIVE_DOC_NAME}],
+        "query": question,
+    }
+
+
+async def retrieve_big_five_evidence(scores: dict | None, max_chars: int = 4500) -> str:
+    scores = scores or {}
+    labels = {
+        "openness": "开放性",
+        "conscientiousness": "尽责性",
+        "extraversion": "外向性",
+        "agreeableness": "宜人性",
+        "neuroticism": "神经质",
+    }
+    dimension_terms = []
+    for key, label in labels.items():
+        try:
+            value = float(scores.get(key))
+        except (TypeError, ValueError):
+            continue
+        if value >= 0.65:
+            dimension_terms.append(f"高{label}")
+        elif value <= 0.35:
+            dimension_terms.append(f"低{label}")
+        else:
+            dimension_terms.append(f"中等{label}")
+
+    query = "大五人格 五维解读 组合建议 " + " ".join(dimension_terms)
+    return await retrieve_big_five_knowledge(query, max_sections=5, max_chars=max_chars)

@@ -50,8 +50,26 @@ class ClipFeatureExtractor:
             return
         from transformers import CLIPModel, CLIPProcessor
 
-        self._processor = CLIPProcessor.from_pretrained(self.model_name)
-        self._model = CLIPModel.from_pretrained(self.model_name)
+        last_error: Exception | None = None
+        for local_files_only in (True, False):
+            try:
+                self._processor = CLIPProcessor.from_pretrained(
+                    self.model_name,
+                    local_files_only=local_files_only,
+                )
+                self._model = CLIPModel.from_pretrained(
+                    self.model_name,
+                    local_files_only=local_files_only,
+                )
+                break
+            except Exception as exc:
+                last_error = exc
+                self._processor = None
+                self._model = None
+        else:
+            if last_error is not None:
+                raise last_error
+
         self._model.to(self.device)
         self._model.eval()
 

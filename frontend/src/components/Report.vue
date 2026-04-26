@@ -168,6 +168,7 @@ import { ref, reactive, onBeforeUnmount, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
 import { showAlertDialog, showConfirmDialog } from '../composables/useAppDialog'
+import { formatApiDateTime } from '../utils/dateTime'
 import { Radar } from 'vue-chartjs'
 import { renderReportMarkdown } from '../utils/markdown'
 import {
@@ -192,9 +193,9 @@ const expandedDimension = reactive({ A: false, T: false, M: false, R: false })
 let pendingRefreshTimer = null
 
 const modules = [
-  { key: 'A', name: '欣赏型', color: '#18181b' },
-  { key: 'T', name: '目标型', color: '#3f3f46' },
-  { key: 'M', name: '包容型', color: '#22c55e' },
+  { key: 'A', name: '欣赏型', color: '#2563eb' },
+  { key: 'T', name: '目标型', color: '#7c3aed' },
+  { key: 'M', name: '包容型', color: '#10b981' },
   { key: 'R', name: '责任型', color: '#f59e0b' },
 ]
 
@@ -256,37 +257,68 @@ const radarData = computed(() => {
   const ds = reportData.value.dimension_summary
   if (!ds) return { labels: [], datasets: [] }
   return {
-    labels: modules.map(m => `${m.key} ${m.name}`),
+    labels: modules.map(m => [m.key, m.name]),
     datasets: [{
       label: 'ATMR 特质分布',
       data: modules.map(m => ds[m.key]?.percentage || 0),
-      backgroundColor: 'rgba(17, 17, 17, 0.12)',
-      borderColor: '#18181b',
-      borderWidth: 2.5,
+      backgroundColor: 'rgba(79, 70, 229, 0.1)',
+      borderColor: '#4f46e5',
+      borderWidth: 2,
       pointBackgroundColor: modules.map(m => m.color),
       pointBorderColor: '#fff',
-      pointBorderWidth: 2,
-      pointRadius: 6,
-      pointHoverRadius: 9,
+      pointBorderWidth: 2.5,
+      pointRadius: 5,
+      pointHoverRadius: 8,
+      pointHitRadius: 12,
     }],
   }
 })
 
 const radarOptions = {
   responsive: true,
-  maintainAspectRatio: true,
+  maintainAspectRatio: false,
+  layout: {
+    padding: 8,
+  },
+  elements: {
+    line: { tension: 0.16 },
+  },
   plugins: {
     legend: { display: false },
-    tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.raw}%` } },
+    tooltip: {
+      displayColors: false,
+      backgroundColor: '#334155',
+      titleColor: '#ffffff',
+      bodyColor: '#f9fafb',
+      padding: 12,
+      cornerRadius: 12,
+      callbacks: {
+        label: (ctx) => {
+          const label = Array.isArray(ctx.label) ? ctx.label.join(' ') : ctx.label
+          return `${label}: ${ctx.raw}%`
+        },
+      },
+    },
   },
   scales: {
     r: {
       beginAtZero: true,
       max: 100,
-      ticks: { stepSize: 20, font: { size: 11 }, color: '#94a3b8', backdropColor: 'transparent' },
-      grid: { color: 'rgba(148, 163, 184, 0.15)' },
-      angleLines: { color: 'rgba(148, 163, 184, 0.15)' },
-      pointLabels: { font: { size: 14, weight: '600' }, color: '#1e293b' },
+      ticks: {
+        display: false,
+        stepSize: 20,
+        showLabelBackdrop: false,
+        font: { size: 10, weight: '600' },
+        color: 'rgba(100, 116, 139, 0.52)',
+        backdropColor: 'transparent',
+      },
+      grid: { color: 'rgba(148, 163, 184, 0.2)', circular: false },
+      angleLines: { color: 'rgba(148, 163, 184, 0.22)', lineWidth: 1 },
+      pointLabels: {
+        padding: 10,
+        font: { size: 12, weight: '800', lineHeight: 1.2 },
+        color: '#334155',
+      },
     },
   },
 }
@@ -307,8 +339,7 @@ const scoreClass = (s) => s >= 4 ? 'score-high' : s >= 3 ? 'score-mid' : 'score-
 const toggleDimension = (k) => { expandedDimension[k] = !expandedDimension[k] }
 
 const formatTime = (iso) => {
-  if (!iso) return ''
-  return new Date(iso).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return formatApiDateTime(iso)
 }
 
 const deleteCurrentSession = async () => {
@@ -404,8 +435,26 @@ onBeforeUnmount(() => {
 .report-pending-actions { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; padding: 0 0 24px; }
 
 /* === 雷达图 === */
-.radar-layout { display: flex; gap: 60px; align-items: center; }
-.radar-chart-wrapper { flex: 0 0 440px; max-width: 440px; background: var(--bg-hover); padding: 24px; border-radius: var(--radius-lg); border: 1px solid var(--border); box-shadow: var(--shadow); }
+.radar-layout { display: flex; gap: 56px; align-items: center; }
+.radar-chart-wrapper {
+  flex: 0 0 440px;
+  width: 440px;
+  max-width: 100%;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(15, 23, 42, 0.045), transparent 58%),
+    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  padding: 26px;
+  border-radius: 24px;
+  border: 1px solid rgba(203, 213, 225, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94), 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+.radar-chart-wrapper canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
 .dimension-scores { flex: 1; display: flex; flex-direction: column; gap: 16px; }
 .dim-score-item { display: flex; flex-direction: column; gap: 6px; padding: 16px 20px; border-radius: var(--radius-md); background: var(--bg-hover); transition: all var(--transition-normal); }
 .dim-score-item:hover { background: var(--border); transform: translateX(8px); }

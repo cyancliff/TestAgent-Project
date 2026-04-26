@@ -9,18 +9,21 @@
 
 ## 当前状态
 
-更新时间：2026-04-20
+更新时间：2026-04-25
 
 - 在线主系统已经闭环，可完成 ATMR 主流程演示与日常开发。
 - 多模态离线 baseline 已经跑通 `预处理 -> CLIP -> wav2clip -> bundle -> train -> eval -> infer`。
 - 已完成的真实小样本验证：
   - `train 20 / val 5`：`mse=0.004983`，`mae=0.057872`
   - `train 100 / val 20`：`mse=0.016520`，`mae=0.100234`
-- 全量多模态长任务已经具备可恢复 runner，日志位于 `reports/full_multimodal_pipeline/`。
-- 最近一次本地回归测试结果为 `69 passed`。
+- 全量多模态 baseline 已完成，旧全量基线产物位于 `reports/full_multimodal_pipeline/`。
+- 当前在线默认 checkpoint 已切换为 `reports/night_lr1e4_drop02/agtn_mtl_lr1e4_drop02.pt`：
+  - `test mse=0.011543`
+  - `test mae=0.086074`
+- 已完成在线真实推理 smoke 验证，结果位于 `reports/online_multimodal_smoke_20260425/smoke_result.json`，模型版本为 `agtn-mtl-best-lr1e4-drop02`。
 - 当前仍未完成的关键点：
-  - `app/services/multimodal_personality_service.py` 仍返回 `scaffold-v1` 占位分数，尚未接入真实 checkpoint
   - 多模态结果尚未正式落到主系统报告页和测评会话中
+  - 论文级 `PCC / CCC / R²` 等评价指标尚未完全补齐
   - `bg_features` 仍未实现
 
 ## 核心能力
@@ -44,6 +47,7 @@
 - 特征 bundle 组装
 - AGTN-MTL baseline 训练、评估、推理脚本
 - 可恢复的全量长任务脚本
+- 在线服务真实 checkpoint 推理与失败回退
 
 ## 关键目录
 
@@ -144,14 +148,14 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 python -m pytest -q
 ```
 
-最近一次本地完整结果：`69 passed`。
+最近一次本地完整结果见 `CHANGELOG.md`；多模态在线 smoke 已在 `reports/online_multimodal_smoke_20260425/` 归档。
 
 ## 当前最值得优先做的事
 
-1. 跑完全量多模态 baseline，并记录最终 `val / test` 指标。
-2. 将真实 checkpoint 接入 `app/services/multimodal_personality_service.py`，替换 `0.50` 占位分数。
-3. 将多模态结果挂到测评会话、报告页和历史记录中。
-4. 在论文里补齐多模态实验、融合分析和系统工程实现说明。
+1. 将多模态结果挂到测评会话、报告页和历史记录中。
+2. 在论文实验部分补齐 `PCC / CCC / R²` 等指标，并整理全量与调参结果表。
+3. 评估是否继续实现真实 `bg_features` 与更完整的论文多任务损失。
+4. 收口线上部署说明，明确轻量在线环境和本地多模态 GPU 环境的差异。
 
 ## 相关文档
 
