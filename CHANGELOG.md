@@ -2,6 +2,41 @@
 
 本文档遵循 Keep a Changelog 风格，按北京时间记录关键变更。
 
+## [2026-04-27] - 大五人格报告、RAG 知识库与双报告接入
+
+### 新增
+
+- 新增独立的大五人格报告模型与接口链路，支持视频上传生成报告、后台分析、列表/详情、失败重试、删除和 AI 解读重试。
+- 新增大五人格 RAG 知识库：[PageIndex/BigFive_Personality_Knowledge.md](/D:/PythonCode/TestAgent/PageIndex/BigFive_Personality_Knowledge.md)，并写入 PageIndex 索引文件，供大五 AI 解读和 RAG 查询使用。
+- 新增大五人格 AI 解读服务：[app/services/big_five_report_service.py](/D:/PythonCode/TestAgent/app/services/big_five_report_service.py)，基于五维分数、模型版本和 PageIndex 检索证据生成用户友好的详细解读。
+- 新增大五人格报告详情页：[frontend/src/components/BigFiveReport.vue](/D:/PythonCode/TestAgent/frontend/src/components/BigFiveReport.vue)，提供雷达图、五维分数、维度简析、AI 解读和报告来源展示。
+- 新增统一时间格式工具：[frontend/src/utils/dateTime.js](/D:/PythonCode/TestAgent/frontend/src/utils/dateTime.js)，修复前端把后端时间误按本地时区解释导致的显示偏差。
+- 新增 [scripts/build_big_five_pageindex.py](/D:/PythonCode/TestAgent/scripts/build_big_five_pageindex.py)，用于重新构建大五人格 PageIndex 索引。
+
+### 变更
+
+- 历史记录页改为 `ATMR 测评` / `大五人格` 双标签分区，两类报告的列表、统计、侧栏和操作互不混排。
+- 聊天会话支持同时关联一份 ATMR 报告和一份大五人格报告，创建/更新会话时可分别选择，并在系统上下文中并列呈现两类依据。
+- 大五人格报告页对齐 ATMR 报告阅读体验，同时将 AI 正文收敛为 `综合人格画像`、`优势与潜在卡点`、`行动建议`、`使用边界`，五维速览改由前端固定渲染。
+- 统一优化 ATMR 与大五人格报告页雷达图视觉，去除刻度数字，调整颜色、容器比例和移动端展示，避免默认图表感和黑色分数条。
+- 大五人格报告在历史页中的文案统一为“大五人格”，将“AI 解读可查看”调整为“报告可查看”，并精简状态卡片展示。
+- 大五 RAG 接口扩展为独立能力，新增 `big-five` 查询、检索和状态接口，同时保持 ATMR RAG 行为兼容。
+- 多模态报告接口改为报告导向，底层任务能力保留兼容，前端不再暴露“多模态任务”这类技术概念。
+
+### 修复
+
+- 修复大五人格 AI 解读重试接口前端路径不匹配导致的 `not found` 问题。
+- 修复大五人格报告长时间显示“生成中”时缺少状态同步和失败展示的问题。
+- 修复历史页大五人格状态卡片中过度展示视频文件名、时间位置拥挤和日期显示不准的问题。
+- 修复聊天报告选择列表中失败或 fallback 大五报告仍可能被作为对话依据的问题。
+
+### 测试
+
+- 执行 `npm run build`，前端构建通过。
+- 执行 `python -m pytest -q`，结果为 `86 passed, 3 warnings`。
+- 新增 [tests/test_big_five_reports_api.py](/D:/PythonCode/TestAgent/tests/test_big_five_reports_api.py)，覆盖大五报告上传、权限隔离、AI 解读生成和提示词结构。
+- 扩展 [tests/test_chat_api.py](/D:/PythonCode/TestAgent/tests/test_chat_api.py)、[tests/test_rag_api.py](/D:/PythonCode/TestAgent/tests/test_rag_api.py) 和 [tests/test_rag_service.py](/D:/PythonCode/TestAgent/tests/test_rag_service.py)，覆盖大五报告聊天上下文和 Big Five RAG 检索链路。
+
 ## [2026-04-25] - DeepSeek V4 调用切换、多模态 smoke 与文档收口
 
 ### 新增
