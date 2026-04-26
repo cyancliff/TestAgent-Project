@@ -21,5 +21,8 @@
 
 - 功能或状态变化时，检查是否需要同步：
   - `CHANGELOG.md`
+  - `README.md`
   - `docs/开发者日志.md`
-
+  - `docs/待完成任务.md`
+  - `docs/毕设开发目标和进度.md`
+  - `multimodal_personality/README.md`
