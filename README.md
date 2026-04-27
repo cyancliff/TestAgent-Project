@@ -23,10 +23,13 @@
 - 当前在线默认 checkpoint 已切换为 `reports/night_lr1e4_drop02/agtn_mtl_lr1e4_drop02.pt`：
   - `test mse=0.011543`
   - `test mae=0.086074`
+  - `test pcc=0.7062`
+  - `test ccc=0.6327`
+  - `test r²=0.4881`
 - 已完成在线真实推理 smoke 验证，结果位于 `reports/online_multimodal_smoke_20260425/smoke_result.json`，模型版本为 `agtn-mtl-best-lr1e4-drop02`。
 - 当前仍未完成的关键点：
-  - 论文级 `PCC / CCC / R²` 等评价指标尚未完全补齐
-  - `bg_features` 仍未实现
+  - `bg_features` 已有工程版 256 维实现，但当前在线 checkpoint 仍是旧零填充版本，需要重新生成 bundle 并重训后才能用于正式指标对比
+  - 多任务损失、更多随机种子和单模态/多模态消融仍可继续补充
   - 数据库迁移和后台任务体系仍需继续正规化
 
 ## 核心能力
@@ -165,9 +168,9 @@ python -m pytest -q
 
 ## 当前最值得优先做的事
 
-1. 在论文实验部分补齐 `PCC / CCC / R²` 等指标，并整理全量与调参结果表。
-2. 继续优化大五人格报告的解读质量、失败重试和演示文案。
-3. 评估是否继续实现真实 `bg_features` 与更完整的论文多任务损失。
+1. 基于已补齐的 `ACC / PCC / CCC / R²` 指标整理论文实验表格和文字解释。
+2. 视时间决定是否用新 `bg_features` 重新生成 bundle 并重训一版对照模型。
+3. 继续优化大五人格报告的解读质量、失败重试和演示文案。
 4. 收口数据库迁移、后台任务队列和线上/本地多模态环境说明。
 
 ## 相关文档

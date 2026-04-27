@@ -75,6 +75,9 @@ def main() -> None:
         f"evaluated samples={result.sample_count} "
         f"mse={result.metrics.get('mse', 0.0):.6f} "
         f"mae={result.metrics.get('mae', 0.0):.6f} "
+        f"pcc={result.metrics.get('pcc', 0.0):.6f} "
+        f"ccc={result.metrics.get('ccc', 0.0):.6f} "
+        f"r2={result.metrics.get('r2', 0.0):.6f} "
         f"checkpoint={args.checkpoint}",
     )
 

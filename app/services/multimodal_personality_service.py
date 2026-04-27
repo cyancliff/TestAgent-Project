@@ -24,6 +24,7 @@ try:
 except ImportError:  # pragma: no cover - exercised through availability checks
     torch = None
 
+from multimodal_personality.feature_extractors.bg_extractor import BackgroundFeatureExtractor
 from multimodal_personality.feature_extractors.clip_extractor import ClipFeatureExtractor
 from multimodal_personality.feature_extractors.wav2clip_extractor import Wav2ClipFeatureExtractor
 from multimodal_personality.inference.pipeline import MultimodalInferencePipeline
@@ -83,6 +84,7 @@ class MultimodalPersonalityService:
         self._pipeline = MultimodalInferencePipeline(model_version=self._SCAFFOLD_MODEL_VERSION)
         self._clip_extractor: ClipFeatureExtractor | None = None
         self._wav2clip_extractor: Wav2ClipFeatureExtractor | None = None
+        self._bg_extractor: BackgroundFeatureExtractor | None = None
         self._loaded_checkpoint: LoadedCheckpoint | None = None
         self._load_existing_tasks()
 
@@ -189,6 +191,11 @@ class MultimodalPersonalityService:
             self._wav2clip_extractor = Wav2ClipFeatureExtractor(segment_count=15, feature_dim=512)
         return self._wav2clip_extractor
 
+    def _get_bg_extractor(self) -> BackgroundFeatureExtractor:
+        if self._bg_extractor is None:
+            self._bg_extractor = BackgroundFeatureExtractor()
+        return self._bg_extractor
+
     def _get_loaded_checkpoint(self) -> LoadedCheckpoint:
         if self._loaded_checkpoint is None:
             self._loaded_checkpoint = load_checkpoint_model(
@@ -294,6 +301,7 @@ class MultimodalPersonalityService:
         feature_root = artifact_dir / "features"
         clip_feature_dir = feature_root / "clip"
         wav2clip_feature_dir = feature_root / "wav2clip"
+        bg_feature_dir = feature_root / "bg"
         bundle_path = artifact_dir / "bundle.json"
 
         transcript = transcript_path.read_text(encoding="utf-8", errors="ignore") if transcript_path.exists() else ""
@@ -331,16 +339,31 @@ class MultimodalPersonalityService:
             else:
                 errors.append(f"audio artifact missing: {audio_path}")
 
+            loaded = self._get_loaded_checkpoint()
+            feature_contract = dict(loaded.checkpoint.get("feature_contract", {}))
+            bg_payload = None
+            if feature_contract.get("uses_explicit_bg_features"):
+                bg_result = self._get_bg_extractor().extract_sample(
+                    video_name=video_name,
+                    clip_payload=clip_payload,
+                    wav2clip_payload=wav2clip_payload,
+                    transcript=transcript,
+                    output_dir=bg_feature_dir,
+                )
+                artifacts["bg_feature_path"] = bg_result.output_path
+                errors.extend(bg_result.errors)
+                if bg_result.success:
+                    bg_payload = self._read_json(bg_result.output_path)
+
             bundle = MultimodalFeatureBundle.from_current_artifacts(
                 sample=sample,
                 clip_payload=clip_payload,
                 wav2clip_payload=wav2clip_payload,
-                bg_payload=None,
+                bg_payload=bg_payload,
             )
             bundle.write_json(bundle_path)
             artifacts["bundle_path"] = str(bundle_path)
 
-            loaded = self._get_loaded_checkpoint()
             model_kwargs = dict(loaded.checkpoint.get("model_kwargs", {}))
             text_seq_len = int(model_kwargs.get("text_seq_len", 13))
             inference_result = evaluate_bundle_paths(

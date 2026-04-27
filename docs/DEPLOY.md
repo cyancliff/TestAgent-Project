@@ -246,8 +246,8 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 优先做：
 
 1. 基于 `reports/night_lr1e4_drop02/` 整理当前最优全量结果
-2. 补齐 `PCC / CCC / R²` 等论文指标
-3. 继续评估 `bg_features`、多任务损失和更多随机种子的必要性
+2. 使用 `reports/multimodal_experiment_metrics.md` 中已补齐的 `ACC / PCC / CCC / R²` 指标写论文实验表
+3. 视时间决定是否用新 `bg_features` 重新生成 bundle、重训并做对照实验
 
 ## 6. 仍需注意的事情
 

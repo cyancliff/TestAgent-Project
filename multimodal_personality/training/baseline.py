@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 from multimodal_personality.models import AGTNMTLModel, MultimodalFeatureBundle
 from multimodal_personality.models.feature_bundle import TRAIT_ORDER
 from multimodal_personality.preprocessing.cfi_v2_dataset import filter_manifest_samples, load_manifest
+from multimodal_personality.training.metrics import compute_regression_metrics
 
 
 @dataclass
@@ -141,50 +143,6 @@ def discover_bundle_paths(
     return ResolvedBundleSet(bundle_paths=bundle_paths, missing_bundle_names=missing_bundle_names)
 
 
-def compute_regression_metrics(
-    predictions: torch.Tensor,
-    targets: torch.Tensor,
-    *,
-    trait_order: Sequence[str] = TRAIT_ORDER,
-) -> dict[str, object]:
-    """Compute aggregate and per-trait regression metrics."""
-
-    if predictions.shape != targets.shape:
-        raise ValueError(
-            f"prediction and target shapes must match, received {tuple(predictions.shape)} vs {tuple(targets.shape)}",
-        )
-    if predictions.ndim != 2:
-        raise ValueError(f"expected 2D predictions, received shape={tuple(predictions.shape)}")
-    if predictions.shape[1] != len(trait_order):
-        raise ValueError(
-            f"prediction width {predictions.shape[1]} does not match trait count {len(trait_order)}",
-        )
-
-    diff = predictions - targets
-    mse = torch.mean(diff**2).item()
-    mae = torch.mean(torch.abs(diff)).item()
-    rmse = mse**0.5
-
-    per_trait: dict[str, dict[str, float]] = {}
-    for trait_index, trait_name in enumerate(trait_order):
-        trait_diff = diff[:, trait_index]
-        trait_mse = torch.mean(trait_diff**2).item()
-        trait_mae = torch.mean(torch.abs(trait_diff)).item()
-        per_trait[trait_name] = {
-            "mse": trait_mse,
-            "rmse": trait_mse**0.5,
-            "mae": trait_mae,
-        }
-
-    return {
-        "sample_count": int(predictions.shape[0]),
-        "mse": mse,
-        "rmse": rmse,
-        "mae": mae,
-        "per_trait": per_trait,
-    }
-
-
 def _build_dataloader(
     bundle_paths: Sequence[str | Path],
     *,
@@ -218,6 +176,24 @@ def _forward_main_prediction(model: AGTNMTLModel, batch: dict[str, object]) -> t
         bg=batch["bg_features"],
     )
     return outputs["m"]
+
+
+def _summarize_feature_contract(bundle_paths: Sequence[str | Path]) -> dict[str, object]:
+    explicit_bg_count = 0
+    for bundle_path in bundle_paths:
+        try:
+            payload = json.loads(Path(bundle_path).read_text(encoding="utf-8-sig"))
+        except Exception:
+            continue
+        if payload.get("bg_features") is not None:
+            explicit_bg_count += 1
+
+    return {
+        "explicit_bg_feature_count": explicit_bg_count,
+        "bundle_count": len(bundle_paths),
+        "uses_explicit_bg_features": explicit_bg_count > 0,
+        "bg_feature_mode": "explicit" if explicit_bg_count > 0 else "zero_fill",
+    }
 
 
 def _records_from_batch(batch: dict[str, object], predictions: torch.Tensor) -> list[PredictionRecord]:
@@ -267,6 +243,7 @@ def _save_checkpoint(
     history: list[dict[str, object]],
     train_bundle_count: int,
     val_bundle_count: int,
+    feature_contract: dict[str, object],
 ) -> Path:
     checkpoint_file = Path(checkpoint_path)
     checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
@@ -282,6 +259,7 @@ def _save_checkpoint(
         "history": history,
         "train_bundle_count": train_bundle_count,
         "val_bundle_count": val_bundle_count,
+        "feature_contract": feature_contract,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     torch.save(payload, checkpoint_file)
@@ -409,6 +387,7 @@ def train_baseline_model(
     }
     if model_kwargs:
         model_config.update(model_kwargs)
+    feature_contract = _summarize_feature_contract(train_bundle_paths)
 
     model = _build_model(model_kwargs=model_config, device=resolved_device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
@@ -484,6 +463,7 @@ def train_baseline_model(
                 history=history,
                 train_bundle_count=len(train_bundle_paths),
                 val_bundle_count=len(val_paths),
+                feature_contract=feature_contract,
             )
 
     return TrainingRunResult(

@@ -26,8 +26,8 @@
 
 还没有完成的部分：
 
-- `bg_features` 仍未实现
-- `PCC / CCC / R²` 等论文级评价指标尚未完全补齐
+- `bg_features` 已有工程版 256 维实现，后续可基于新 bundle 重新训练并做对照实验
+- `PCC / CCC / R²` 等论文级评价指标已经接入评估与结果汇总脚本
 - 后台任务体系和数据库迁移仍可继续正规化
 
 ## 2. 目录结构
@@ -159,6 +159,9 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 
 - `test mse=0.011543`
 - `test mae=0.086074`
+- `test pcc=0.7062`
+- `test ccc=0.6327`
+- `test r²=0.4881`
 
 在线真实推理 smoke 已通过，归档位置：
 
@@ -197,8 +200,8 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 
 ### 未完成
 
-- `bg_features`
-- `PCC / CCC / R²` 等论文级指标和更系统的对比实验
+- 使用新 `bg_features` 重新生成 bundle、重训并做对照实验
+- 更系统的随机种子、单模态/多模态消融实验
 - 更正式的后台任务队列与数据库迁移治理
 
 ## 9. 与在线系统的关系
@@ -212,9 +215,9 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 
 所以现阶段最合理的推进顺序是：
 
-1. 补齐论文级评价指标与实验表格
+1. 基于已补齐的论文级评价指标整理实验表格
 2. 继续打磨大五报告解释质量和演示文案
-3. 再评估是否实现真实 `bg_features` 和更完整的论文结构
+3. 视时间用新 `bg_features` 重新训练一版对照模型
 
 ## 10. 运行中的注意事项
 

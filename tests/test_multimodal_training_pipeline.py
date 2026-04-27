@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 
+import torch
+
 from multimodal_personality.models import MultimodalFeatureBundle
 from multimodal_personality.training import (
     TRAIT_ORDER,
+    compute_regression_metrics,
     discover_bundle_paths,
     evaluate_bundle_paths,
     load_checkpoint_model,
@@ -64,6 +67,28 @@ def test_discover_bundle_paths_uses_manifest_filter(tmp_path) -> None:
     assert resolved.missing_bundle_names == ["sample-missing"]
 
 
+def test_compute_regression_metrics_includes_paper_metrics() -> None:
+    targets = torch.tensor(
+        [
+            [0.1, 0.2, 0.3, 0.4, 0.5],
+            [0.2, 0.3, 0.4, 0.5, 0.6],
+            [0.3, 0.4, 0.5, 0.6, 0.7],
+        ],
+        dtype=torch.float32,
+    )
+    predictions = targets.clone()
+
+    metrics = compute_regression_metrics(predictions, targets)
+
+    assert metrics["mse"] == 0.0
+    assert metrics["mae"] == 0.0
+    assert metrics["acc"] == 1.0
+    assert metrics["pcc"] > 0.999
+    assert metrics["ccc"] > 0.999
+    assert metrics["r2"] > 0.999
+    assert set(metrics["per_trait"]) == set(TRAIT_ORDER)
+
+
 def test_train_eval_and_infer_minimal_loop(tmp_path) -> None:
     train_dir = tmp_path / "train_bundles"
     val_dir = tmp_path / "val_bundles"
@@ -107,6 +132,7 @@ def test_train_eval_and_infer_minimal_loop(tmp_path) -> None:
     assert eval_result.sample_count == 2
     assert eval_result.mean_loss is not None
     assert set(eval_result.metrics["per_trait"]) == set(TRAIT_ORDER)
+    assert {"acc", "pcc", "ccc", "r2"}.issubset(eval_result.metrics)
 
     infer_result = predict_bundle_paths(checkpoint_path, sorted(val_dir.glob("*.json")), device="cpu", batch_size=2)
     assert infer_result.sample_count == 2

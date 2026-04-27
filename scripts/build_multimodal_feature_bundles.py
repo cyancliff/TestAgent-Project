@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from multimodal_personality.feature_extractors.bg_extractor import BackgroundFeatureExtractor
 from multimodal_personality.models.feature_bundle import MultimodalFeatureBundle
 from multimodal_personality.preprocessing.cfi_v2_dataset import filter_manifest_samples, load_manifest
 
@@ -50,6 +51,11 @@ def main() -> None:
         action="store_true",
         help="Skip samples that do not already have a CLIP feature file",
     )
+    parser.add_argument(
+        "--no-derive-bg",
+        action="store_true",
+        help="Do not derive bg_features from CLIP/wav2clip payloads when bg JSON files are missing",
+    )
     args = parser.parse_args()
 
     manifest = load_manifest(args.manifest)
@@ -60,6 +66,8 @@ def main() -> None:
     bg_dir = Path(args.bg_dir)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    bg_dir.mkdir(parents=True, exist_ok=True)
+    bg_extractor = BackgroundFeatureExtractor()
 
     built = 0
     skipped = 0
@@ -78,6 +86,16 @@ def main() -> None:
 
         wav2clip_payload = load_optional_json(wav2clip_dir / f"{sample['video_name']}.json")
         bg_payload = load_optional_json(bg_dir / f"{sample['video_name']}.json")
+        if bg_payload is None and not args.no_derive_bg and clip_payload.get("success", False):
+            bg_result = bg_extractor.extract_sample(
+                video_name=sample["video_name"],
+                clip_payload=clip_payload,
+                wav2clip_payload=wav2clip_payload,
+                transcript=str(sample.get("transcript", "")),
+                output_dir=bg_dir,
+            )
+            if bg_result.success:
+                bg_payload = load_optional_json(Path(bg_result.output_path))
 
         try:
             bundle = MultimodalFeatureBundle.from_current_artifacts(

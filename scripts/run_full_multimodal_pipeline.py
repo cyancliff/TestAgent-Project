@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.services.multimodal_personality_service import service
+from multimodal_personality.feature_extractors.bg_extractor import BackgroundFeatureExtractor
 from multimodal_personality.feature_extractors.clip_extractor import ClipFeatureExtractor
 from multimodal_personality.feature_extractors.wav2clip_extractor import Wav2ClipFeatureExtractor
 from multimodal_personality.models.feature_bundle import MultimodalFeatureBundle
@@ -293,6 +294,59 @@ def extract_wav2clip_features(
             raise RuntimeError(f"wav2clip extraction failed for {job['video_name']}: {result.errors}")
 
 
+def extract_bg_features(
+    *,
+    split_name: str,
+    jobs_path: str | Path,
+    clip_dir: str | Path,
+    wav2clip_dir: str | Path,
+    output_dir: str | Path,
+) -> None:
+    jobs_payload = load_json(jobs_path)
+    jobs = jobs_payload["jobs"]
+    clip_root = Path(clip_dir)
+    wav_root = Path(wav2clip_dir)
+    output_root = Path(output_dir)
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    pending = [
+        job
+        for job in jobs
+        if output_success(clip_root / f"{job['video_name']}.json")
+        and not output_success(output_root / f"{job['video_name']}.json")
+    ]
+    LOGGER.info("[%s] bg pending=%s total=%s", split_name, len(pending), len(jobs))
+    if not pending:
+        return
+
+    extractor = BackgroundFeatureExtractor()
+    for index, job in enumerate(pending, start=1):
+        clip_payload = load_json(clip_root / f"{job['video_name']}.json")
+        wav_payload = None
+        wav_path = wav_root / f"{job['video_name']}.json"
+        if wav_path.exists():
+            wav_payload = load_json(wav_path)
+
+        result = extractor.extract_sample(
+            video_name=job["video_name"],
+            clip_payload=clip_payload,
+            wav2clip_payload=wav_payload,
+            transcript=str(job.get("transcript", "")),
+            output_dir=output_root,
+        )
+        LOGGER.info(
+            "[%s bg %s/%s] %s success=%s errors=%s",
+            split_name,
+            index,
+            len(pending),
+            job["video_name"],
+            result.success,
+            len(result.errors),
+        )
+        if not result.success:
+            raise RuntimeError(f"bg feature extraction failed for {job['video_name']}: {result.errors}")
+
+
 def build_bundles(
     *,
     split_name: str,
@@ -300,11 +354,13 @@ def build_bundles(
     limit: int | None,
     clip_dir: str | Path,
     wav2clip_dir: str | Path,
+    bg_dir: str | Path,
     output_dir: str | Path,
 ) -> None:
     samples = resolve_samples(manifest_path, limit)
     clip_root = Path(clip_dir)
     wav_root = Path(wav2clip_dir)
+    bg_root = Path(bg_dir)
     output_root = Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
 
@@ -322,11 +378,16 @@ def build_bundles(
         if wav_path.exists():
             wav_payload = load_json(wav_path)
 
+        bg_payload = None
+        bg_path = bg_root / f"{sample['video_name']}.json"
+        if bg_path.exists():
+            bg_payload = load_json(bg_path)
+
         bundle = MultimodalFeatureBundle.from_current_artifacts(
             sample=sample,
             clip_payload=clip_payload,
             wav2clip_payload=wav_payload,
-            bg_payload=None,
+            bg_payload=bg_payload,
         )
         bundle_path = output_root / f"{sample['video_name']}.json"
         bundle.write_json(bundle_path)
@@ -425,7 +486,14 @@ def train_and_evaluate(
             "metrics": val_result.metrics,
         },
     )
-    LOGGER.info("[val] mse=%.6f mae=%.6f", val_result.metrics["mse"], val_result.metrics["mae"])
+    LOGGER.info(
+        "[val] mse=%.6f mae=%.6f pcc=%.6f ccc=%.6f r2=%.6f",
+        val_result.metrics["mse"],
+        val_result.metrics["mae"],
+        val_result.metrics["pcc"],
+        val_result.metrics["ccc"],
+        val_result.metrics["r2"],
+    )
 
     test_result = evaluate_bundle_paths(
         loaded.model,
@@ -446,7 +514,14 @@ def train_and_evaluate(
             "metrics": test_result.metrics,
         },
     )
-    LOGGER.info("[test] mse=%.6f mae=%.6f", test_result.metrics["mse"], test_result.metrics["mae"])
+    LOGGER.info(
+        "[test] mse=%.6f mae=%.6f pcc=%.6f ccc=%.6f r2=%.6f",
+        test_result.metrics["mse"],
+        test_result.metrics["mae"],
+        test_result.metrics["pcc"],
+        test_result.metrics["ccc"],
+        test_result.metrics["r2"],
+    )
 
 
 def main() -> None:
@@ -472,6 +547,7 @@ def main() -> None:
     jobs_dir = output_root / "jobs"
     clip_root = output_root / "features" / "clip"
     wav_root = output_root / "features" / "wav2clip"
+    bg_root = output_root / "features" / "bg"
     bundle_root = output_root / "bundles"
 
     for split_name, manifest_path, limit in splits:
@@ -494,12 +570,20 @@ def main() -> None:
             jobs_path=jobs_path,
             output_dir=wav_root / split_name,
         )
+        extract_bg_features(
+            split_name=split_name,
+            jobs_path=jobs_path,
+            clip_dir=clip_root / split_name,
+            wav2clip_dir=wav_root / split_name,
+            output_dir=bg_root / split_name,
+        )
         build_bundles(
             split_name=split_name,
             manifest_path=manifest_path,
             limit=limit,
             clip_dir=clip_root / split_name,
             wav2clip_dir=wav_root / split_name,
+            bg_dir=bg_root / split_name,
             output_dir=bundle_root / split_name,
         )
 
