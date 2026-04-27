@@ -2,6 +2,35 @@
 
 本文档遵循 Keep a Changelog 风格，按北京时间记录关键变更。
 
+## [2026-04-27] - 论文指标、bg_features 与历史页体验收口
+
+### 新增
+
+- 新增 [multimodal_personality/training/metrics.py](/D:/PythonCode/TestAgent/multimodal_personality/training/metrics.py)，统一计算 `MSE / RMSE / MAE / ACC / PCC / CCC / R²` 及五维度分项指标。
+- 新增 [multimodal_personality/feature_extractors/bg_extractor.py](/D:/PythonCode/TestAgent/multimodal_personality/feature_extractors/bg_extractor.py)，实现工程版 256 维 `bg_features`，基于 CLIP 画面特征、文本特征、音频特征和转写统计构建场景关联描述。
+- 新增 [scripts/summarize_multimodal_experiments.py](/D:/PythonCode/TestAgent/scripts/summarize_multimodal_experiments.py)，可从评估 JSON 中补算论文指标并生成实验汇总表。
+
+### 变更
+
+- 扩展 [scripts/eval_agtn_mtl.py](/D:/PythonCode/TestAgent/scripts/eval_agtn_mtl.py)、[scripts/run_full_multimodal_pipeline.py](/D:/PythonCode/TestAgent/scripts/run_full_multimodal_pipeline.py) 和训练评估链路，使后续评估默认输出 `PCC / CCC / R²` 等论文指标。
+- 将 `bg_features` 接入 bundle 构建和全量 pipeline；同时在线服务会根据 checkpoint 中的 feature contract 判断是否启用显式 `bg_features`，避免旧零填充 checkpoint 在未重训时被强行改变输入分布。
+- 历史页大五人格侧栏按 `进行中 / 已完成 / 需要处理` 分组，并在大五人格卡片上直接提供“查看报告”和“重新生成”操作。
+- 更新 [README.md](/D:/PythonCode/TestAgent/README.md)、[docs/DEPLOY.md](/D:/PythonCode/TestAgent/docs/DEPLOY.md)、[docs/待完成任务.md](/D:/PythonCode/TestAgent/docs/待完成任务.md)、[docs/毕设开发目标和进度.md](/D:/PythonCode/TestAgent/docs/毕设开发目标和进度.md)、[docs/开发者日志.md](/D:/PythonCode/TestAgent/docs/开发者日志.md)、[docs/多模态论文研究与复现成果汇报.md](/D:/PythonCode/TestAgent/docs/多模态论文研究与复现成果汇报.md) 和 [multimodal_personality/README.md](/D:/PythonCode/TestAgent/multimodal_personality/README.md)，把当前口径同步为“论文指标已补齐，bg_features 已有工程版实现，后续可重训做对照”。
+
+### 实验结果
+
+- 已补齐当前主要多模态实验的论文指标：
+  - 初始全量 baseline：`MSE=0.0199`，`MAE=0.1136`，`ACC=0.8864`，`PCC=0.3422`，`CCC=0.1925`，`R²=0.1154`
+  - `lr1e-4 / dropout 0.2`：`MSE=0.0115`，`MAE=0.0861`，`ACC=0.9139`，`PCC=0.7062`，`CCC=0.6327`，`R²=0.4881`
+  - `lr1e-4 / dropout 0.3`：`MSE=0.0122`，`MAE=0.0885`，`ACC=0.9115`，`PCC=0.7062`，`CCC=0.5776`，`R²=0.4609`
+  - `lr2e-4 / dropout 0.3`：`MSE=0.0131`，`MAE=0.0916`，`ACC=0.9084`，`PCC=0.6684`，`CCC=0.5410`，`R²=0.4196`
+
+### 测试
+
+- 执行 `python -m pytest -q`，结果为 `89 passed, 3 warnings`。
+- 执行 `npm run build`，前端构建通过。
+- 执行关键 Python 脚本语法检查，新增与修改脚本均通过。
+
 ## [2026-04-27] - 大五人格报告、RAG 知识库与双报告接入
 
 ### 新增

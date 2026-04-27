@@ -129,11 +129,11 @@
             </div>
           </template>
           <template v-else>
-            <div class="history-session-group">
-              <div class="history-session-group-label">大五人格报告</div>
+            <div v-for="group in bigFiveSidebarGroups" :key="group.key" class="history-session-group">
+              <div class="history-session-group-label">{{ group.label }}</div>
               <div
-                v-for="report in bigFiveReports"
-                :key="`big-five-sidebar-${report.report_id}`"
+                v-for="report in group.reports"
+                :key="`big-five-sidebar-${group.key}-${report.report_id}`"
                 :class="[
                   'history-session-item',
                   {
@@ -159,9 +159,6 @@
                   </button>
 
                   <div v-if="openSessionMenuId === bigFiveMenuKey(report.report_id)" class="history-session-menu">
-                    <button class="history-session-menu-item" type="button" @click.stop="viewBigFiveReport(report.report_id)">
-                      查看报告
-                    </button>
                     <button v-if="canRetryBigFive(report)" class="history-session-menu-item" type="button" @click.stop="retryBigFiveReport(report.report_id)">
                       重新生成
                     </button>
@@ -470,6 +467,17 @@
                     <span class="session-time-label">生成时间</span>
                     <span class="session-time">{{ formatFullDate(report.created_at) }}</span>
                   </div>
+                  <div class="card-actions">
+                    <button class="btn-view" type="button" @click="viewBigFiveReport(report.report_id)">查看报告</button>
+                    <button
+                      v-if="canRetryBigFive(report)"
+                      class="btn-edit"
+                      type="button"
+                      @click="retryBigFiveReport(report.report_id)"
+                    >
+                      重新生成
+                    </button>
+                  </div>
                 </div>
               </article>
             </div>
@@ -556,6 +564,19 @@ const bigFiveIssueCount = computed(() => bigFiveReports.value.filter((report) =>
   || (report.status === 'completed' && !report.is_real_result)
   || report.interpretation_status === 'failed'
 )).length)
+const isBigFiveIssue = (report) => (
+  report.status === 'failed'
+  || (report.status === 'completed' && !report.is_real_result)
+  || report.interpretation_status === 'failed'
+)
+const bigFiveProcessingReports = computed(() => bigFiveReports.value.filter((report) => isBigFiveProcessing(report)))
+const bigFiveCompletedReports = computed(() => bigFiveReports.value.filter((report) => !isBigFiveProcessing(report) && !isBigFiveIssue(report)))
+const bigFiveIssueReports = computed(() => bigFiveReports.value.filter((report) => !isBigFiveProcessing(report) && isBigFiveIssue(report)))
+const bigFiveSidebarGroups = computed(() => [
+  { key: 'processing', label: '进行中', reports: bigFiveProcessingReports.value },
+  { key: 'completed', label: '已完成', reports: bigFiveCompletedReports.value },
+  { key: 'issue', label: '需要处理', reports: bigFiveIssueReports.value },
+].filter((group) => group.reports.length))
 const latestSession = computed(() => sessions.value[0] || null)
 const isAtmrHistory = computed(() => activeHistoryType.value === 'atmr')
 const isBigFiveHistory = computed(() => activeHistoryType.value === 'big-five')
