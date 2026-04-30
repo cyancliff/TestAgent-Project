@@ -135,7 +135,6 @@
               'option-btn',
               {
                 selected: currentAnswer?.selected_option === option,
-                'option-btn--needs-followup': currentAnswer?.selected_option === option && currentAnswerNeedsFollowUp,
               },
             ]"
             @click="selectOption(option)"
@@ -170,15 +169,7 @@
           <button class="nav-btn secondary" @click="prevQuestion" :disabled="currentIndex === 0">上一题</button>
         </div>
 
-        <div class="navigation-slot navigation-slot--center">
-          <button
-            :class="['nav-btn', currentAnswerNeedsFollowUp ? 'nav-btn--follow-up' : 'nav-btn--note']"
-            type="button"
-            @click="openPendingFollowUp"
-          >
-            补充说明
-          </button>
-        </div>
+        <div class="navigation-slot navigation-slot--center"></div>
 
         <div class="navigation-slot">
           <button
@@ -273,7 +264,7 @@
 import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
-import { showAlertDialog, showConfirmDialog, showPromptDialog } from '../composables/useAppDialog'
+import { showAlertDialog, showConfirmDialog } from '../composables/useAppDialog'
 import { renderReportMarkdown } from '../utils/markdown'
 
 const route = useRoute()
@@ -304,7 +295,7 @@ const currentIndex = ref(0)
 const stageQuestions = ref([])  // 当前阶段的题目列表
 const restoredQuestions = ref([])
 const answersMap = ref({})
-const explanationDrafts = ref({})
+const behaviorMetricsMap = ref({})
 const allAnsweredExamNos = ref([])  // 所有已答题目编号
 const currentQuestion = ref({ id: '', content: '正在加载题目...', options: [] })
 const startTime = ref(0)
@@ -355,8 +346,6 @@ const canSubmitStage = computed(() => {
 const totalAnsweredCount = computed(() => Object.keys(answersMap.value).length)
 
 const currentAnswer = computed(() => answersMap.value[currentQuestion.value.id] || null)
-const answerNeedsExplanation = (answer) => !!(answer?.status === 'anomaly' && !answer?.explanation_submitted)
-const currentAnswerNeedsFollowUp = computed(() => answerNeedsExplanation(currentAnswer.value))
 const canGoNext = computed(() => {
   return !!currentAnswer.value
 })
@@ -381,6 +370,130 @@ const clearReportPollTimer = () => {
 const clearAsyncTimers = () => {
   clearStageReviewTimers()
   clearReportPollTimer()
+}
+
+const newBehaviorMetrics = () => ({
+  started_at: Date.now(),
+  first_action_latency: null,
+  mouse_move_count: 0,
+  mouse_path_length: 0,
+  pointer_down_count: 0,
+  option_change_count: 0,
+  option_change_path: [],
+  focus_blur_count: 0,
+  idle_time: 0,
+  rapid_click_flag: false,
+  last_pointer: null,
+  last_activity_at: Date.now(),
+  last_click_at: null,
+})
+
+const getCurrentBehaviorMetrics = () => {
+  const examNo = currentQuestion.value?.id
+  if (!examNo) return null
+  if (!behaviorMetricsMap.value[examNo]) {
+    behaviorMetricsMap.value[examNo] = newBehaviorMetrics()
+  }
+  return behaviorMetricsMap.value[examNo]
+}
+
+const resetCurrentBehaviorMetrics = () => {
+  const examNo = currentQuestion.value?.id
+  if (!examNo) return
+  behaviorMetricsMap.value[examNo] = newBehaviorMetrics()
+}
+
+const recordActivity = () => {
+  const metrics = getCurrentBehaviorMetrics()
+  if (!metrics) return
+  const now = Date.now()
+  const gap = now - (metrics.last_activity_at || now)
+  if (gap > 5000) {
+    metrics.idle_time += gap / 1000
+  }
+  metrics.last_activity_at = now
+}
+
+const recordFirstAction = () => {
+  const metrics = getCurrentBehaviorMetrics()
+  if (!metrics) return
+  if (metrics.first_action_latency === null) {
+    metrics.first_action_latency = (Date.now() - metrics.started_at) / 1000
+  }
+}
+
+const handlePointerMove = (event) => {
+  const metrics = getCurrentBehaviorMetrics()
+  if (!metrics) return
+  const x = Number(event.clientX || 0)
+  const y = Number(event.clientY || 0)
+  if (metrics.last_pointer) {
+    const dx = x - metrics.last_pointer.x
+    const dy = y - metrics.last_pointer.y
+    metrics.mouse_path_length += Math.sqrt(dx * dx + dy * dy)
+  }
+  metrics.last_pointer = { x, y }
+  metrics.mouse_move_count += 1
+  recordActivity()
+}
+
+const handlePointerDown = () => {
+  const metrics = getCurrentBehaviorMetrics()
+  if (!metrics) return
+  const now = Date.now()
+  recordFirstAction()
+  recordActivity()
+  metrics.pointer_down_count += 1
+  if (metrics.last_click_at && now - metrics.last_click_at < 250) {
+    metrics.rapid_click_flag = true
+  }
+  metrics.last_click_at = now
+}
+
+const handleWindowBlur = () => {
+  const metrics = getCurrentBehaviorMetrics()
+  if (metrics) {
+    metrics.focus_blur_count += 1
+  }
+}
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === 'hidden') {
+    handleWindowBlur()
+  }
+}
+
+const recordOptionInteraction = (option) => {
+  const metrics = getCurrentBehaviorMetrics()
+  if (!metrics) return
+  recordFirstAction()
+  recordActivity()
+  const path = metrics.option_change_path || []
+  const lastOption = path[path.length - 1]
+  if (lastOption && lastOption !== option) {
+    metrics.option_change_count += 1
+  }
+  if (lastOption !== option) {
+    path.push(option)
+  }
+  metrics.option_change_path = path.slice(-8)
+}
+
+const buildBehaviorPayload = (examNo = currentQuestion.value?.id) => {
+  const metrics = behaviorMetricsMap.value[examNo]
+  if (!metrics) return {}
+  recordActivity()
+  return {
+    first_action_latency: Number((metrics.first_action_latency ?? 0).toFixed(3)),
+    mouse_move_count: metrics.mouse_move_count || 0,
+    mouse_path_length: Number((metrics.mouse_path_length || 0).toFixed(2)),
+    pointer_down_count: metrics.pointer_down_count || 0,
+    option_change_count: metrics.option_change_count || 0,
+    option_change_path: (metrics.option_change_path || []).slice(-8),
+    focus_blur_count: metrics.focus_blur_count || 0,
+    idle_time: Number((metrics.idle_time || 0).toFixed(3)),
+    rapid_click_flag: !!metrics.rapid_click_flag,
+  }
 }
 
 const buildLocalStageInfo = (stage = currentStage.value, submittedStages = stageInfo.value?.submitted_stages || []) => {
@@ -424,8 +537,12 @@ const submitStageSnapshot = computed(() => {
         time_spent: ans.time_spent,
         score: ans.score,
         is_anomaly: ans.status === 'anomaly' ? 1 : 0,
-        ai_follow_up: ans.follow_up_question || null,
-        user_explanation: ans.user_explanation || null,
+        ai_follow_up: null,
+        user_explanation: null,
+        risk_score: ans.risk_score || 0,
+        risk_reasons: ans.risk_reasons || [],
+        answer_confidence: ans.answer_confidence ?? 1,
+        behavior_metrics: ans.behavior_metrics || buildBehaviorPayload(q.id),
       }
     })
     .filter(Boolean)
@@ -509,6 +626,7 @@ const loadNextQuestionInStage = async () => {
 
 const restoreCurrentState = () => {
   startTime.value = Date.now()
+  resetCurrentBehaviorMetrics()
 }
 
 const closeQuestionNav = () => {
@@ -531,106 +649,18 @@ const handleDocumentClick = (event) => {
   closeQuestionNav()
 }
 
-const getFollowUpPrompt = (answer) => answer?.follow_up_question || '系统检测到您的作答时间极短，请问您是如何快速得出这个选择的？'
-const getOptionalExplanationPrompt = () => '如果你愿意，可以补充说明你选择这个答案时的想法或背景。'
-const getStoredExplanation = (examNo) => {
-  if (!examNo) return ''
-  const answer = answersMap.value[examNo]
-  return answer?.user_explanation || explanationDrafts.value[examNo] || ''
-}
-
-const persistAnswerExplanation = async (answer, explanation) => {
-  if (!answer) return
-  delete explanationDrafts.value[answer.exam_no]
-  answersMap.value[answer.exam_no] = {
-    ...answer,
-    user_explanation: explanation,
-    explanation_submitted: true,
-  }
-
-  try {
-    await api.post('/assessment/save-answer', {
-      session_id: sessionId.value,
-      exam_no: answer.exam_no,
-      selected_option: answer.selected_option,
-      time_spent: answer.time_spent,
-      score: answer.score,
-      is_anomaly: answer.status === 'anomaly' ? 1 : 0,
-      ai_follow_up: answer.follow_up_question || null,
-      user_explanation: explanation,
-    })
-  } catch (err) {
-    console.warn('解释保存失败:', err)
-    await showAlertDialog('补充说明保存失败，请稍后重试。', {
-      title: '保存失败',
-      destructive: true,
-    })
-  }
-}
-
-const applyAnswerExplanationLocally = async (answer, explanation) => {
-  if (!answer) return
-  delete explanationDrafts.value[answer.exam_no]
-  answersMap.value[answer.exam_no] = {
-    ...answer,
-    user_explanation: explanation,
-    explanation_submitted: true,
-  }
-}
-
-const requestAnswerExplanation = async (examNo = currentQuestion.value.id) => {
-  if (!examNo) return false
-  const answer = answersMap.value[examNo]
-  const explanationRequired = answerNeedsExplanation(answer)
-
-  while (true) {
-    const explanation = await showPromptDialog({
-      title: '补充说明',
-      message: answer?.status === 'anomaly' ? getFollowUpPrompt(answer) : getOptionalExplanationPrompt(),
-      inputLabel: '你的思考过程',
-      inputPlaceholder: '请输入你的思考过程...',
-      initialValue: getStoredExplanation(examNo),
-      inputMaxLength: 300,
-      confirmText: '保存说明',
-      multiline: true,
-      inputRows: 5,
-    })
-
-    if (explanation === null) {
-      if (answer?.status === 'anomaly') {
-        await applyAnswerExplanationLocally(answer, '')
-        return true
-      }
-      return false
-    }
-
-    const normalized = explanation.trim()
-
-    if (answer) {
-      await applyAnswerExplanationLocally(answer, normalized)
-    } else if (normalized) {
-      explanationDrafts.value = {
-        ...explanationDrafts.value,
-        [examNo]: normalized,
-      }
-    } else {
-      const nextDrafts = { ...explanationDrafts.value }
-      delete nextDrafts[examNo]
-      explanationDrafts.value = nextDrafts
-    }
-    return true
-  }
-}
-
 const selectOption = async (option) => {
+  recordOptionInteraction(option)
   const timeSpentSeconds = parseFloat(((Date.now() - startTime.value) / 1000).toFixed(2))
+  const behaviorMetrics = buildBehaviorPayload(currentQuestion.value.id)
   try {
     const res = await api.post('/assessment/check-answer', {
       exam_no: currentQuestion.value.id,
       selected_option: option,
       time_spent: timeSpentSeconds,
+      behavior_metrics: behaviorMetrics,
+      recent_answers: submitStageSnapshot.value,
     })
-    const existingExplanation = getStoredExplanation(currentQuestion.value.id)
 
     answersMap.value[currentQuestion.value.id] = {
       exam_no: currentQuestion.value.id,
@@ -638,12 +668,13 @@ const selectOption = async (option) => {
       time_spent: timeSpentSeconds,
       status: res.data.status,
       score: res.data.score,
-      follow_up_question: res.data.follow_up_question,
-      user_explanation: existingExplanation,
-      explanation_submitted: res.data.status === 'anomaly' ? false : true,
-    }
-    if (existingExplanation) {
-      delete explanationDrafts.value[currentQuestion.value.id]
+      follow_up_question: null,
+      risk_score: res.data.risk_score || 0,
+      risk_reasons: res.data.risk_reasons || [],
+      answer_confidence: res.data.answer_confidence ?? 1,
+      user_explanation: null,
+      explanation_submitted: true,
+      behavior_metrics: res.data.behavior_metrics || behaviorMetrics,
     }
 
     const isAnomaly = res.data.status === 'anomaly'
@@ -656,21 +687,15 @@ const selectOption = async (option) => {
       time_spent: timeSpentSeconds,
       score: res.data.score,
       is_anomaly: isAnomaly ? 1 : 0,
-      ai_follow_up: res.data.follow_up_question || null,
-      user_explanation: isAnomaly ? null : (answersMap.value[currentQuestion.value.id]?.user_explanation || null),
+      ai_follow_up: null,
+      user_explanation: null,
+      risk_score: res.data.risk_score || 0,
+      risk_reasons: res.data.risk_reasons || [],
+      answer_confidence: res.data.answer_confidence ?? 1,
+      behavior_metrics: res.data.behavior_metrics || behaviorMetrics,
     }).catch(err => console.warn('草稿保存失败:', err))
 
-    if (isAnomaly) {
-      await requestAnswerExplanation(currentQuestion.value.id)
-      if (currentIndex.value + 1 < stageQuestionCount.value && !canSubmitStage.value) {
-        setTimeout(() => {
-          nextQuestion()
-        }, 300)
-      }
-      return
-    }
-
-    // 非异常情况下自动跳转下一题
+    // 后台无感知评估风险，前台不打断作答流程。
     if (currentIndex.value + 1 < stageQuestionCount.value && !canSubmitStage.value) {
       setTimeout(() => {
         nextQuestion()
@@ -683,10 +708,6 @@ const selectOption = async (option) => {
       destructive: true,
     })
   }
-}
-
-const openPendingFollowUp = async () => {
-  await requestAnswerExplanation()
 }
 
 const buildStageQuestion = (question) => ({
@@ -889,6 +910,7 @@ const startNewSession = async () => {
     stageQuestions.value = []
     restoredQuestions.value = []
     answersMap.value = {}
+    behaviorMetricsMap.value = {}
     allAnsweredExamNos.value = []
     isFinished.value = false
     isStageReviewing.value = false
@@ -916,7 +938,7 @@ const resumeSession = async (resumeData = pendingResume.value) => {
     stageQuestions.value = []
     restoredQuestions.value = data.questions || []
     answersMap.value = {}
-    explanationDrafts.value = {}
+    behaviorMetricsMap.value = {}
 
     // 恢复所有已答题目
     data.answers.forEach(a => {
@@ -926,9 +948,13 @@ const resumeSession = async (resumeData = pendingResume.value) => {
         time_spent: a.time_spent,
         score: a.score,
         status: a.is_anomaly ? 'anomaly' : 'normal',
-        follow_up_question: a.ai_follow_up || null,
-        user_explanation: a.user_explanation ?? '',
-        explanation_submitted: a.is_anomaly ? a.user_explanation !== null && a.user_explanation !== undefined : true,
+        follow_up_question: null,
+        user_explanation: null,
+        risk_score: a.risk_score || 0,
+        risk_reasons: a.risk_reasons || [],
+        answer_confidence: a.answer_confidence ?? 1,
+        explanation_submitted: true,
+        behavior_metrics: a.behavior_metrics || {},
       }
     })
     allAnsweredExamNos.value = data.answers.map(a => a.exam_no)
@@ -1031,13 +1057,21 @@ onMounted(async () => {
 
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown)
+  window.addEventListener('pointermove', handlePointerMove, { passive: true })
+  window.addEventListener('pointerdown', handlePointerDown, { passive: true })
+  window.addEventListener('blur', handleWindowBlur)
   document.addEventListener('click', handleDocumentClick)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onBeforeUnmount(() => {
   clearAsyncTimers()
   window.removeEventListener('keydown', handleGlobalKeydown)
+  window.removeEventListener('pointermove', handlePointerMove)
+  window.removeEventListener('pointerdown', handlePointerDown)
+  window.removeEventListener('blur', handleWindowBlur)
   document.removeEventListener('click', handleDocumentClick)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 
@@ -1193,10 +1227,6 @@ onBeforeUnmount(() => {
 }
 .option-btn:hover { border-color: var(--primary); background: rgba(17,17,17,0.04); transform: translateX(8px); box-shadow: var(--shadow); }
 .option-btn.selected { border-color: var(--primary); background: rgba(17,17,17,0.08); box-shadow: 0 8px 24px rgba(17,17,17,0.12); }
-.option-btn--needs-followup {
-  border-color: rgba(245, 158, 11, 0.42);
-  background: rgba(245, 158, 11, 0.08);
-}
 .option-label {
   display: flex; align-items: center; justify-content: center;
   width: 56px; height: 56px; background: var(--gradient-primary); color: white;
@@ -1259,13 +1289,6 @@ onBeforeUnmount(() => {
 .nav-btn--note:hover:not(:disabled) {
   background: #f8fafc;
   border-color: rgba(17, 17, 17, 0.2);
-}
-.nav-btn--follow-up {
-  background: var(--gradient-warning);
-  box-shadow: 0 10px 24px rgba(245, 158, 11, 0.22);
-}
-.nav-btn--follow-up:hover:not(:disabled) {
-  box-shadow: 0 12px 28px rgba(245, 158, 11, 0.36);
 }
 .nav-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 

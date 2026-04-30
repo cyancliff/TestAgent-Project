@@ -27,6 +27,7 @@ def _build_question_response(
     is_adaptive: bool,
     similarity: float | None = None,
     ability_vector_exists: bool = False,
+    adaptive_strategy: dict | None = None,
 ) -> dict:
     return {
         "examNo": question.exam_no,
@@ -45,6 +46,10 @@ def _build_question_response(
             "has_feature_vector": question.feature_vector is not None,
             "similarity": similarity,
             "ability_vector_exists": ability_vector_exists,
+        },
+        "adaptive_strategy": adaptive_strategy or {
+            "name": "ATMR-CAT",
+            "version": "atmr-cat-v1",
         },
     }
 
@@ -196,6 +201,7 @@ async def get_adaptive_question(
     is_adaptive = False
     similarity = None
     ability_vector_exists = False
+    adaptive_strategy = None
 
     if len(candidates) > 1:
         try:
@@ -208,6 +214,7 @@ async def get_adaptive_question(
             candidate_ids = {question.id for question in candidates}
 
             selector = QuestionSelectionService(db)
+            adaptive_strategy = selector.get_algorithm_metadata()
             selected = selector.select_next_question(
                 current_user.id,
                 resolved_session_id or 0,
@@ -243,4 +250,5 @@ async def get_adaptive_question(
         is_adaptive=is_adaptive,
         similarity=similarity,
         ability_vector_exists=ability_vector_exists,
+        adaptive_strategy=adaptive_strategy,
     )

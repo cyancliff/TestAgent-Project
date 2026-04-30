@@ -3,7 +3,7 @@
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Any, Optional
 
 
 class StartSessionRequest(BaseModel):
@@ -19,6 +19,10 @@ class StageAnswerItem(BaseModel):
     is_anomaly: int = 0
     ai_follow_up: Optional[str] = None
     user_explanation: Optional[str] = None
+    risk_score: Optional[int] = None
+    risk_reasons: list[str] = Field(default_factory=list)
+    answer_confidence: Optional[float] = None
+    behavior_metrics: dict[str, Any] = Field(default_factory=dict)
 
 
 class SubmitStageRequest(BaseModel):
@@ -48,6 +52,10 @@ class SaveAnswerRequest(BaseModel):
     is_anomaly: int = 0
     ai_follow_up: Optional[str] = None
     user_explanation: Optional[str] = None
+    risk_score: Optional[int] = None
+    risk_reasons: list[str] = Field(default_factory=list)
+    answer_confidence: Optional[float] = None
+    behavior_metrics: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnswerSubmitRequest(BaseModel):
@@ -64,6 +72,8 @@ class AnswerSubmitResponse(BaseModel):
     follow_up_question: Optional[str] = None
     risk_score: Optional[int] = None
     risk_reasons: list[str] = Field(default_factory=list)
+    answer_confidence: Optional[float] = None
+    behavior_metrics: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExplanationSubmitRequest(BaseModel):
@@ -76,6 +86,8 @@ class CheckAnswerRequest(BaseModel):
     exam_no: str
     selected_option: str
     time_spent: float
+    behavior_metrics: dict[str, Any] = Field(default_factory=dict)
+    recent_answers: list[StageAnswerItem] = Field(default_factory=list)
 
 
 class AdaptiveQuestionRequest(BaseModel):

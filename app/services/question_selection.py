@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 class QuestionSelectionService:
     """智能选题服务"""
 
+    algorithm_name = "ATMR-CAT"
+    algorithm_version = "atmr-cat-v1"
+
     def __init__(self, db: Session):
         self.db = db
         self.module_map = MODULE_DIM_MAP
@@ -309,6 +312,15 @@ class QuestionSelectionService:
         )
 
         return score
+
+    def get_algorithm_metadata(self) -> dict[str, object]:
+        """Return the public method description used by APIs and experiment reports."""
+        return {
+            "name": self.algorithm_name,
+            "version": self.algorithm_version,
+            "components": ["Bayesian posterior", "Fisher information", "coverage", "difficulty match", "discrimination"],
+            "dynamic_weighting": True,
+        }
 
     def _cosine_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
         """计算余弦相似度"""

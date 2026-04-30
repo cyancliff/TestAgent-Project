@@ -46,6 +46,13 @@ def _score_band(value) -> str:
     return "中等"
 
 
+def _percent_number(value) -> str:
+    try:
+        return f"{float(value) * 100:.0f}/100"
+    except (TypeError, ValueError):
+        return "未计算"
+
+
 def _build_scores_block(scores: dict | None) -> str:
     scores = scores or {}
     lines = []
@@ -126,6 +133,9 @@ def _build_interpretation_prompt(report: BigFivePersonalityReport, rag_evidence:
     completed_at = report.completed_at.isoformat() if report.completed_at else "未记录"
     scores_block = _build_scores_block(report.scores)
     ranked_summary = _build_ranked_summary(report.scores)
+    quality_summary = report.quality_summary or {}
+    confidence_summary = report.confidence_summary or {}
+    consistency_summary = report.consistency_summary or {}
 
     return dedent(
         f"""\
@@ -143,6 +153,11 @@ def _build_interpretation_prompt(report: BigFivePersonalityReport, rag_evidence:
 
         【维度排序辅助】
         {ranked_summary}
+
+        【可信度与辅助证据】
+        - 模态质量：{_percent_number(quality_summary.get("overall_quality"))}（{quality_summary.get("label", "未计算")}）
+        - 预测置信度：{_percent_number(confidence_summary.get("overall_confidence"))}（{confidence_summary.get("label", "未计算")}）
+        - 与 ATMR 辅助一致性：{_percent_number(consistency_summary.get("overall_score"))}（{consistency_summary.get("overall_status", "中性不足")}）
 
         【大五人格 RAG 知识库证据】
         {rag_evidence or "暂无可用知识库片段，请基于五维得分进行谨慎、通用的解释。"}

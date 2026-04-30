@@ -80,6 +80,46 @@
         </div>
       </div>
 
+      <div v-if="hasScores" class="report-card evidence-card">
+        <h2 class="section-title">质量与置信度</h2>
+        <div class="source-grid evidence-grid">
+          <div class="source-item">
+            <span>模态质量</span>
+            <strong>{{ percent(qualitySummary.overall_quality) }}% · {{ qualitySummary.label || '中等' }}</strong>
+          </div>
+          <div class="source-item">
+            <span>预测置信度</span>
+            <strong>{{ percent(confidenceSummary.overall_confidence) }}% · {{ confidenceSummary.label || '中等' }}</strong>
+          </div>
+          <div class="source-item">
+            <span>ATMR 一致性</span>
+            <strong>{{ percent(consistencySummary.overall_score) }}% · {{ consistencySummary.overall_status || '中性不足' }}</strong>
+          </div>
+        </div>
+        <div class="quality-bars">
+          <div v-for="item in modalityItems" :key="item.key" class="quality-row">
+            <span>{{ item.label }}</span>
+            <div class="quality-track">
+              <div class="quality-fill" :style="{ width: `${percent(item.value)}%` }"></div>
+            </div>
+            <strong>{{ percent(item.value) }}%</strong>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="consistencyItems.length" class="report-card">
+        <h2 class="section-title">ATMR 辅助证据链</h2>
+        <div class="consistency-list">
+          <div v-for="item in consistencyItems" :key="`${item.atmr_module}-${item.big_five_trait}`" class="consistency-item">
+            <div class="consistency-top">
+              <strong>{{ item.atmr_label }} × {{ item.big_five_label }}</strong>
+              <span>{{ item.status }} · {{ percent(item.consistency) }}%</span>
+            </div>
+            <p>{{ item.rationale }}</p>
+          </div>
+        </div>
+      </div>
+
       <div v-if="report.errors?.length" class="report-card">
         <h2 class="section-title">处理记录</h2>
         <ul class="error-list">
@@ -253,6 +293,19 @@ const dimensions = [
 
 const reportTitle = computed(() => (report.value.title || '').trim() || `大五人格报告 #${props.reportId}`)
 const hasScores = computed(() => !!report.value.scores)
+const qualitySummary = computed(() => report.value.quality_summary || {})
+const confidenceSummary = computed(() => report.value.confidence_summary || {})
+const consistencySummary = computed(() => report.value.consistency_summary || {})
+const consistencyItems = computed(() => consistencySummary.value.items || [])
+const modalityItems = computed(() => {
+  const modalities = qualitySummary.value.modalities || {}
+  return [
+    { key: 'visual', label: '视觉质量', value: modalities.visual || 0 },
+    { key: 'audio', label: '音频质量', value: modalities.audio || 0 },
+    { key: 'text', label: '文本质量', value: modalities.text || 0 },
+    { key: 'background', label: '背景关联特征', value: modalities.background || 0 },
+  ]
+})
 const canUseInChat = computed(() => report.value.status === 'completed' && report.value.is_real_result && hasScores.value)
 const canRetry = computed(() => ['failed', 'completed'].includes(report.value.status) && !report.value.is_real_result)
 const interpretationStatus = computed(() => report.value.interpretation_status || 'pending')
@@ -449,6 +502,7 @@ const scorePercent = (key) => {
   if (!Number.isFinite(raw)) return 0
   return Math.max(0, Math.min(100, Math.round(raw * 100)))
 }
+const percent = (value) => Math.round((Number(value) || 0) * 100)
 
 const getDimensionLevelLabel = (key) => {
   const score = scorePercent(key)
@@ -931,6 +985,74 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
 }
 
+.evidence-card {
+  border-left: 4px solid var(--primary);
+}
+
+.evidence-grid {
+  margin-bottom: 18px;
+}
+
+.quality-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quality-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 56px;
+  gap: 12px;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.quality-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.9);
+}
+
+.quality-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.consistency-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.consistency-item {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-hover);
+}
+
+.consistency-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.consistency-top span {
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.consistency-item p {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
 .error-list {
   margin: 0;
   padding-left: 20px;
@@ -1297,9 +1419,18 @@ onBeforeUnmount(() => {
   }
 
   .source-grid,
+  .evidence-grid,
   .dimension-insight-grid,
   .dimension-brief-grid {
     grid-template-columns: 1fr;
+  }
+
+  .quality-row {
+    grid-template-columns: 92px 1fr 48px;
+  }
+
+  .consistency-top {
+    flex-direction: column;
   }
 
   .dim-name {

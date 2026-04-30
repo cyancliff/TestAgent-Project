@@ -35,8 +35,22 @@
               <div class="dim-bar-wrapper">
                 <div class="dim-bar" :style="{ width: getDimPercentage(m.key) + '%', background: m.color }"></div>
               </div>
-              <div class="dim-detail">{{ getDimTotal(m.key) }} / {{ getDimMax(m.key) }} 分 · {{ getEvidenceCount(m.key) }} 题 · {{ getDimAnomalyCount(m.key) }} 异常<template v-if="getDimBonus(m.key) > 0"> · 加权+{{ getDimBonus(m.key) }}</template></div>
+              <div class="dim-detail">{{ getDimTotal(m.key) }} / {{ getDimMax(m.key) }} 分 · {{ getEvidenceCount(m.key) }} 题 · {{ getDimAnomalyCount(m.key) }} 异常 · 置信度 {{ getDimConfidencePercent(m.key) }}%<template v-if="getDimBonus(m.key) > 0"> · 加权+{{ getDimBonus(m.key) }}</template></div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="trustSummary.assessment_confidence !== undefined" class="report-card trust-card">
+        <h2 class="section-title">测评可信度</h2>
+        <div class="trust-overview">
+          <div class="trust-score">
+            <strong>{{ percent(trustSummary.assessment_confidence) }}%</strong>
+            <span>{{ trustSummary.label || '中等' }}</span>
+          </div>
+          <div class="trust-copy">
+            <p v-for="note in trustSummary.notes || []" :key="note">{{ note }}</p>
+            <p>ATMR-CAT 覆盖度 {{ percent(adaptiveMetrics.coverage_ratio || 0) }}%，异常作答 {{ trustSummary.anomaly_count || 0 }} 条。</p>
           </div>
         </div>
       </div>
@@ -79,7 +93,7 @@
                 <span class="dim-badge" :style="{ background: m.color }">{{ m.key }}</span>
                 <span class="ev-module-name">{{ m.name }}</span>
                 <span class="dim-level-badge" :style="{ background: getDimLevelColor(m.key) }">{{ getDimLevelLabel(m.key) }}</span>
-                <span class="ev-module-stat">{{ getEvidenceCount(m.key) }} 题 · 总分 {{ getDimTotal(m.key) }} · 均分 {{ getDimAvg(m.key) }}</span>
+                <span class="ev-module-stat">{{ getEvidenceCount(m.key) }} 题 · 总分 {{ getDimTotal(m.key) }} · 均分 {{ getDimAvg(m.key) }} · 置信度 {{ getDimConfidencePercent(m.key) }}%</span>
               </div>
               <span class="toggle-arrow" :class="{ open: expandedDimension[m.key] }"></span>
             </div>
@@ -112,14 +126,15 @@
                         <span class="ev-time">{{ rec.time_spent?.toFixed(1) }}s</span>
                         <span v-if="rec.is_anomaly" class="badge badge-red">异常</span>
                         <span v-if="rec.is_reverse" class="badge badge-cyan">反向</span>
+                        <span class="badge badge-gray">可信 {{ Math.round((rec.answer_confidence ?? 1) * 100) }}%</span>
                       </div>
                       <div class="ev-q">{{ rec.question }}</div>
                       <div class="ev-a"><b>选择：</b>{{ rec.selected_option }}</div>
-                      <div v-if="rec.is_anomaly && rec.ai_follow_up" class="ev-followup"><b>AI 追问：</b>{{ rec.ai_follow_up }}</div>
-                      <div v-if="rec.user_explanation" class="ev-explain"><b>用户解释：</b>{{ rec.user_explanation }}</div>
+                      <div v-if="rec.risk_reasons?.length" class="ev-followup"><b>风险原因：</b>{{ rec.risk_reasons.join('、') }}</div>
+                      <div v-if="behaviorSummary(rec)" class="ev-followup"><b>行为摘要：</b>{{ behaviorSummary(rec) }}</div>
                       <div class="ev-chain">
                         <span class="chain-icon"></span>
-                        用户在「{{ rec.trait_label || '该特质' }}」维度选择了「{{ rec.selected_option }}」，得分 {{ rec.score }}/5<template v-if="rec.is_reverse">（反向计分）</template><template v-if="rec.is_anomaly">，作答 {{ rec.time_spent?.toFixed(1) }}s 标记异常<template v-if="rec.user_explanation">，解释："{{ rec.user_explanation }}"</template></template>
+                        用户在「{{ rec.trait_label || '该特质' }}」维度选择了「{{ rec.selected_option }}」，得分 {{ rec.score }}/5<template v-if="rec.is_reverse">（反向计分）</template><template v-if="rec.is_anomaly">，后台行为风险模型标记为异常</template>
                         → {{ rec.score >= 4 ? '强烈支持' : rec.score >= 3 ? '适度支持' : rec.score >= 2 ? '弱支持' : '不支持' }}该维度特质
                       </div>
                     </div>
@@ -147,6 +162,7 @@
                 <span :class="['ev-score', scoreClass(a.score)]">{{ a.score }}分</span>
                 <span class="ev-time">{{ a.time_spent }}s</span>
                 <span v-if="a.is_anomaly" class="badge badge-red">异常</span>
+                <span class="badge badge-gray">可信 {{ Math.round((a.answer_confidence ?? 1) * 100) }}%</span>
               </div>
               <div class="ev-q">{{ a.question }}</div>
               <div class="ev-a">选择：{{ a.selected_option }}</div>
@@ -247,6 +263,8 @@ const hasDebateResults = computed(() => {
   return d && Object.keys(d).length > 0
 })
 const formattedReport = computed(() => renderMarkdown(reportData.value.report))
+const trustSummary = computed(() => reportData.value.trust_summary || {})
+const adaptiveMetrics = computed(() => reportData.value.adaptive_metrics || {})
 const reportTitle = computed(() => {
   const title = (reportData.value.title || '').trim()
   return title || formatTime(reportData.value.started_at) || '未命名测评'
@@ -332,11 +350,33 @@ const getDimAnomalyCount = (k) => reportData.value.dimension_summary?.[k]?.anoma
 const getDimLevelLabel = (k) => reportData.value.dimension_summary?.[k]?.level_label || ''
 const getDimLevelColor = (k) => reportData.value.dimension_summary?.[k]?.level_color || '#94a3b8'
 const getDimBonus = (k) => reportData.value.dimension_summary?.[k]?.weighted_bonus || 0
+const getDimConfidencePercent = (k) => Math.round((reportData.value.dimension_summary?.[k]?.confidence?.confidence ?? 0) * 100)
 const getEvidenceCount = (k) => reportData.value.dimension_summary?.[k]?.question_count || 0
 const getEvidenceRecords = (k) => reportData.value.dimension_summary?.[k]?.evidence_records || []
 const getModuleColor = (k) => modules.find(m => m.key === k)?.color || '#94a3b8'
 const scoreClass = (s) => s >= 4 ? 'score-high' : s >= 3 ? 'score-mid' : 'score-low'
 const toggleDimension = (k) => { expandedDimension[k] = !expandedDimension[k] }
+const percent = (value) => Math.round((Number(value) || 0) * 100)
+const behaviorSummary = (record) => {
+  const metrics = record?.behavior_metrics || {}
+  const parts = []
+  if (metrics.first_action_latency !== undefined) {
+    parts.push(`首次交互 ${Number(metrics.first_action_latency || 0).toFixed(1)}s`)
+  }
+  if (metrics.mouse_move_count !== undefined) {
+    parts.push(`鼠标移动 ${metrics.mouse_move_count || 0} 次`)
+  }
+  if (metrics.option_change_count) {
+    parts.push(`改选 ${metrics.option_change_count} 次`)
+  }
+  if (metrics.focus_blur_count) {
+    parts.push(`切出 ${metrics.focus_blur_count} 次`)
+  }
+  if (metrics.rapid_click_flag) {
+    parts.push('存在快速连点')
+  }
+  return parts.join('，')
+}
 
 const formatTime = (iso) => {
   return formatApiDateTime(iso)
@@ -478,6 +518,27 @@ onBeforeUnmount(() => {
 .dim-bar::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmer 2s infinite; }
 .dim-detail { font-size: 15px; color: var(--text-secondary); }
 
+.trust-card { border-left: 4px solid var(--primary); }
+.trust-overview {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) 1fr;
+  gap: 20px;
+  align-items: center;
+}
+.trust-score {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  text-align: center;
+}
+.trust-score strong { font-size: 34px; color: var(--primary); line-height: 1; }
+.trust-score span { font-weight: 700; color: var(--text-primary); }
+.trust-copy { color: var(--text-secondary); line-height: 1.7; }
+.trust-copy p { margin: 0 0 8px; }
+
 /* === Markdown 报告渲染 === */
 .report-body { padding-top: 12px; text-align: left; }
 .markdown-body { line-height: 1.8; font-size: 16px; color: var(--text-secondary); text-align: left; }
@@ -563,6 +624,7 @@ onBeforeUnmount(() => {
 .badge { font-size: 12px; padding: 2px 8px; border-radius: 4px; color: #fff; font-weight: 500; }
 .badge-red { background: var(--error); }
 .badge-cyan { background: var(--secondary); }
+.badge-gray { background: #64748b; }
 .ev-q { font-size: 16px; color: var(--text-primary); line-height: 1.6; margin-bottom: 4px; }
 .ev-a { font-size: 15px; color: var(--text-secondary); }
 .ev-a b, .ev-followup b, .ev-explain b { font-weight: 600; color: var(--text-primary); }
@@ -643,6 +705,7 @@ onBeforeUnmount(() => {
   .dim-pct { font-size: 20px; }
   .dim-detail { line-height: 1.6; }
   .ev-module-header { align-items: flex-start; }
+  .trust-overview { grid-template-columns: 1fr; }
   .ev-module-stat { flex-basis: 100%; }
   .markdown-body { font-size: 15px; } /* 通过调整基础 font-size 自动控制里面的em字体大小 */
 }

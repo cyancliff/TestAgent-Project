@@ -31,6 +31,12 @@ from app.models.user import User
 from app.services.report_service import build_debate_context, save_report_to_file
 from app.services.scoring import get_dimension_level, clamp_score, calculate_weight_bonus
 from app.services.debate_manager import run_debate_streaming
+from app.services.assessment_trust import (
+    build_adaptive_metrics,
+    build_answer_insight,
+    build_assessment_trust_summary,
+    build_evidence_chain,
+)
 
 # 评分标准说明（注入到模块辩论 prompt 中）
 SCORING_STANDARD_TEXT = """
@@ -626,11 +632,16 @@ async def get_report(
             "is_anomaly": r.is_anomaly,
             "ai_follow_up": r.ai_follow_up,
             "user_explanation": r.user_explanation,
+            "risk_score": int(r.risk_score or (70 if r.is_anomaly else 0)),
+            "risk_reasons": r.risk_reasons or [],
+            "answer_confidence": round(float(r.answer_confidence if r.answer_confidence is not None else 1.0), 3),
+            "behavior_metrics": getattr(r, "behavior_metrics", None) or {},
             "dimension_id": dim_id,
             "module": module_key,
             "trait_label": question.trait_label if question else None,
             "is_reverse": question.is_reverse if question else False,
         }
+        answer_item.update(build_answer_insight(answer_item, question))
         answers.append(answer_item)
 
         if module_key and module_key in dimension_data:
@@ -672,11 +683,24 @@ async def get_report(
             "percentage": round(percentage, 1),
             "question_count": len(scores),
             "anomaly_count": sum(1 for rec in dimension_data[m]["records"] if rec["is_anomaly"]),
+            "confidence": None,
             "level": level_info["level"],
             "level_label": level_info["label"],
             "level_color": level_info["color"],
             "evidence_records": dimension_data[m]["records"],
         }
+
+    trust_summary = build_assessment_trust_summary(answers)
+    evidence_chain = build_evidence_chain(answers)
+    adaptive_metrics = build_adaptive_metrics(answers)
+    for module, confidence_payload in trust_summary.get("dimension_confidence", {}).items():
+        if module in dimension_summary:
+            dimension_summary[module]["confidence"] = confidence_payload
+
+    session.trust_summary = trust_summary
+    session.evidence_summary = evidence_chain
+    session.adaptive_metrics = adaptive_metrics
+    db.commit()
 
     module_debates = db.query(ModuleDebateResult).filter(
         ModuleDebateResult.session_id == session_id,
@@ -694,4 +718,7 @@ async def get_report(
         "answers": answers,
         "dimension_summary": dimension_summary,
         "module_debates": debate_results,
+        "trust_summary": trust_summary,
+        "adaptive_metrics": adaptive_metrics,
+        "evidence_chain": evidence_chain,
     }

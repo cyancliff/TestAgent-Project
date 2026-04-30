@@ -42,6 +42,7 @@ class TestCheckAnomaly:
         assert result["risk_score"] == 0
         assert result["follow_up"] is None
         assert result["reasons"] == []
+        assert result["answer_confidence"] == 1.0
 
     @pytest.mark.asyncio
     async def test_作答明显过快(self):
@@ -55,7 +56,8 @@ class TestCheckAnomaly:
         assert result["status"] == "anomaly"
         assert result["risk_score"] == 70
         assert result["reasons"] == ["作答时间明显过快"]
-        assert result["follow_up"] is not None
+        assert result["follow_up"] is None
+        assert result["answer_confidence"] < 0.6
 
     @pytest.mark.asyncio
     async def test_偏快但不再视为异常(self):
@@ -71,26 +73,26 @@ class TestCheckAnomaly:
         assert result["reasons"] == []
 
     @pytest.mark.asyncio
-    async def test_最近多题连续快速作答不再触发异常(self):
+    async def test_近期异常密度触发异常(self):
         recent_answers = [
-            {"exam_no": "Q1", "selected_option": "A", "time_spent": 1.0, "score": 3.0, "is_anomaly": 0},
-            {"exam_no": "Q2", "selected_option": "B", "time_spent": 1.0, "score": 3.0, "is_anomaly": 0},
-            {"exam_no": "Q3", "selected_option": "A", "time_spent": 1.0, "score": 3.0, "is_anomaly": 0},
+            {"exam_no": "Q1", "selected_option": "A", "time_spent": 1.0, "score": 3.0, "is_anomaly": 1},
+            {"exam_no": "Q2", "selected_option": "B", "time_spent": 1.0, "score": 3.0, "is_anomaly": 1},
+            {"exam_no": "Q3", "selected_option": "C", "time_spent": 8.0, "score": 3.0, "is_anomaly": 0},
             {"exam_no": "Q4", "selected_option": "B", "time_spent": 1.0, "score": 3.0, "is_anomaly": 0},
         ]
         result = await check_anomaly_and_generate_question(
-            time_spent=3.0,
+            time_spent=0.8,
             avg_time=10.0,
             question_content="测试题目",
-            selected_option="A",
+            selected_option="C",
             recent_answers=recent_answers,
-            available_options=["A", "B"],
+            available_options=["A", "B", "C"],
         )
-        assert result["status"] == "normal"
-        assert result["risk_score"] == 0
+        assert result["status"] == "anomaly"
+        assert "近期异常作答密度较高" in result["reasons"]
 
     @pytest.mark.asyncio
-    async def test_重复选项不再触发异常(self):
+    async def test_重复选项触发异常(self):
         recent_answers = [
             {"exam_no": "Q1", "selected_option": "A", "time_spent": 10.0, "score": 3.0, "is_anomaly": 0},
             {"exam_no": "Q2", "selected_option": "A", "time_spent": 10.0, "score": 3.0, "is_anomaly": 0},
@@ -104,8 +106,36 @@ class TestCheckAnomaly:
             recent_answers=recent_answers,
             available_options=["A", "B", "C"],
         )
-        assert result["status"] == "normal"
-        assert result["risk_score"] == 0
+        assert result["status"] == "anomaly"
+        assert "连续多题选择同一选项" in result["reasons"]
+
+    @pytest.mark.asyncio
+    async def test_前台行为特征触发后台风险(self):
+        result = await check_anomaly_and_generate_question(
+            time_spent=1.8,
+            avg_time=8.0,
+            question_content="测试题目",
+            selected_option="B",
+            recent_answers=[],
+            available_options=["A", "B", "C"],
+            behavior_metrics={
+                "first_action_latency": 0.18,
+                "mouse_move_count": 0,
+                "mouse_path_length": 0,
+                "pointer_down_count": 2,
+                "option_change_count": 4,
+                "option_change_path": ["A", "B", "C", "B"],
+                "focus_blur_count": 0,
+                "idle_time": 0,
+                "rapid_click_flag": False,
+            },
+        )
+
+        assert result["status"] == "anomaly"
+        assert "首次交互过快" in result["reasons"]
+        assert "作答过程几乎无前台交互" in result["reasons"]
+        assert "选项反复更改" in result["reasons"]
+        assert result["behavior_metrics"]["option_change_count"] == 4
 
     @pytest.mark.asyncio
     async def test_所选答案不在选项中(self):

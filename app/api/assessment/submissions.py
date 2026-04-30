@@ -25,6 +25,7 @@ from app.core.security import get_current_user
 from app.models.assessment import AnswerRecord, AssessmentSession, Question
 from app.models.user import User
 from app.services.ai_detector import check_anomaly_and_generate_question
+from app.services.assessment_trust import calculate_answer_confidence
 from app.services.stage_service import StageService
 
 router = APIRouter()
@@ -55,6 +56,7 @@ async def analyze_answer(
     selected_option: str,
     time_spent: float,
     recent_answers: Optional[list[dict]] = None,
+    behavior_metrics: Optional[dict] = None,
 ) -> tuple[float, dict]:
     """Run anomaly detection without persisting anything."""
     score = calculate_question_score(db_question, selected_option)
@@ -65,8 +67,20 @@ async def analyze_answer(
         selected_option=selected_option,
         recent_answers=recent_answers or [],
         available_options=db_question.options,
+        behavior_metrics=behavior_metrics or {},
     )
     return score, detection_result
+
+
+def _recent_answer_payload(item) -> dict:
+    return {
+        "exam_no": item.exam_no,
+        "selected_option": item.selected_option,
+        "time_spent": item.time_spent,
+        "score": item.score or 0,
+        "is_anomaly": item.is_anomaly,
+        "behavior_metrics": getattr(item, "behavior_metrics", {}) or {},
+    }
 
 
 def validate_stage_answers(db, current_stage: str, answers) -> tuple[dict, dict]:
@@ -145,7 +159,11 @@ async def check_answer(
 
     try:
         current_score, detection_result = await analyze_answer(
-            db_question, payload.selected_option, payload.time_spent, recent_answers=[]
+            db_question,
+            payload.selected_option,
+            payload.time_spent,
+            recent_answers=[_recent_answer_payload(item) for item in payload.recent_answers],
+            behavior_metrics=payload.behavior_metrics,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"答案检测失败: {exc}") from exc
@@ -157,6 +175,8 @@ async def check_answer(
         follow_up_question=detection_result.get("follow_up"),
         risk_score=detection_result.get("risk_score"),
         risk_reasons=detection_result.get("reasons", []),
+        answer_confidence=detection_result.get("answer_confidence"),
+        behavior_metrics=detection_result.get("behavior_metrics", {}),
     )
 
 
@@ -222,9 +242,52 @@ async def submit_stage(
     else:
         session = stage_service.session
 
+    recent_answers = []
+    enriched_answers = {}
     for exam_no, item in answer_map.items():
         db_question = question_map[exam_no]
         score = item.score if item.score is not None else calculate_question_score(db_question, item.selected_option)
+        _, detection_result = await analyze_answer(
+            db_question,
+            item.selected_option,
+            item.time_spent,
+            recent_answers=recent_answers,
+            behavior_metrics=getattr(item, "behavior_metrics", {}) or {},
+        )
+        risk_score = int(detection_result.get("risk_score", 0) or 0)
+        risk_reasons = list(detection_result.get("reasons", []))
+        is_anomaly = 1 if detection_result.get("status") == "anomaly" else 0
+        ai_follow_up = None
+        behavior_metrics = detection_result.get("behavior_metrics", {})
+        answer_confidence = calculate_answer_confidence(
+            risk_score=risk_score,
+            is_anomaly=bool(is_anomaly),
+            user_explanation=None,
+        )
+        enriched_answers[exam_no] = {
+            "score": score,
+            "is_anomaly": is_anomaly,
+            "ai_follow_up": ai_follow_up,
+            "risk_score": risk_score,
+            "risk_reasons": risk_reasons,
+            "answer_confidence": answer_confidence,
+            "behavior_metrics": behavior_metrics,
+        }
+        recent_answers.append(
+            {
+                "exam_no": exam_no,
+                "selected_option": item.selected_option,
+                "time_spent": item.time_spent,
+                "score": score,
+                "is_anomaly": is_anomaly,
+                "behavior_metrics": behavior_metrics,
+            }
+        )
+
+    for exam_no, item in answer_map.items():
+        db_question = question_map[exam_no]
+        enriched = enriched_answers[exam_no]
+        score = enriched["score"]
 
         existing = db.query(AnswerRecord).filter(
             AnswerRecord.session_id == session.id,
@@ -236,9 +299,13 @@ async def submit_stage(
             existing.selected_option = item.selected_option
             existing.time_spent = item.time_spent
             existing.score = score
-            existing.is_anomaly = item.is_anomaly
-            existing.ai_follow_up = item.ai_follow_up
+            existing.is_anomaly = enriched["is_anomaly"]
+            existing.ai_follow_up = enriched["ai_follow_up"]
             existing.user_explanation = item.user_explanation if item.user_explanation is not None else None
+            existing.risk_score = enriched["risk_score"]
+            existing.risk_reasons = enriched["risk_reasons"]
+            existing.answer_confidence = enriched["answer_confidence"]
+            existing.behavior_metrics = enriched["behavior_metrics"]
         else:
             db.add(
                 AnswerRecord(
@@ -248,9 +315,13 @@ async def submit_stage(
                     selected_option=item.selected_option,
                     score=score,
                     time_spent=item.time_spent,
-                    is_anomaly=item.is_anomaly,
-                    ai_follow_up=item.ai_follow_up,
+                    is_anomaly=enriched["is_anomaly"],
+                    ai_follow_up=enriched["ai_follow_up"],
                     user_explanation=item.user_explanation if item.user_explanation is not None else None,
+                    risk_score=enriched["risk_score"],
+                    risk_reasons=enriched["risk_reasons"],
+                    answer_confidence=enriched["answer_confidence"],
+                    behavior_metrics=enriched["behavior_metrics"],
                 )
             )
 

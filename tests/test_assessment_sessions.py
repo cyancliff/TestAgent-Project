@@ -304,7 +304,12 @@ def test_submit_stage_creates_session_on_first_stage_commit():
         is_anomaly=0,
         ai_follow_up=None,
         user_explanation=None,
+        risk_score=0,
+        risk_reasons=[],
+        answer_confidence=1.0,
+        behavior_metrics={},
     )
+    question = SimpleNamespace(avg_time=8.0, content="测试题目", options=["A", "B"], scores=[4, 2], is_reverse=False)
     persisted_session = SimpleNamespace(id=55, status="active", finished_at=None)
     stage_service = MagicMock()
     stage_service.advance_to_next_stage.return_value = "A"
@@ -316,7 +321,7 @@ def test_submit_stage_creates_session_on_first_stage_commit():
 
     with patch("app.api.assessment.submissions.get_latest_active_session", return_value=None), patch(
         "app.api.assessment.submissions.validate_stage_answers",
-        return_value=({"Q001": answer_item}, {"Q001": SimpleNamespace()}),
+        return_value=({"Q001": answer_item}, {"Q001": question}),
     ), patch(
         "app.api.assessment.submissions.create_assessment_session",
         return_value=persisted_session,

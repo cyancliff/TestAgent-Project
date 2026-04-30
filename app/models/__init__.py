@@ -39,8 +39,11 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_assessment_session_title_column()
     _ensure_assessment_session_revision_columns()
+    _ensure_assessment_trust_columns()
+    _ensure_answer_trust_columns()
     _ensure_chat_session_big_five_report_column()
     _ensure_big_five_interpretation_columns()
+    _ensure_big_five_evidence_columns()
     _ensure_user_nickname_column()
     from app.services.question_sanitizer import repair_question_contents
 
@@ -113,6 +116,62 @@ def _ensure_assessment_session_revision_columns() -> None:
         )
 
 
+def _json_column_type() -> str:
+    return "JSONB" if engine.dialect.name == "postgresql" else "JSON"
+
+
+def _ensure_assessment_trust_columns() -> None:
+    inspector = inspect(engine)
+    if "assessment_sessions" not in inspector.get_table_names():
+        return
+
+    column_names = {column["name"] for column in inspector.get_columns("assessment_sessions")}
+    json_type = _json_column_type()
+    statements = []
+    if "trust_summary" not in column_names:
+        statements.append(f"ALTER TABLE assessment_sessions ADD COLUMN trust_summary {json_type}")
+    if "adaptive_metrics" not in column_names:
+        statements.append(f"ALTER TABLE assessment_sessions ADD COLUMN adaptive_metrics {json_type}")
+    if "evidence_summary" not in column_names:
+        statements.append(f"ALTER TABLE assessment_sessions ADD COLUMN evidence_summary {json_type}")
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+    logger.info("Added missing assessment_sessions trust/evidence columns")
+
+
+def _ensure_answer_trust_columns() -> None:
+    inspector = inspect(engine)
+    if "answer_records" not in inspector.get_table_names():
+        return
+
+    column_names = {column["name"] for column in inspector.get_columns("answer_records")}
+    json_type = _json_column_type()
+    statements = []
+    if "risk_score" not in column_names:
+        statements.append("ALTER TABLE answer_records ADD COLUMN risk_score INTEGER")
+    if "risk_reasons" not in column_names:
+        statements.append(f"ALTER TABLE answer_records ADD COLUMN risk_reasons {json_type}")
+    if "answer_confidence" not in column_names:
+        statements.append("ALTER TABLE answer_records ADD COLUMN answer_confidence FLOAT")
+    if "behavior_metrics" not in column_names:
+        statements.append(f"ALTER TABLE answer_records ADD COLUMN behavior_metrics {json_type}")
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+        connection.execute(text("UPDATE answer_records SET risk_score = 0 WHERE risk_score IS NULL"))
+        connection.execute(text("UPDATE answer_records SET answer_confidence = 1.0 WHERE answer_confidence IS NULL"))
+    logger.info("Added missing answer_records trust columns")
+
+
 def _ensure_chat_session_big_five_report_column() -> None:
     inspector = inspect(engine)
     if "chat_sessions" not in inspector.get_table_names():
@@ -163,6 +222,30 @@ def _ensure_big_five_interpretation_columns() -> None:
         for statement in statements:
             connection.execute(text(statement))
     logger.info("Added missing big_five_personality_reports interpretation columns")
+
+
+def _ensure_big_five_evidence_columns() -> None:
+    inspector = inspect(engine)
+    if "big_five_personality_reports" not in inspector.get_table_names():
+        return
+
+    column_names = {column["name"] for column in inspector.get_columns("big_five_personality_reports")}
+    json_type = _json_column_type()
+    statements = []
+    if "quality_summary" not in column_names:
+        statements.append(f"ALTER TABLE big_five_personality_reports ADD COLUMN quality_summary {json_type}")
+    if "confidence_summary" not in column_names:
+        statements.append(f"ALTER TABLE big_five_personality_reports ADD COLUMN confidence_summary {json_type}")
+    if "consistency_summary" not in column_names:
+        statements.append(f"ALTER TABLE big_five_personality_reports ADD COLUMN consistency_summary {json_type}")
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+    logger.info("Added missing big_five_personality_reports evidence columns")
 
 
 def _ensure_user_nickname_column() -> None:

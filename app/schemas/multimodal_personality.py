@@ -66,6 +66,9 @@ class BigFiveReportResponse(BaseModel):
     artifacts: dict[str, str] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
     is_real_result: bool = False
+    quality_summary: dict = Field(default_factory=dict)
+    confidence_summary: dict = Field(default_factory=dict)
+    consistency_summary: dict = Field(default_factory=dict)
     interpretation_status: InterpretationStatus = "pending"
     interpretation_content: str | None = None
     interpretation_model: str | None = None

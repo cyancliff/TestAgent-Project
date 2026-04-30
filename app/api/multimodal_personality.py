@@ -23,6 +23,12 @@ from app.services.big_five_report_service import (
     generate_big_five_interpretation_sync,
     save_big_five_interpretation_to_file,
 )
+from app.services.multimodal_evidence import (
+    build_atmr_summary_for_session,
+    build_consistency_summary,
+    build_modality_quality_summary,
+    build_prediction_confidence_summary,
+)
 from app.services.multimodal_personality_service import service
 
 router = APIRouter()
@@ -58,7 +64,7 @@ def _is_real_result(task) -> bool:
     return bool(task.status == "completed" and task.scores is not None and task.model_version == REAL_MODEL_VERSION)
 
 
-def _sync_report_from_task(report: BigFivePersonalityReport, task) -> None:
+def _sync_report_from_task(report: BigFivePersonalityReport, task, db: Session | None = None) -> None:
     report.status = task.status
     report.message = task.message
     report.model_version = task.model_version
@@ -66,6 +72,19 @@ def _sync_report_from_task(report: BigFivePersonalityReport, task) -> None:
     report.artifacts = dict(task.artifacts or {})
     report.errors = list(task.errors or [])
     report.is_real_result = _is_real_result(task)
+    quality_summary = build_modality_quality_summary(report.artifacts, report.errors)
+    report.quality_summary = quality_summary
+    report.confidence_summary = build_prediction_confidence_summary(
+        scores=report.scores,
+        quality_summary=quality_summary,
+        is_real_result=bool(report.is_real_result),
+        used_fallback=not bool(report.is_real_result),
+    )
+    atmr_summary = build_atmr_summary_for_session(db, report.source_assessment_session_id) if db is not None else {}
+    report.consistency_summary = build_consistency_summary(
+        big_five_scores=report.scores,
+        atmr_summary=atmr_summary,
+    )
     if task.status == "completed" and not report.is_real_result:
         report.interpretation_status = "skipped"
         report.interpretation_error = "该报告不是可用于正式解读的真实模型输出。"
@@ -94,6 +113,9 @@ def _to_report_response(report: BigFivePersonalityReport) -> BigFiveReportRespon
         artifacts=report.artifacts or {},
         errors=report.errors or [],
         is_real_result=bool(report.is_real_result),
+        quality_summary=report.quality_summary or {},
+        confidence_summary=report.confidence_summary or {},
+        consistency_summary=report.consistency_summary or {},
         interpretation_status=report.interpretation_status or "pending",
         interpretation_content=report.interpretation_content,
         interpretation_model=report.interpretation_model,
@@ -212,7 +234,7 @@ def run_big_five_report_in_background(report_id: int, task_id: str, force_restar
         if not report:
             return
 
-        _sync_report_from_task(report, task)
+        _sync_report_from_task(report, task, db)
         db.commit()
         db.refresh(report)
         if report.is_real_result:
@@ -344,6 +366,9 @@ async def upload_report_file(
         artifacts=dict(task.artifacts or {}),
         errors=list(task.errors or []),
         is_real_result=False,
+        quality_summary={},
+        confidence_summary={},
+        consistency_summary={},
         interpretation_status="pending",
         created_at=now,
         updated_at=now,
@@ -368,6 +393,9 @@ async def retry_report(
     report.status = "running"
     report.message = "正在重新生成大五人格报告。"
     report.errors = []
+    report.quality_summary = {}
+    report.confidence_summary = {}
+    report.consistency_summary = {}
     report.interpretation_status = "pending"
     report.interpretation_content = None
     report.interpretation_file_path = None
@@ -412,7 +440,25 @@ async def get_report(
     current_user: User = Depends(get_current_user),
 ) -> BigFiveReportResponse:
     """Return one Big Five personality report."""
-    return _to_report_response(_get_owned_report(db, report_id, current_user.id))
+    report = _get_owned_report(db, report_id, current_user.id)
+    if report.scores and (not report.quality_summary or not report.confidence_summary or not report.consistency_summary):
+        quality_summary = build_modality_quality_summary(report.artifacts or {}, report.errors or [])
+        report.quality_summary = report.quality_summary or quality_summary
+        report.confidence_summary = report.confidence_summary or build_prediction_confidence_summary(
+            scores=report.scores,
+            quality_summary=quality_summary,
+            is_real_result=bool(report.is_real_result),
+            used_fallback=not bool(report.is_real_result),
+        )
+        atmr_summary = build_atmr_summary_for_session(db, report.source_assessment_session_id)
+        report.consistency_summary = report.consistency_summary or build_consistency_summary(
+            big_five_scores=report.scores,
+            atmr_summary=atmr_summary,
+        )
+        report.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(report)
+    return _to_report_response(report)
 
 
 @router.delete("/reports/{report_id}")

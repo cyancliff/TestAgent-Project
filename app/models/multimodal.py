@@ -34,6 +34,9 @@ class BigFivePersonalityReport(Base):
     artifacts = Column(JSON_TYPE, default=dict, nullable=False, comment="Generated artifact paths")
     errors = Column(JSON_TYPE, default=list, nullable=False, comment="Processing errors")
     is_real_result = Column(Boolean, default=False, nullable=False, comment="Whether result came from the real model")
+    quality_summary = Column(JSON_TYPE, default=dict, nullable=True, comment="Modality quality assessment")
+    confidence_summary = Column(JSON_TYPE, default=dict, nullable=True, comment="Prediction confidence summary")
+    consistency_summary = Column(JSON_TYPE, default=dict, nullable=True, comment="ATMR-Big Five consistency analysis")
     interpretation_status = Column(
         String(20),
         default="pending",

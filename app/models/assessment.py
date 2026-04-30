@@ -61,6 +61,9 @@ class AssessmentSession(Base):
     submitted_stages = Column(JSON_TYPE, default=list, comment="已提交的阶段列表")
     report_content = Column(Text, nullable=True, comment="报告内容")
     report_file_path = Column(String(255), nullable=True, comment="报告文件路径")
+    trust_summary = Column(JSON_TYPE, default=dict, nullable=True, comment="测评可信度汇总")
+    adaptive_metrics = Column(JSON_TYPE, default=dict, nullable=True, comment="ATMR-CAT 自适应选题指标")
+    evidence_summary = Column(JSON_TYPE, default=dict, nullable=True, comment="报告证据链汇总")
 
     # 关系
     user = relationship("User", back_populates="sessions")
@@ -96,10 +99,14 @@ class AnswerRecord(Base):
     score = Column(Numeric(4, 2), comment="该题得分")
     time_spent = Column(Numeric(6, 2), comment="实际作答耗时(秒)")
 
-    # 存入 AI 的拦截结果与用户的解释
+    # 后台作答质量评估结果
     is_anomaly = Column(Integer, default=0, comment="是否异常: 0正常, 1异常")
-    ai_follow_up = Column(Text, nullable=True, comment="AI追问内容")
-    user_explanation = Column(Text, nullable=True, comment="用户对异常的解释")
+    ai_follow_up = Column(Text, nullable=True, comment="历史兼容字段：AI追问内容")
+    user_explanation = Column(Text, nullable=True, comment="历史兼容字段：用户对异常的解释")
+    risk_score = Column(Integer, default=0, nullable=True, comment="异常风险分 0-100")
+    risk_reasons = Column(JSON_TYPE, default=list, nullable=True, comment="异常风险原因")
+    answer_confidence = Column(Float, default=1.0, nullable=True, comment="单题可信度 0-1")
+    behavior_metrics = Column(JSON_TYPE, default=dict, nullable=True, comment="前台作答行为摘要")
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), comment="答题时间")
 

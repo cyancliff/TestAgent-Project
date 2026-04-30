@@ -142,6 +142,14 @@ def create_editable_session_copy(db: Session, source_session: AssessmentSession)
                 is_anomaly=record.is_anomaly,
                 ai_follow_up=record.ai_follow_up,
                 user_explanation=record.user_explanation,
+                risk_score=getattr(record, "risk_score", None) or 0,
+                risk_reasons=getattr(record, "risk_reasons", None) or [],
+                answer_confidence=(
+                    getattr(record, "answer_confidence", None)
+                    if getattr(record, "answer_confidence", None) is not None
+                    else 1.0
+                ),
+                behavior_metrics=getattr(record, "behavior_metrics", None) or {},
                 created_at=record.created_at,
             )
         )
@@ -233,6 +241,14 @@ async def resume_session(
                 "is_anomaly": record.is_anomaly,
                 "ai_follow_up": record.ai_follow_up,
                 "user_explanation": record.user_explanation,
+                "risk_score": getattr(record, "risk_score", None) or 0,
+                "risk_reasons": getattr(record, "risk_reasons", None) or [],
+                "answer_confidence": (
+                    getattr(record, "answer_confidence", None)
+                    if getattr(record, "answer_confidence", None) is not None
+                    else 1.0
+                ),
+                "behavior_metrics": getattr(record, "behavior_metrics", None) or {},
             }
         )
         if question:
