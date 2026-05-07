@@ -21,6 +21,7 @@ from multimodal_personality.training.metrics import compute_regression_metrics
 DEFAULT_EVAL_FILES = [
     ("Full baseline test", Path("reports/full_multimodal_pipeline/test_eval.json")),
     ("lr1e-4 dropout0.2 test", Path("reports/night_lr1e4_drop02/test_eval.json")),
+    ("lr1e-4 dropout0.2 + bg_features test", Path("reports/agtn_mtl_bg_v1_lr1e4_drop02_full/test_eval.json")),
     ("lr1e-4 dropout0.3 test", Path("reports/night_lr1e4_drop03/test_eval.json")),
     ("lr2e-4 dropout0.3 test", Path("reports/night_lr2e4_drop03/test_eval.json")),
 ]
@@ -126,6 +127,21 @@ def format_metric(value: float | None) -> str:
     return "-" if value is None else f"{value:.4f}"
 
 
+def find_row(rows: list[dict[str, object]], label_fragment: str) -> dict[str, object] | None:
+    normalized_fragment = label_fragment.lower()
+    for row in rows:
+        if normalized_fragment in str(row.get("label", "")).lower():
+            return row
+    return None
+
+
+def format_delta(value: float | None) -> str:
+    if value is None:
+        return "-"
+    sign = "+" if value >= 0 else ""
+    return f"{sign}{value:.4f}"
+
+
 def build_summary_rows(eval_specs: list[tuple[str, Path]], *, write_back: bool) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for label, path in eval_specs:
@@ -166,7 +182,7 @@ def build_markdown(rows: list[dict[str, object]]) -> str:
         metrics = row["metrics"]
         if not isinstance(metrics, dict):
             metrics = {}
-        note = "已由逐样本预测补算" if row.get("has_recomputed_paper_metrics") else "源文件缺少逐样本预测，仅保留已有指标"
+        note = "已由逐样本预测补算" if row.get("has_recomputed_paper_metrics") else "使用源文件已有汇总指标"
         lines.append(
             "| {label} | {sample_count} | {mse} | {mae} | {acc} | {pcc} | {ccc} | {r2} | {note} |".format(
                 label=row["label"],
@@ -214,8 +230,43 @@ def build_markdown(rows: list[dict[str, object]]) -> str:
                 ),
                 "",
                 (
-                    "后续若要继续提升论文指标，应优先使用新实现的 `bg_features` 重新生成 bundle "
-                    "并重新训练，再考虑更多随机种子、单模态/多模态消融和更完整的多任务损失。"
+                    "后续若要继续提升论文指标，可继续考虑更多随机种子、单模态/多模态消融和更完整的多任务损失。"
+                ),
+            ]
+        )
+
+    bg_row = find_row(rows, "bg_features")
+    baseline_row = find_row(rows, "lr1e-4 dropout0.2 test")
+    if bg_row is not None and baseline_row is not None:
+        bg_metrics = bg_row["metrics"] if isinstance(bg_row.get("metrics"), dict) else {}
+        baseline_metrics = baseline_row["metrics"] if isinstance(baseline_row.get("metrics"), dict) else {}
+        mae_delta = (
+            metric_value(bg_metrics, "mae") - metric_value(baseline_metrics, "mae")
+            if metric_value(bg_metrics, "mae") is not None and metric_value(baseline_metrics, "mae") is not None
+            else None
+        )
+        pcc_delta = (
+            metric_value(bg_metrics, "pcc") - metric_value(baseline_metrics, "pcc")
+            if metric_value(bg_metrics, "pcc") is not None and metric_value(baseline_metrics, "pcc") is not None
+            else None
+        )
+        r2_delta = (
+            metric_value(bg_metrics, "r2") - metric_value(baseline_metrics, "r2")
+            if metric_value(bg_metrics, "r2") is not None and metric_value(baseline_metrics, "r2") is not None
+            else None
+        )
+        lines.extend(
+            [
+                "",
+                "### bg_features 对照",
+                "",
+                (
+                    "真实 `bg_features` 重训结果已经加入表格。相对 `lr1e-4 dropout0.2 test`，"
+                    f"`MSE` 从 `{format_metric(metric_value(baseline_metrics, 'mse'))}` 变为 "
+                    f"`{format_metric(metric_value(bg_metrics, 'mse'))}`，`MAE` 变化为 "
+                    f"`{format_delta(mae_delta)}`，`PCC` 变化为 `{format_delta(pcc_delta)}`，"
+                    f"`R²` 变化为 `{format_delta(r2_delta)}`。因此更适合把 `bg_features` "
+                    "表述为带来有限但正向的场景语义辅助信息，而不是显著性能突破。"
                 ),
             ]
         )

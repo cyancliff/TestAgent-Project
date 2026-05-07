@@ -22,6 +22,10 @@
           <span class="nav-icon">AI</span>
           {{ chatNavLabel }}
         </router-link>
+        <router-link v-if="isAdmin" to="/admin/dashboard" :class="['nav-link', { active: isAdminRoute }]">
+          <span class="nav-icon">ADM</span>
+          管理端
+        </router-link>
       </div>
       <div class="nav-user" ref="userMenuRef">
         <button class="user-menu-trigger" type="button" @click="toggleUserMenu" :aria-expanded="showUserMenu">
@@ -133,6 +137,7 @@ const menuCaretClosed = '\u25BC'
 
 const isChatRoute = computed(() => route.path.startsWith('/chat'))
 const isAssessmentRoute = computed(() => route.path.startsWith('/assessment'))
+const isAdminRoute = computed(() => route.path.startsWith('/admin'))
 const showNav = computed(() => route.path !== '/login')
 const readStoredNickname = () => localStorage.getItem('nickname') || localStorage.getItem('username') || '用户'
 const readStoredLoginAccount = () => localStorage.getItem('loginAccount') || localStorage.getItem('username') || 'user'
@@ -140,6 +145,7 @@ const readStoredAvatarUrl = () => resolveBackendUrl(localStorage.getItem('avatar
 const nickname = ref(readStoredNickname())
 const loginAccount = ref(readStoredLoginAccount())
 const avatarUrl = ref(readStoredAvatarUrl())
+const isAdmin = ref(localStorage.getItem('isAdmin') === '1' || localStorage.getItem('role') === 'admin')
 const usernameInitial = computed(() => (nickname.value || '?')[0].toUpperCase())
 const userSubtitle = computed(() => `@${loginAccount.value || 'user'}`)
 const avatarInput = ref(null)
@@ -187,6 +193,15 @@ const persistUserProfile = (profile = {}) => {
     }
   } else {
     avatarUrl.value = readStoredAvatarUrl()
+  }
+
+  if (Object.prototype.hasOwnProperty.call(profile, 'role') || Object.prototype.hasOwnProperty.call(profile, 'is_admin')) {
+    const role = profile.role || (profile.is_admin ? 'admin' : 'user')
+    isAdmin.value = role === 'admin' || profile.is_admin === true
+    localStorage.setItem('role', role)
+    localStorage.setItem('isAdmin', isAdmin.value ? '1' : '0')
+  } else {
+    isAdmin.value = localStorage.getItem('isAdmin') === '1' || localStorage.getItem('role') === 'admin'
   }
 }
 
@@ -282,9 +297,12 @@ const logout = () => {
   localStorage.removeItem('nickname')
   localStorage.removeItem('loginAccount')
   localStorage.removeItem('avatarUrl')
+  localStorage.removeItem('role')
+  localStorage.removeItem('isAdmin')
   nickname.value = '用户'
   loginAccount.value = 'user'
   avatarUrl.value = ''
+  isAdmin.value = false
   router.push('/login')
 }
 

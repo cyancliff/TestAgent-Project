@@ -135,6 +135,7 @@ class Settings(BaseSettings):
         "AUTO_CREATE_TABLES",
         "1" if os.environ.get("APP_ENV", "development").lower() == "development" else "0",
     ) == "1"
+    ADMIN_USERNAMES: str = os.environ.get("ADMIN_USERNAMES", "admin")
 
     ALLOWED_ORIGINS: list[str] = ["*"]
 

@@ -138,6 +138,71 @@
       "has_recomputed_paper_metrics": true
     },
     {
+      "label": "lr1e-4 dropout0.2 + bg_features test",
+      "path": "D:\\PythonCode\\TestAgent\\reports\\agtn_mtl_bg_v1_lr1e4_drop02_full\\test_eval.json",
+      "split": "test",
+      "checkpoint_path": "D:\\PythonCode\\TestAgent\\reports\\agtn_mtl_bg_v1_lr1e4_drop02_full\\agtn_mtl_full.pt",
+      "sample_count": 2000,
+      "metrics": {
+        "sample_count": 2000,
+        "mse": 0.011505885981023312,
+        "rmse": 0.10726549296499463,
+        "mae": 0.08620090037584305,
+        "acc": 0.913799099624157,
+        "pcc": 0.7071873545646667,
+        "ccc": 0.6323603391647339,
+        "r2": 0.48970574140548706,
+        "per_trait": {
+          "openness": {
+            "mse": 0.011961436830461025,
+            "rmse": 0.10936835388018339,
+            "mae": 0.08777296543121338,
+            "acc": 0.9122270345687866,
+            "pcc": 0.6779851317405701,
+            "ccc": 0.5882958173751831,
+            "r2": 0.4282975196838379
+          },
+          "conscientiousness": {
+            "mse": 0.010520238429307938,
+            "rmse": 0.10256821354253928,
+            "mae": 0.08213704824447632,
+            "acc": 0.9178629517555237,
+            "pcc": 0.7511175274848938,
+            "ccc": 0.6841105222702026,
+            "r2": 0.5481991767883301
+          },
+          "extraversion": {
+            "mse": 0.011197526007890701,
+            "rmse": 0.10581836328298931,
+            "mae": 0.08516144752502441,
+            "acc": 0.9148385524749756,
+            "pcc": 0.7193259000778198,
+            "ccc": 0.6471911668777466,
+            "r2": 0.5030699968338013
+          },
+          "agreeableness": {
+            "mse": 0.011603329330682755,
+            "rmse": 0.10771875106351148,
+            "mae": 0.08709458261728287,
+            "acc": 0.9129054173827171,
+            "pcc": 0.5976040959358215,
+            "ccc": 0.5172701478004456,
+            "r2": 0.34722769260406494
+          },
+          "neuroticism": {
+            "mse": 0.012246900238096714,
+            "rmse": 0.11066571392304264,
+            "mae": 0.08883848041296005,
+            "acc": 0.91116151958704,
+            "pcc": 0.697428822517395,
+            "ccc": 0.6225098371505737,
+            "r2": 0.47879475355148315
+          }
+        }
+      },
+      "has_recomputed_paper_metrics": false
+    },
+    {
       "label": "lr1e-4 dropout0.3 test",
       "path": "D:\\PythonCode\\TestAgent\\reports\\night_lr1e4_drop03\\test_eval.json",
       "split": "test",

@@ -169,12 +169,14 @@ const handleSubmit = async () => {
     localStorage.setItem('username', res.data.username)
     localStorage.setItem('loginAccount', res.data.username)
     localStorage.setItem('nickname', res.data.nickname || res.data.username)
+    localStorage.setItem('role', res.data.role || 'user')
+    localStorage.setItem('isAdmin', res.data.is_admin ? '1' : '0')
     if (res.data.avatar_url) {
       localStorage.setItem('avatarUrl', res.data.avatar_url)
     } else {
       localStorage.removeItem('avatarUrl')
     }
-    router.push('/history')
+    router.push(res.data.is_admin ? '/admin/dashboard' : '/history')
   } catch (err) {
     applyServerError(err)
   } finally {

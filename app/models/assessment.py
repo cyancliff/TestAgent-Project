@@ -24,6 +24,7 @@ class Question(Base):
     ai_analysis_prompt = Column(Text, nullable=True, comment="官方解析")
 
     is_reverse = Column(Boolean, default=False, comment="是否反向计分")
+    is_active = Column(Boolean, default=True, nullable=False, comment="是否启用")
     avg_time = Column(Numeric(5, 2), default=8.0, comment="预估平均作答时间(秒)")
 
     # 题目特征向量 (用于智能选题)

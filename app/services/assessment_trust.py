@@ -6,7 +6,7 @@ from collections import defaultdict
 from statistics import mean
 from typing import Any
 
-from app.core.constants import MODULE_DISPLAY_NAMES, MODULE_DIM_MAP, STAGE_QUESTION_COUNT
+from app.core.constants import DIMENSION_MAX_SCORE, MODULE_DISPLAY_NAMES, MODULE_DIM_MAP, STAGE_QUESTION_COUNT
 
 
 MODULE_BY_DIMENSION = {dimension_id: module for module, dimension_id in MODULE_DIM_MAP.items()}
@@ -50,16 +50,13 @@ def calculate_answer_confidence(
     is_anomaly: bool = False,
     user_explanation: str | None = None,
 ) -> float:
-    """Convert answer risk and explanation quality into a 0-1 confidence score."""
+    """Convert behavior risk into a 0-1 item confidence score."""
 
+    del user_explanation  # Legacy argument kept for backward compatibility.
     risk = clamp(_safe_float(risk_score), 0.0, 100.0)
     confidence = 1.0 - risk * 0.0065
     if is_anomaly:
         confidence -= 0.08
-
-    explanation = (user_explanation or "").strip()
-    if is_anomaly and explanation:
-        confidence += 0.06 if len(explanation) < 8 else 0.12
 
     return round(clamp(confidence, 0.2, 1.0), 3)
 
@@ -160,6 +157,49 @@ def build_assessment_trust_summary(answer_items: list[dict[str, Any]]) -> dict[s
     }
 
 
+def build_confidence_weighted_score_reference(
+    records: list[dict[str, Any]],
+    *,
+    weight_bonus: float = 0.0,
+    primary_total_score: float = 0.0,
+    max_score: float = DIMENSION_MAX_SCORE,
+) -> dict[str, Any]:
+    """Calculate a confidence-weighted reference score without replacing raw scoring."""
+
+    if not records:
+        return {
+            "confidence_weighted_raw_score": 0.0,
+            "confidence_weighted_score": 0.0,
+            "confidence_weighted_percentage": 0.0,
+            "confidence_weighted_delta": 0.0,
+        }
+
+    raw_total = sum(_safe_float(record.get("score"), 0.0) for record in records)
+    confidence_sum = 0.0
+    weighted_score_sum = 0.0
+    for record in records:
+        confidence_value = record.get("answer_confidence")
+        confidence = 1.0 if confidence_value is None else clamp(_safe_float(confidence_value, 1.0))
+        confidence_sum += confidence
+        weighted_score_sum += confidence * _safe_float(record.get("score"), 0.0)
+
+    weighted_avg = (weighted_score_sum / confidence_sum) if confidence_sum > 0 else raw_total / len(records)
+    confidence_weighted_raw_score = weighted_avg * len(records)
+    confidence_weighted_score = max(0.0, min(confidence_weighted_raw_score + _safe_float(weight_bonus), max_score))
+    max_possible = len(records) * 5.0
+    confidence_weighted_percentage = (
+        confidence_weighted_score / max_possible * 100 if max_possible > 0 else 0.0
+    )
+    confidence_weighted_delta = confidence_weighted_score - _safe_float(primary_total_score)
+
+    return {
+        "confidence_weighted_raw_score": round(confidence_weighted_raw_score, 2),
+        "confidence_weighted_score": round(confidence_weighted_score, 2),
+        "confidence_weighted_percentage": round(confidence_weighted_percentage, 1),
+        "confidence_weighted_delta": round(confidence_weighted_delta, 2),
+    }
+
+
 def build_evidence_chain(answer_items: list[dict[str, Any]], *, max_per_module: int = 3) -> dict[str, Any]:
     by_module: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in answer_items:
@@ -227,7 +267,7 @@ def _dimension_note(confidence: float, anomaly_count: int) -> str:
         return "该维度作答稳定，结论可作为主要参考。"
     if confidence >= 0.6:
         return "该维度整体可参考，但需结合异常记录谨慎解释。"
-    return "该维度证据稳定性不足，建议结合复测或追问。"
+    return "该维度证据稳定性不足，建议结合复测或其他证据。"
 
 
 def _assessment_notes(confidence: float, anomaly_count: int) -> list[str]:

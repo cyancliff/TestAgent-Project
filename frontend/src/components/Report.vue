@@ -100,6 +100,15 @@
 
             <transition name="slide">
               <div v-if="expandedDimension[m.key]" class="dimension-report-body">
+                <div v-if="hasConfidenceWeightedReference(m.key)" class="confidence-reference">
+                  <h3 class="dim-subsection-title">可信度加权参考</h3>
+                  <p>
+                    参考分：{{ getConfidenceWeightedScore(m.key) }} / {{ getDimMax(m.key) }} 分，
+                    与主得分差异 {{ formatDelta(getConfidenceWeightedDelta(m.key)) }}。
+                    {{ getConfidenceWeightedNote(m.key) }}
+                  </p>
+                </div>
+
                 <!-- 模块辩论结果 -->
                 <div v-if="reportData.module_debates?.[m.key]" class="debate-section">
                   <h3 class="dim-subsection-title">专家辩论结果</h3>
@@ -351,12 +360,25 @@ const getDimLevelLabel = (k) => reportData.value.dimension_summary?.[k]?.level_l
 const getDimLevelColor = (k) => reportData.value.dimension_summary?.[k]?.level_color || '#94a3b8'
 const getDimBonus = (k) => reportData.value.dimension_summary?.[k]?.weighted_bonus || 0
 const getDimConfidencePercent = (k) => Math.round((reportData.value.dimension_summary?.[k]?.confidence?.confidence ?? 0) * 100)
+const hasConfidenceWeightedReference = (k) => reportData.value.dimension_summary?.[k]?.confidence_weighted_score !== undefined
+const getConfidenceWeightedScore = (k) => reportData.value.dimension_summary?.[k]?.confidence_weighted_score || 0
+const getConfidenceWeightedDelta = (k) => reportData.value.dimension_summary?.[k]?.confidence_weighted_delta || 0
 const getEvidenceCount = (k) => reportData.value.dimension_summary?.[k]?.question_count || 0
 const getEvidenceRecords = (k) => reportData.value.dimension_summary?.[k]?.evidence_records || []
 const getModuleColor = (k) => modules.find(m => m.key === k)?.color || '#94a3b8'
 const scoreClass = (s) => s >= 4 ? 'score-high' : s >= 3 ? 'score-mid' : 'score-low'
 const toggleDimension = (k) => { expandedDimension[k] = !expandedDimension[k] }
 const percent = (value) => Math.round((Number(value) || 0) * 100)
+const formatDelta = (value) => {
+  const delta = Number(value || 0)
+  if (Math.abs(delta) < 0.005) return '0.00'
+  return `${delta > 0 ? '+' : ''}${delta.toFixed(2)}`
+}
+const getConfidenceWeightedNote = (k) => {
+  const delta = Math.abs(Number(getConfidenceWeightedDelta(k) || 0))
+  if (delta < 0.5) return '与主得分基本一致。'
+  return '异常或低可信作答可能影响该维度解释。'
+}
 const behaviorSummary = (record) => {
   const metrics = record?.behavior_metrics || {}
   const parts = []
@@ -568,6 +590,17 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--border);
 }
 .debate-section:last-child { border-bottom: none; }
+.confidence-reference {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(17, 17, 17, 0.035);
+}
+.confidence-reference p {
+  margin: 0;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  font-size: 15px;
+}
 .loading-debate { text-align: center; }
 .no-debate-hint { color: var(--text-muted); font-size: 15px; padding: 12px 0; }
 .records-section { padding: 0; }

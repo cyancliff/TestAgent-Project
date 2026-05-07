@@ -181,6 +181,7 @@ async def get_adaptive_question(
     candidates = (
         db.query(Question)
         .filter(Question.dimension_id == dim_id)
+        .filter(Question.is_active.is_(True))
         .filter(Question.exam_no.notin_(answered_exam_nos) if answered_exam_nos else True)
         .order_by(Question.exam_no)
         .all()

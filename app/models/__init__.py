@@ -45,6 +45,8 @@ def init_db() -> None:
     _ensure_big_five_interpretation_columns()
     _ensure_big_five_evidence_columns()
     _ensure_user_nickname_column()
+    _ensure_user_role_column()
+    _ensure_question_active_column()
     from app.services.question_sanitizer import repair_question_contents
 
     db = SessionLocal()
@@ -63,7 +65,8 @@ def init_db() -> None:
         ]
         for user in users_needing_nickname_update:
             user.nickname = (user.username or "用户").strip()
-        if sessions_needing_title_update or users_needing_nickname_update:
+        role_updates = _sync_configured_admin_roles(db)
+        if sessions_needing_title_update or users_needing_nickname_update or role_updates:
             db.commit()
 
         updated_count = repair_question_contents(db)
@@ -260,6 +263,52 @@ def _ensure_user_nickname_column() -> None:
     with engine.begin() as connection:
         connection.execute(text("ALTER TABLE users ADD COLUMN nickname VARCHAR(50)"))
     logger.info("Added missing users.nickname column")
+
+
+def _ensure_user_role_column() -> None:
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    column_names = {column["name"] for column in inspector.get_columns("users")}
+    if "role" not in column_names:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user' NOT NULL"))
+        logger.info("Added missing users.role column")
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''"))
+
+
+def _ensure_question_active_column() -> None:
+    inspector = inspect(engine)
+    if "atmr_questions" not in inspector.get_table_names():
+        return
+
+    column_names = {column["name"] for column in inspector.get_columns("atmr_questions")}
+    if "is_active" not in column_names:
+        default_value = "TRUE" if engine.dialect.name == "postgresql" else "1"
+        with engine.begin() as connection:
+            connection.execute(text(f"ALTER TABLE atmr_questions ADD COLUMN is_active BOOLEAN DEFAULT {default_value} NOT NULL"))
+        logger.info("Added missing atmr_questions.is_active column")
+        return
+
+    active_value = "TRUE" if engine.dialect.name == "postgresql" else "1"
+    with engine.begin() as connection:
+        connection.execute(text(f"UPDATE atmr_questions SET is_active = {active_value} WHERE is_active IS NULL"))
+
+
+def _sync_configured_admin_roles(db) -> bool:
+    from app.core.security import resolve_user_role
+
+    changed = False
+    for user in db.query(User).all():
+        resolved_role = resolve_user_role(user.username, getattr(user, "role", None))
+        if getattr(user, "role", None) != resolved_role:
+            user.role = resolved_role
+            changed = True
+    return changed
 
 
 def _format_assessment_session_title(started_at: datetime | None, session_id: int | None = None) -> str:

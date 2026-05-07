@@ -30,6 +30,8 @@ api.interceptors.response.use(
       localStorage.removeItem('nickname')
       localStorage.removeItem('loginAccount')
       localStorage.removeItem('avatarUrl')
+      localStorage.removeItem('role')
+      localStorage.removeItem('isAdmin')
       router.push('/login')
     }
     return Promise.reject(error)

@@ -18,7 +18,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from app.api import assessment, auth, chat, rag
+from app.api import admin, assessment, auth, chat, rag
 
 try:
     from app.api import multimodal_personality
@@ -52,6 +52,7 @@ app.include_router(assessment.router, prefix="/api/v1/assessment", tags=["实时
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["用户认证"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["心理专家对话"])
 app.include_router(rag.router, prefix="/api/v1/rag", tags=["RAG 知识库"])
+app.include_router(admin.router, prefix="/api/v1/admin", tags=["管理端"])
 if multimodal_personality is not None:
     app.include_router(
         multimodal_personality.router,

@@ -50,6 +50,24 @@ def create_access_token(user_id: int, username: str, expires_delta: timedelta | 
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
 
+def get_configured_admin_usernames() -> set[str]:
+    return {
+        username.strip().lower()
+        for username in (settings.ADMIN_USERNAMES or "").split(",")
+        if username.strip()
+    }
+
+
+def resolve_user_role(username: str | None, current_role: str | None = None) -> str:
+    if (username or "").strip().lower() in get_configured_admin_usernames():
+        return "admin"
+    if current_role in {"admin", "user"}:
+        return current_role
+    return "user"
+
+
+def is_admin_user(user) -> bool:
+    return resolve_user_role(getattr(user, "username", None), getattr(user, "role", None)) == "admin"
 
 
 async def get_current_user(
@@ -81,3 +99,9 @@ async def get_current_user(
         raise credentials_exception
 
     return user
+
+
+async def require_admin(current_user=Depends(get_current_user)):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
+    return current_user

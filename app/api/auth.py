@@ -14,6 +14,8 @@ from app.core.security import (
     get_current_user,
     hash_password,
     is_legacy_hash,
+    is_admin_user,
+    resolve_user_role,
     verify_password,
 )
 from app.models.user import User
@@ -45,6 +47,8 @@ class TokenResponse(BaseModel):
     username: str
     nickname: str
     avatar_url: str | None = None
+    role: str = "user"
+    is_admin: bool = False
 
 
 def _normalize_username(username: str) -> str:
@@ -91,6 +95,7 @@ async def register(
     user = User(
         username=username,
         nickname=username,
+        role=resolve_user_role(username),
         password_hash=hash_password(payload.password),
     )
     db.add(user)
@@ -125,7 +130,11 @@ async def login(
         user.password_hash = hash_password(payload.password)
     if nickname_missing:
         user.nickname = user.username
-    if password_upgraded or nickname_missing:
+    resolved_role = resolve_user_role(user.username, getattr(user, "role", None))
+    role_changed = getattr(user, "role", None) != resolved_role
+    if role_changed:
+        user.role = resolved_role
+    if password_upgraded or nickname_missing or role_changed:
         db.commit()
 
     token = create_access_token(user.id, user.username)
@@ -226,11 +235,14 @@ def _resolve_nickname(user: User) -> str:
 
 
 def _build_profile_payload(user: User) -> dict:
+    role = resolve_user_role(user.username, getattr(user, "role", None))
     return {
         "user_id": user.id,
         "username": user.username,
         "nickname": _resolve_nickname(user),
         "avatar_url": _resolve_avatar_url(user),
+        "role": role,
+        "is_admin": role == "admin" or is_admin_user(user),
     }
 
 

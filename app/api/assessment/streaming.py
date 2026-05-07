@@ -35,6 +35,7 @@ from app.services.assessment_trust import (
     build_adaptive_metrics,
     build_answer_insight,
     build_assessment_trust_summary,
+    build_confidence_weighted_score_reference,
     build_evidence_chain,
 )
 
@@ -671,6 +672,11 @@ async def get_report(
             max_possible = 0
 
         level_info = get_dimension_level(clamped_total)
+        confidence_weighted_reference = build_confidence_weighted_score_reference(
+            dimension_data[m]["records"],
+            weight_bonus=weight_bonus[m],
+            primary_total_score=clamped_total,
+        )
 
         dimension_summary[m] = {
             "name": MODULE_DISPLAY_NAMES[m],
@@ -678,6 +684,7 @@ async def get_report(
             "total_score": round(clamped_total, 2),
             "weighted_score": round(weighted_total, 2),
             "weighted_bonus": weight_bonus[m],
+            **confidence_weighted_reference,
             "avg_score": round(avg, 2),
             "max_possible": max_possible,
             "percentage": round(percentage, 1),

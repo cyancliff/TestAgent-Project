@@ -188,7 +188,11 @@ class QuestionSelectionService:
         )
 
         # 2. 获取候选题目
-        query = self.db.query(Question).filter(Question.id.notin_(answered_question_ids))
+        query = (
+            self.db.query(Question)
+            .filter(Question.id.notin_(answered_question_ids))
+            .filter(Question.is_active.is_(True))
+        )
         if module:
             if module in self.module_map:
                 query = query.filter(Question.dimension_id == self.module_map[module])

@@ -247,7 +247,9 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 
 1. 基于 `reports/night_lr1e4_drop02/` 整理当前最优全量结果
 2. 使用 `reports/multimodal_experiment_metrics.md` 中已补齐的 `ACC / PCC / CCC / R²` 指标写论文实验表
-3. 视时间决定是否用新 `bg_features` 重新生成 bundle、重训并做对照实验
+3. 使用 `reports/agtn_mtl_bg_v1_lr1e4_drop02_full/` 整理 `bg_features` 重训对照结果
+4. 使用 `reports/multimodal_ablation_experiments/` 整理文本、视觉、音频、三模态和三模态+bg 消融结果
+5. 使用 `reports/atmr_cat_multi_seed_experiments/` 和 `reports/atmr_cat_anomaly_sweep_experiments/` 补充 ATMR-CAT 稳定性与异常注入实验表
 
 ## 6. 仍需注意的事情
 
