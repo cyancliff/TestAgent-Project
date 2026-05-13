@@ -23,6 +23,7 @@ from app.services.big_five_report_service import (
     generate_big_five_interpretation_sync,
     save_big_five_interpretation_to_file,
 )
+from app.services.micro_expression_summary_service import load_micro_expression_summary_from_artifacts
 from app.services.multimodal_personality_service import service
 
 router = APIRouter()
@@ -40,6 +41,7 @@ def _to_response(task) -> MultimodalTaskResponse:
         model_version=task.model_version,
         scores=task.scores,
         artifacts=task.artifacts,
+        micro_expression_summary=load_micro_expression_summary_from_artifacts(task.artifacts),
         errors=task.errors,
         created_at=task.created_at,
         updated_at=task.updated_at,
@@ -92,6 +94,7 @@ def _to_report_response(report: BigFivePersonalityReport) -> BigFiveReportRespon
         model_version=report.model_version,
         scores=report.scores,
         artifacts=report.artifacts or {},
+        micro_expression_summary=load_micro_expression_summary_from_artifacts(report.artifacts),
         errors=report.errors or [],
         is_real_result=bool(report.is_real_result),
         interpretation_status=report.interpretation_status or "pending",

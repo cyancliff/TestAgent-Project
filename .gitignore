@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .venv/
 env/
+.pytest_tmp/
 
 # Java 编译文件
 target/

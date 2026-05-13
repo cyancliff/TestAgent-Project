@@ -46,6 +46,7 @@ class MultimodalTaskResponse(BaseModel):
     model_version: str = "scaffold-v1"
     scores: Optional[BigFiveScores] = None
     artifacts: dict[str, str] = Field(default_factory=dict)
+    micro_expression_summary: dict | None = None
     errors: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
@@ -64,6 +65,7 @@ class BigFiveReportResponse(BaseModel):
     model_version: str = "scaffold-v1"
     scores: Optional[BigFiveScores] = None
     artifacts: dict[str, str] = Field(default_factory=dict)
+    micro_expression_summary: dict | None = None
     errors: list[str] = Field(default_factory=list)
     is_real_result: bool = False
     interpretation_status: InterpretationStatus = "pending"

@@ -15,6 +15,7 @@ CLIP_VIDEO_DIM = 768
 WAV2CLIP_DIM = 512
 CLIP_TEXT_DIM = 768
 BG_DIM = 256
+MICRO_EXPRESSION_DIM = 8
 TRAIT_DIM = 5
 TRAIT_ORDER = [
     "openness",
@@ -69,6 +70,7 @@ class MultimodalFeatureBundle:
     clip_text: list[list[float]] = field(default_factory=list)
     wav2clip: list[list[float]] | None = None
     bg_features: list[float] | None = None
+    micro_expression_features: list[float] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def validate(self) -> None:
@@ -85,6 +87,12 @@ class MultimodalFeatureBundle:
             self.wav2clip = _ensure_2d_sequence(self.wav2clip, WAV2CLIP_DIM, "wav2clip")
         if self.bg_features is not None:
             self.bg_features = _ensure_1d_vector(self.bg_features, BG_DIM, "bg_features")
+        if self.micro_expression_features is not None:
+            self.micro_expression_features = _ensure_1d_vector(
+                self.micro_expression_features,
+                MICRO_EXPRESSION_DIM,
+                "micro_expression_features",
+            )
 
     def to_serializable(self) -> dict[str, Any]:
         self.validate()
@@ -135,11 +143,19 @@ class MultimodalFeatureBundle:
             bg_features = [0.0] * BG_DIM
         bg_features = torch.tensor(bg_features, dtype=torch.float32)
 
+        micro_expression_features = self.micro_expression_features
+        if micro_expression_features is None:
+            if not fill_missing_modalities:
+                raise ValueError("micro_expression_features is missing and fill_missing_modalities=False")
+            micro_expression_features = [0.0] * MICRO_EXPRESSION_DIM
+        micro_expression_features = torch.tensor(micro_expression_features, dtype=torch.float32)
+
         tensors: dict[str, torch.Tensor] = {
             "clip_video": clip_video,
             "wav2clip": wav2clip,
             "clip_text": clip_text,
             "bg_features": bg_features,
+            "micro_expression_features": micro_expression_features,
         }
         if self.labels is not None:
             tensors["labels"] = torch.tensor(self.labels, dtype=torch.float32)
@@ -164,6 +180,7 @@ class MultimodalFeatureBundle:
         clip_payload: dict[str, Any],
         wav2clip_payload: dict[str, Any] | None = None,
         bg_payload: dict[str, Any] | None = None,
+        micro_expression_payload: dict[str, Any] | None = None,
     ) -> "MultimodalFeatureBundle":
         labels = sample.get("labels")
         metadata = {
@@ -172,6 +189,12 @@ class MultimodalFeatureBundle:
             "clip_success": bool(clip_payload.get("success", False)),
             "has_wav2clip": wav2clip_payload is not None,
             "has_bg_features": bg_payload is not None,
+            "has_micro_expression": micro_expression_payload is not None
+            and bool(
+                micro_expression_payload.get("feature_vector")
+                or micro_expression_payload.get("micro_expression_features")
+                or micro_expression_payload.get("features"),
+            ),
         }
 
         clip_text = clip_payload.get("text_sequence_features") or clip_payload.get("text_features") or []
@@ -192,6 +215,14 @@ class MultimodalFeatureBundle:
                 or bg_payload.get("features")
             )
 
+        micro_expression_features = None
+        if micro_expression_payload is not None:
+            micro_expression_features = (
+                micro_expression_payload.get("feature_vector")
+                or micro_expression_payload.get("micro_expression_features")
+                or micro_expression_payload.get("features")
+            )
+
         bundle = cls(
             video_name=sample["video_name"],
             video_path=sample.get("video_path", ""),
@@ -200,6 +231,7 @@ class MultimodalFeatureBundle:
             clip_text=clip_text,
             wav2clip=wav2clip,
             bg_features=bg_features,
+            micro_expression_features=micro_expression_features,
             metadata=metadata,
         )
         bundle.validate()

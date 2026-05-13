@@ -41,6 +41,11 @@ def main() -> None:
         help="Directory containing bg feature JSON files",
     )
     parser.add_argument(
+        "--micro-expression-dir",
+        default=None,
+        help="Optional directory containing MOL micro-expression feature JSON files",
+    )
+    parser.add_argument(
         "--output-dir",
         default="multimodal_personality/data/cfi_v2/bundles",
         help="Directory for output bundle JSON files",
@@ -64,6 +69,7 @@ def main() -> None:
     clip_dir = Path(args.clip_dir)
     wav2clip_dir = Path(args.wav2clip_dir)
     bg_dir = Path(args.bg_dir)
+    micro_expression_dir = Path(args.micro_expression_dir) if args.micro_expression_dir else None
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     bg_dir.mkdir(parents=True, exist_ok=True)
@@ -86,6 +92,11 @@ def main() -> None:
 
         wav2clip_payload = load_optional_json(wav2clip_dir / f"{sample['video_name']}.json")
         bg_payload = load_optional_json(bg_dir / f"{sample['video_name']}.json")
+        micro_expression_payload = (
+            None
+            if micro_expression_dir is None
+            else load_optional_json(micro_expression_dir / f"{sample['video_name']}.json")
+        )
         if bg_payload is None and not args.no_derive_bg and clip_payload.get("success", False):
             bg_result = bg_extractor.extract_sample(
                 video_name=sample["video_name"],
@@ -103,6 +114,7 @@ def main() -> None:
                 clip_payload=clip_payload,
                 wav2clip_payload=wav2clip_payload,
                 bg_payload=bg_payload,
+                micro_expression_payload=micro_expression_payload,
             )
         except ValueError as exc:
             print(f"skip {sample['video_name']} reason={exc}")

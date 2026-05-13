@@ -24,6 +24,7 @@ from app.models.assessment import AnswerRecord, AssessmentSession, Question
 from app.models.chat import ChatSession, ChatMessage as ChatMessageModel
 from app.models.multimodal import BigFivePersonalityReport
 from app.models.user import User
+from app.services.micro_expression_summary_service import load_micro_expression_summary_from_artifacts
 from app.services.scoring import calculate_weight_bonus, clamp_score
 from app.services.rag_service import retrieve_big_five_knowledge, retrieve_knowledge
 
@@ -349,6 +350,16 @@ def get_big_five_context(big_five_report_id: int, db: Session) -> str:
     ]
     for key, label in BIG_FIVE_DIMENSIONS:
         lines.append(f"- {label}: {_format_big_five_score(scores.get(key))}")
+    micro_summary = load_micro_expression_summary_from_artifacts(report.artifacts)
+    if micro_summary and micro_summary.get("available"):
+        lines.extend(
+            [
+                "",
+                "【微表情线索】",
+                str(micro_summary.get("summary_text_zh") or "暂无可用微表情摘要。"),
+                str(micro_summary.get("interpretation_boundary_zh") or ""),
+            ]
+        )
     if report.interpretation_status == "completed" and report.interpretation_content:
         interpretation = extract_text_only_report_content(report.interpretation_content)
         lines.extend(

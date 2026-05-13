@@ -150,6 +150,15 @@ class Settings(BaseSettings):
         "reports/night_lr1e4_drop02/agtn_mtl_lr1e4_drop02.pt",
     )
     MULTIMODAL_DEVICE: str = os.environ.get("MULTIMODAL_DEVICE", "auto")
+    MICRO_EXPRESSION_ENABLED: bool = os.environ.get("MICRO_EXPRESSION_ENABLED", "1") == "1"
+    MOL_ROOT_DIR: str = os.environ.get("MOL_ROOT_DIR", "third_party/MOL")
+    MOL_PYTHON_PATH: str = os.environ.get("MOL_PYTHON_PATH", "")
+    MOL_MODEL_PATH: str = os.environ.get(
+        "MOL_MODEL_PATH",
+        "third_party/MOL/saved_models/MOL_HF_TIM20_SAMM3_26subj_fullquick_SAMM_006_3cls.pth",
+    )
+    MOL_DEVICE: str = os.environ.get("MOL_DEVICE", "auto")
+    MICRO_EXPRESSION_TIMEOUT_SECONDS: int = int(os.environ.get("MICRO_EXPRESSION_TIMEOUT_SECONDS", "60"))
 
     model_config = SettingsConfigDict(case_sensitive=True, enable_decoding=False)
 

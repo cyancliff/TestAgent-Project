@@ -5,6 +5,7 @@ import json
 import torch
 
 from multimodal_personality.models import MultimodalFeatureBundle
+from multimodal_personality.models.feature_bundle import MICRO_EXPRESSION_DIM
 from multimodal_personality.training import (
     TRAIT_ORDER,
     compute_regression_metrics,
@@ -16,7 +17,7 @@ from multimodal_personality.training import (
 )
 
 
-def _write_bundle(path, *, video_name: str, label_seed: float) -> None:
+def _write_bundle(path, *, video_name: str, label_seed: float, with_micro_expression: bool = False) -> None:
     labels = [min(label_seed + index * 0.05, 0.95) for index in range(5)]
     bundle = MultimodalFeatureBundle(
         video_name=video_name,
@@ -26,6 +27,11 @@ def _write_bundle(path, *, video_name: str, label_seed: float) -> None:
         clip_text=[[label_seed + sentence_index * 0.01] * 768 for sentence_index in range(4)],
         wav2clip=[[label_seed + frame_index * 0.002] * 512 for frame_index in range(15)],
         bg_features=[label_seed] * 256,
+        micro_expression_features=(
+            [label_seed + index * 0.01 for index in range(MICRO_EXPRESSION_DIM)]
+            if with_micro_expression
+            else None
+        ),
     )
     bundle.write_json(path)
 
@@ -137,5 +143,103 @@ def test_train_eval_and_infer_minimal_loop(tmp_path) -> None:
     infer_result = predict_bundle_paths(checkpoint_path, sorted(val_dir.glob("*.json")), device="cpu", batch_size=2)
     assert infer_result.sample_count == 2
     assert len(infer_result.predictions) == 2
+    assert infer_result.predictions[0].labels is not None
+    assert set(infer_result.predictions[0].scores) == set(TRAIT_ORDER)
+
+
+def test_train_eval_can_enable_micro_expression_branch(tmp_path) -> None:
+    train_dir = tmp_path / "train_bundles"
+    val_dir = tmp_path / "val_bundles"
+    train_dir.mkdir()
+    val_dir.mkdir()
+
+    for index in range(2):
+        _write_bundle(
+            train_dir / f"train-{index}.json",
+            video_name=f"train-{index}",
+            label_seed=0.2 + index * 0.05,
+            with_micro_expression=True,
+        )
+    _write_bundle(
+        val_dir / "val-0.json",
+        video_name="val-0",
+        label_seed=0.35,
+        with_micro_expression=True,
+    )
+
+    checkpoint_path = tmp_path / "micro-baseline.pt"
+    train_baseline_model(
+        sorted(train_dir.glob("*.json")),
+        checkpoint_path=checkpoint_path,
+        val_bundle_paths=sorted(val_dir.glob("*.json")),
+        epochs=1,
+        batch_size=1,
+        learning_rate=1e-3,
+        device="cpu",
+        text_seq_len=13,
+        model_kwargs={
+            "hidden_dim": 16,
+            "attention_heads": 1,
+            "dropout": 0.1,
+            "use_micro_expression_features": True,
+            "micro_expression_dim": MICRO_EXPRESSION_DIM,
+        },
+    )
+
+    loaded = load_checkpoint_model(checkpoint_path, device="cpu")
+    assert loaded.checkpoint["model_kwargs"]["use_micro_expression_features"] is True
+    assert loaded.checkpoint["feature_contract"]["uses_micro_expression_features"] is True
+
+    eval_result = evaluate_bundle_paths(
+        loaded.model,
+        sorted(val_dir.glob("*.json")),
+        device="cpu",
+        batch_size=1,
+        text_seq_len=13,
+        require_labels=True,
+    )
+    assert eval_result.sample_count == 1
+    assert set(eval_result.predictions[0].scores) == set(TRAIT_ORDER)
+
+
+def test_legacy_checkpoint_ignores_micro_expression_features(tmp_path) -> None:
+    train_dir = tmp_path / "train_bundles"
+    val_dir = tmp_path / "val_bundles"
+    train_dir.mkdir()
+    val_dir.mkdir()
+
+    for index in range(2):
+        _write_bundle(
+            train_dir / f"train-{index}.json",
+            video_name=f"train-{index}",
+            label_seed=0.25 + index * 0.05,
+            with_micro_expression=True,
+        )
+    _write_bundle(
+        val_dir / "val-0.json",
+        video_name="val-0",
+        label_seed=0.4,
+        with_micro_expression=True,
+    )
+
+    checkpoint_path = tmp_path / "legacy-compatible.pt"
+    train_baseline_model(
+        sorted(train_dir.glob("*.json")),
+        checkpoint_path=checkpoint_path,
+        val_bundle_paths=None,
+        epochs=1,
+        batch_size=1,
+        learning_rate=1e-3,
+        device="cpu",
+        text_seq_len=13,
+        model_kwargs={"hidden_dim": 16, "attention_heads": 1, "dropout": 0.1},
+    )
+
+    loaded = load_checkpoint_model(checkpoint_path, device="cpu")
+    assert "use_micro_expression_features" not in loaded.checkpoint["model_kwargs"]
+
+    infer_result = predict_bundle_paths(checkpoint_path, sorted(val_dir.glob("*.json")), device="cpu", batch_size=1)
+
+    assert infer_result.sample_count == 1
     assert infer_result.predictions[0].labels is not None
     assert set(infer_result.predictions[0].scores) == set(TRAIT_ORDER)

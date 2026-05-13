@@ -46,6 +46,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attention-heads", type=int, default=1, help="Residual channel attention heads")
     parser.add_argument("--graph-metric", default="ones", help="Graph construction metric")
     parser.add_argument("--dropout", type=float, default=0.2, help="Dropout ratio")
+    parser.add_argument(
+        "--use-micro-expression-features",
+        action="store_true",
+        help="Enable the optional MOL micro-expression feature branch for ablation training",
+    )
+    parser.add_argument("--micro-expression-dim", type=int, default=8, help="MOL micro-expression feature size")
     return parser.parse_args()
 
 
@@ -80,6 +86,8 @@ def main() -> None:
             "attention_heads": args.attention_heads,
             "graph_metric": args.graph_metric,
             "dropout": args.dropout,
+            "use_micro_expression_features": args.use_micro_expression_features,
+            "micro_expression_dim": args.micro_expression_dim,
         },
     )
 
