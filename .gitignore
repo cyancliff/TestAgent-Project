@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .venv/
 env/
+.pytest_tmp/
 
 # Java 编译文件
 target/
@@ -67,3 +68,15 @@ uploads/avatars/*
 uploads/multimodal_personality/videos/
 uploads/multimodal_personality/tasks/
 uploads/multimodal_personality/artifacts/
+
+# MOL local datasets, environments, and generated outputs
+third_party/MOL/.venv/
+third_party/MOL/external_datasets/
+third_party/MOL/uploads/
+third_party/MOL/utils/shape_predictor_68_face_landmarks.dat
+third_party/MOL/utils/shape_predictor_68_face_landmarks.dat.bz2
+third_party/MOL/data/*/*/*
+third_party/MOL/data_processed/*/*.pth
+third_party/MOL/logs/*.txt
+third_party/MOL/saved_models/
+third_party/MOL/output/*.pth
