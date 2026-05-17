@@ -1,4 +1,5 @@
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -267,3 +268,38 @@ def test_big_five_context_prefers_ai_interpretation_when_available(tmp_path):
 
     assert "【AI 详细解读】" in context
     assert "这是大五 AI 解读正文" in context
+
+
+def test_big_five_context_includes_micro_expression_summary(tmp_path):
+    engine, db = _build_test_session(tmp_path)
+    try:
+        seeded = _seed_chat_session(db, with_history=False)
+        micro_path = tmp_path / "micro_expression_feature.json"
+        micro_path.write_text(
+            json.dumps(
+                {
+                    "success": True,
+                    "summary": {
+                        "dominant_expression": "negative",
+                        "dominant_label_zh": "消极",
+                        "confidence": 0.51,
+                    },
+                    "summary_text_zh": "主导微表情为消极，置信度约 51/100。",
+                    "interpretation_boundary_zh": "微表情只作为短时面部线索，不能直接代表稳定人格标签。",
+                    "probabilities": {"surprise": 0.2, "positive": 0.29, "negative": 0.51},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        seeded.big_five_report.artifacts = {"micro_expression_feature_path": str(micro_path)}
+        db.commit()
+
+        context = get_big_five_context(seeded.big_five_report.id, db)
+    finally:
+        db.close()
+        engine.dispose()
+
+    assert "微表情线索" in context
+    assert "消极" in context
+    assert "短时面部线索" in context

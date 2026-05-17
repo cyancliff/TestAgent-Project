@@ -177,6 +177,7 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 - `scripts/extract_clip_features.py`
 - `scripts/extract_wav2clip_features.py`
 - `scripts/build_multimodal_feature_bundles.py`
+- MOL 微表情接入与消融说明：`docs/MOL微表情接入说明.md`
 
 ### 训练与评估
 

@@ -1,0 +1,12 @@
+.venv/
+external_datasets/
+uploads/
+*.pyc
+__pycache__/
+utils/shape_predictor_68_face_landmarks.dat
+utils/shape_predictor_68_face_landmarks.dat.bz2
+data/*/*/*
+data_processed/*/*.pth
+logs/*.txt
+saved_models/
+output/*.pth

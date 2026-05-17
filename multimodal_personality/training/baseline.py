@@ -101,6 +101,7 @@ class BundleDataset(Dataset):
             "wav2clip": tensors["wav2clip"],
             "clip_text": tensors["clip_text"],
             "bg_features": tensors["bg_features"],
+            "micro_expression_features": tensors["micro_expression_features"],
         }
         if "labels" in tensors:
             sample["labels"] = tensors["labels"]
@@ -169,17 +170,21 @@ def _move_batch_to_device(batch: dict[str, object], device: torch.device) -> dic
 
 
 def _forward_main_prediction(model: AGTNMTLModel, batch: dict[str, object]) -> torch.Tensor:
-    outputs = model(
-        clip_video=batch["clip_video"],
-        wav2clip=batch["wav2clip"],
-        clip_text=batch["clip_text"],
-        bg=batch["bg_features"],
-    )
+    kwargs = {
+        "clip_video": batch["clip_video"],
+        "wav2clip": batch["wav2clip"],
+        "clip_text": batch["clip_text"],
+        "bg": batch["bg_features"],
+    }
+    if getattr(model, "use_micro_expression_features", False):
+        kwargs["micro_expression"] = batch.get("micro_expression_features")
+    outputs = model(**kwargs)
     return outputs["m"]
 
 
 def _summarize_feature_contract(bundle_paths: Sequence[str | Path]) -> dict[str, object]:
     explicit_bg_count = 0
+    explicit_micro_count = 0
     for bundle_path in bundle_paths:
         try:
             payload = json.loads(Path(bundle_path).read_text(encoding="utf-8-sig"))
@@ -187,12 +192,17 @@ def _summarize_feature_contract(bundle_paths: Sequence[str | Path]) -> dict[str,
             continue
         if payload.get("bg_features") is not None:
             explicit_bg_count += 1
+        if payload.get("micro_expression_features") is not None:
+            explicit_micro_count += 1
 
     return {
         "explicit_bg_feature_count": explicit_bg_count,
+        "explicit_micro_expression_feature_count": explicit_micro_count,
         "bundle_count": len(bundle_paths),
         "uses_explicit_bg_features": explicit_bg_count > 0,
+        "uses_micro_expression_features": explicit_micro_count > 0,
         "bg_feature_mode": "explicit" if explicit_bg_count > 0 else "zero_fill",
+        "micro_expression_feature_mode": "explicit" if explicit_micro_count > 0 else "zero_fill",
     }
 
 

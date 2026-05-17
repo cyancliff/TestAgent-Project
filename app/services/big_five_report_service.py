@@ -1,6 +1,7 @@
 """AI interpretation generation for Big Five personality reports."""
 
 import asyncio
+import json
 import os
 from datetime import datetime
 from pathlib import Path
@@ -128,6 +129,48 @@ def _build_ranked_summary(scores: dict | None) -> str:
     return f"相对更突出的维度：{highest}\n相对更需要谨慎解释的维度：{lowest}"
 
 
+def _load_micro_expression_payload(report: BigFivePersonalityReport) -> dict | None:
+    artifacts = report.artifacts or {}
+    path_value = artifacts.get("micro_expression_feature_path")
+    if not path_value:
+        return None
+    try:
+        path = Path(path_value)
+        if not path.exists():
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _build_micro_expression_block(report: BigFivePersonalityReport) -> str:
+    payload = _load_micro_expression_payload(report)
+    if not payload:
+        return "【微表情线索】\n暂无可用微表情结果。"
+
+    summary = payload.get("summary") or {}
+    probabilities = payload.get("probabilities") or {}
+    if not payload.get("success", False):
+        errors = "；".join(str(error) for error in payload.get("errors", [])[:2]) or "微表情模块未返回可用结果"
+        return f"【微表情线索】\n微表情模块未返回可用结果：{errors}。"
+
+    label = summary.get("dominant_label_zh") or summary.get("dominant_expression") or "暂无"
+    confidence = _score_percent(summary.get("confidence"))
+    surprise = _score_percent(probabilities.get("surprise"))
+    positive = _score_percent(probabilities.get("positive"))
+    negative = _score_percent(probabilities.get("negative"))
+    valence_hint = summary.get("valence_hint") or "unknown"
+    return dedent(
+        f"""\
+        【微表情线索】
+        - 主导微表情：{label}，置信度 {confidence}。
+        - 三分类概率：惊讶 {surprise}，积极 {positive}，消极 {negative}。
+        - 情绪倾向提示：{valence_hint}。
+        - 解释边界：微表情只作为短时面部线索，不能直接代表稳定人格标签。"""
+    )
+
+
 def _build_interpretation_prompt(report: BigFivePersonalityReport, rag_evidence: str) -> str:
     source_filename = report.original_filename or "未记录"
     completed_at = report.completed_at.isoformat() if report.completed_at else "未记录"
@@ -136,6 +179,7 @@ def _build_interpretation_prompt(report: BigFivePersonalityReport, rag_evidence:
     quality_summary = report.quality_summary or {}
     confidence_summary = report.confidence_summary or {}
     consistency_summary = report.consistency_summary or {}
+    micro_expression_block = _build_micro_expression_block(report)
 
     return dedent(
         f"""\
@@ -158,6 +202,8 @@ def _build_interpretation_prompt(report: BigFivePersonalityReport, rag_evidence:
         - 模态质量：{_percent_number(quality_summary.get("overall_quality"))}（{quality_summary.get("label", "未计算")}）
         - 预测置信度：{_percent_number(confidence_summary.get("overall_confidence"))}（{confidence_summary.get("label", "未计算")}）
         - 与 ATMR 辅助一致性：{_percent_number(consistency_summary.get("overall_score"))}（{consistency_summary.get("overall_status", "中性不足")}）
+
+        {micro_expression_block}
 
         【大五人格 RAG 知识库证据】
         {rag_evidence or "暂无可用知识库片段，请基于五维得分进行谨慎、通用的解释。"}

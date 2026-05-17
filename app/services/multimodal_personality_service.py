@@ -26,6 +26,7 @@ except ImportError:  # pragma: no cover - exercised through availability checks
 
 from multimodal_personality.feature_extractors.bg_extractor import BackgroundFeatureExtractor
 from multimodal_personality.feature_extractors.clip_extractor import ClipFeatureExtractor
+from multimodal_personality.feature_extractors.micro_expression_extractor import MOLMicroExpressionExtractor
 from multimodal_personality.feature_extractors.wav2clip_extractor import Wav2ClipFeatureExtractor
 from multimodal_personality.inference.pipeline import MultimodalInferencePipeline
 from multimodal_personality.models.feature_bundle import MultimodalFeatureBundle
@@ -85,6 +86,7 @@ class MultimodalPersonalityService:
         self._clip_extractor: ClipFeatureExtractor | None = None
         self._wav2clip_extractor: Wav2ClipFeatureExtractor | None = None
         self._bg_extractor: BackgroundFeatureExtractor | None = None
+        self._micro_expression_extractor: MOLMicroExpressionExtractor | None = None
         self._loaded_checkpoint: LoadedCheckpoint | None = None
         self._load_existing_tasks()
 
@@ -196,6 +198,19 @@ class MultimodalPersonalityService:
             self._bg_extractor = BackgroundFeatureExtractor()
         return self._bg_extractor
 
+    def _get_micro_expression_extractor(self) -> MOLMicroExpressionExtractor:
+        if self._micro_expression_extractor is None:
+            python_path = settings.MOL_PYTHON_PATH or None
+            self._micro_expression_extractor = MOLMicroExpressionExtractor(
+                enabled=settings.MICRO_EXPRESSION_ENABLED,
+                mol_root_dir=self._resolve_project_path(settings.MOL_ROOT_DIR),
+                mol_model_path=self._resolve_project_path(settings.MOL_MODEL_PATH),
+                python_path=python_path,
+                device=settings.MOL_DEVICE,
+                timeout_seconds=settings.MICRO_EXPRESSION_TIMEOUT_SECONDS,
+            )
+        return self._micro_expression_extractor
+
     def _get_loaded_checkpoint(self) -> LoadedCheckpoint:
         if self._loaded_checkpoint is None:
             self._loaded_checkpoint = load_checkpoint_model(
@@ -302,6 +317,7 @@ class MultimodalPersonalityService:
         clip_feature_dir = feature_root / "clip"
         wav2clip_feature_dir = feature_root / "wav2clip"
         bg_feature_dir = feature_root / "bg"
+        micro_expression_feature_dir = feature_root / "micro_expression"
         bundle_path = artifact_dir / "bundle.json"
 
         transcript = transcript_path.read_text(encoding="utf-8", errors="ignore") if transcript_path.exists() else ""
@@ -355,11 +371,24 @@ class MultimodalPersonalityService:
                 if bg_result.success:
                     bg_payload = self._read_json(bg_result.output_path)
 
+            micro_expression_payload = None
+            micro_result = self._get_micro_expression_extractor().extract_sample(
+                video_name=video_name,
+                video_path=task.video_path,
+                frames_dir=frames_dir,
+                output_dir=micro_expression_feature_dir,
+            )
+            artifacts["micro_expression_feature_path"] = micro_result.output_path
+            errors.extend(micro_result.errors)
+            if Path(micro_result.output_path).exists():
+                micro_expression_payload = self._read_json(micro_result.output_path)
+
             bundle = MultimodalFeatureBundle.from_current_artifacts(
                 sample=sample,
                 clip_payload=clip_payload,
                 wav2clip_payload=wav2clip_payload,
                 bg_payload=bg_payload,
+                micro_expression_payload=micro_expression_payload,
             )
             bundle.write_json(bundle_path)
             artifacts["bundle_path"] = str(bundle_path)
@@ -453,6 +482,9 @@ class MultimodalPersonalityService:
             "librosa": self._dependency_available("librosa"),
             "checkpoint": self._checkpoint_exists(),
             "cuda": bool(torch is not None and torch.cuda.is_available()),
+            "micro_expression_enabled": bool(settings.MICRO_EXPRESSION_ENABLED),
+            "mol_root": self._resolve_project_path(settings.MOL_ROOT_DIR).exists(),
+            "mol_model": self._resolve_project_path(settings.MOL_MODEL_PATH).exists(),
         }
         model_ready = all(
             (

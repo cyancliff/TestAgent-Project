@@ -1,0 +1,1502 @@
+{
+  "source": "D:\\PythonCode\\TestAgent\\thesis_projects\\atmr_multimodal_thesis_20260510\\01_template\\template.flat.xml",
+  "has_document_xml": true,
+  "has_styles_xml": true,
+  "has_document_rels": true,
+  "style_count": 41,
+  "headingStyleIds": {
+    "h1": "2",
+    "h2": "4",
+    "h3": "5"
+  },
+  "chapters": [
+    {
+      "id": "ch_1",
+      "title": "模板简介",
+      "level": 1,
+      "content": "",
+      "subsections": [
+        {
+          "id": "sec_2",
+          "title": "来源",
+          "level": 2,
+          "content": "本模板基于https://www.bilibili.com/video/BV1se411U7Dy/创建，添加了东南大学硕博论文封面。模板支持以下自动化格式更新：\n\n支持的自动化格式\n\n\n\n[[TBL:包含一个表格]]\n\n| 特性 | 支持情况 |\n| --- | --- |\n| 自动章节编号 | 支持 |\n| 自动图片编号 | 支持 |\n| 自动表格编号 | 支持 |\n| 自动公式编号 | 支持 |\n| 自动目录更新 | 支持 |\n| 自动页眉页脚生成 | 支持 |\n\n",
+          "subsections": []
+        },
+        {
+          "id": "sec_3",
+          "title": "如何使用",
+          "level": 2,
+          "content": "模板已经配置了以下样式：\n\n特别的，标题1和无编号标题已经设置了段前分页，所以每章自动另起一页，无需额外设置。\n\n",
+          "subsections": []
+        },
+        {
+          "id": "sec_4",
+          "title": "使用标题、正文样式",
+          "level": 2,
+          "content": "标题样式使用比较简单，输入一段文字，在Office上方的样式框中点选标题样式即可应用，正文同理，需要注意正文样式的样式名称为“论文正文”。具体操作请看动图。\n\n",
+          "subsections": [
+            {
+              "id": "sub_5",
+              "title": "表格",
+              "level": 3,
+              "content": "和图片不同，表格标签位于表格上方，插入表格时，先点“表格标签”，输入标签后按回车，再用表格工具插入表格。本文档已经配置三线表为默认插入的表格样式，但是列宽需要手动调整。\n\n插入表格流程\n\n按Alt + =插入公式。\n\n在公式末尾按#。\n\n按Ctrl+F9插入域代码，在中括号内输入“ListNum equation \\l 6”（注意空格，以及\\后面是小写字母L），再按F9应用域代码。或者使用菜单中的插入域操作，具体见图。关于ListNum的具体原理，详见https://support.microsoft.com/en-us/office/field-codes-listnum-field-557541b1-abb2-4959-a9f2-401639c8ff82\n\n按回车，编号会自动右对齐，并去掉编号的斜体样式。\n\n对公式编号\n\n",
+              "subsections": []
+            }
+          ]
+        },
+        {
+          "id": "sec_6",
+          "title": "交叉引用",
+          "level": 2,
+          "content": "",
+          "subsections": [
+            {
+              "id": "sub_7",
+              "title": "图片和表格",
+              "level": 3,
+              "content": "因为图片、表格和公式编号本质上都是段落编号，直接使用交叉引用菜单插入即可，具体见图1-3。\n\n交叉引用\n\n致谢\n\n此章节应保持在奇数页，以保证页眉显示本章节标题。\n\n参考文献\n\nMahesh M, Ansari A, Mettle F A. Erratum for: Patient Exposure from Radiologic and Nuclear Medicine Procedures in the United States and Worldwide: 2009-2018[J]. Radiology, 2023, 307 5: e239013.\n\n作者简介\n\n此章节应保持在奇数页，以保证页眉显示本章节标题。\n\n",
+              "subsections": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "rawTextPreview": "本模板基于https://www.bilibili.com/video/BV1se411U7Dy/创建，添加了东南大学硕博论文封面。模板支持以下自动化格式更新： 支持的自动化格式 模板已经配置了以下样式： 特别的，标题1和无编号标题已经设置了段前分页，所以每章自动另起一页，无需额外设置。 标题样式使用比较简单，输入一段文字，在Office上方的样式框中点选标题样式即可应用，正文同理，需要注意正文样式的样式名称为“论文正文”。具体操作请看动图。 和图片不同，表格标签位于表格上方，插入表格时，先点“表格标签”，输入标签后按回车，再用表格工具插入表格。本文档已经配置三线表为默认插入的表格样式，但是列宽需要手动调整。 插入表格流程 按Alt + =插入公式。 在公式末尾按#。 按Ctrl+F9插入域代码，在中括号内输入“ListNum equation \\l 6”（注意空格，以及\\后面是小写字母L），再按F9应用域代码。或者使用菜单中的插入域操作，具体见图。关于ListNum的具体原理，详见https://support.microsoft.com/en-us/office/field-codes-listnum-field-557541b1-abb2-4959-a9f2-401639c8ff82 按回车，编号会自动右对齐，并去掉编号的斜体样式。 对公式编号 因为图片、表格和公式编号本质上都是段落编号，直接使用交叉引用菜单插入即可，具体见图1-3。 交叉引用 致谢 此章节应保持在奇数页，以保证页眉显示本章节标题。 参考文献 Mahesh M, Ansari A, Mettle F A. Erratum for: Patient Exposure from Radiologic and Nuclear Medicine Procedures in the United States and Worldwide: 2009-2018[J]. Radiology, 2023, 307 5: e239013. 作者简介 此章节应保持在奇数页，以保证页眉显示本章节标题。 ",
+  "mapping": {
+    "source": "template.flat.xml",
+    "headingStyleIds": {
+      "h1": "2",
+      "h2": "4",
+      "h3": "5"
+    },
+    "sections": [
+      {
+        "id": "sec_80001",
+        "kind": "front",
+        "title": "Front Matter",
+        "level": 0,
+        "startOrder": 0,
+        "endOrder": 0,
+        "blocks": []
+      },
+      {
+        "id": "sec_80002",
+        "kind": "front",
+        "title": "摘 要",
+        "level": 1,
+        "startOrder": 1,
+        "endOrder": 3,
+        "blocks": [
+          "blk_80003",
+          "blk_80004",
+          "blk_80005"
+        ]
+      },
+      {
+        "id": "sec_80006",
+        "kind": "front",
+        "title": "Abstract",
+        "level": 1,
+        "startOrder": 4,
+        "endOrder": 7,
+        "blocks": [
+          "blk_80007",
+          "blk_80008",
+          "blk_80009",
+          "blk_80010"
+        ]
+      },
+      {
+        "id": "sec_80011",
+        "kind": "front",
+        "title": "目 录",
+        "level": 1,
+        "startOrder": 8,
+        "endOrder": 26,
+        "blocks": [
+          "blk_80012",
+          "blk_80013",
+          "blk_80014",
+          "blk_80015",
+          "blk_80016",
+          "blk_80017",
+          "blk_80018",
+          "blk_80019",
+          "blk_80020",
+          "blk_80021",
+          "blk_80022",
+          "blk_80023",
+          "blk_80024",
+          "blk_80025",
+          "blk_80026",
+          "blk_80027",
+          "blk_80028",
+          "blk_80029",
+          "blk_80030"
+        ]
+      },
+      {
+        "id": "sec_80031",
+        "kind": "toc",
+        "title": "表格目录",
+        "level": 1,
+        "startOrder": 27,
+        "endOrder": 30,
+        "blocks": [
+          "blk_80032",
+          "blk_80033",
+          "blk_80034",
+          "blk_80035"
+        ]
+      },
+      {
+        "id": "sec_80036",
+        "kind": "toc",
+        "title": "插图目录",
+        "level": 1,
+        "startOrder": 31,
+        "endOrder": 35,
+        "blocks": [
+          "blk_80037",
+          "blk_80038",
+          "blk_80039",
+          "blk_80040",
+          "blk_80041"
+        ]
+      },
+      {
+        "id": "sec_80042",
+        "kind": "body",
+        "title": "模板简介",
+        "level": 1,
+        "startOrder": 36,
+        "endOrder": 36,
+        "blocks": [
+          "blk_80043"
+        ]
+      },
+      {
+        "id": "sec_80044",
+        "kind": "body",
+        "title": "来源",
+        "level": 2,
+        "startOrder": 37,
+        "endOrder": 40,
+        "blocks": [
+          "blk_80045",
+          "blk_80046",
+          "blk_80047",
+          "blk_80048"
+        ]
+      },
+      {
+        "id": "sec_80049",
+        "kind": "body",
+        "title": "如何使用",
+        "level": 2,
+        "startOrder": 41,
+        "endOrder": 43,
+        "blocks": [
+          "blk_80050",
+          "blk_80051",
+          "blk_80052"
+        ]
+      },
+      {
+        "id": "sec_80053",
+        "kind": "body",
+        "title": "使用标题、正文样式",
+        "level": 2,
+        "startOrder": 44,
+        "endOrder": 45,
+        "blocks": [
+          "blk_80054",
+          "blk_80055"
+        ]
+      },
+      {
+        "id": "sec_80056",
+        "kind": "body",
+        "title": "表格",
+        "level": 3,
+        "startOrder": 46,
+        "endOrder": 54,
+        "blocks": [
+          "blk_80057",
+          "blk_80058",
+          "blk_80059",
+          "blk_80060",
+          "blk_80061",
+          "blk_80062",
+          "blk_80063",
+          "blk_80064",
+          "blk_80065"
+        ]
+      },
+      {
+        "id": "sec_80066",
+        "kind": "body",
+        "title": "交叉引用",
+        "level": 2,
+        "startOrder": 55,
+        "endOrder": 55,
+        "blocks": [
+          "blk_80067"
+        ]
+      },
+      {
+        "id": "sec_80068",
+        "kind": "body",
+        "title": "图片和表格",
+        "level": 3,
+        "startOrder": 56,
+        "endOrder": 61,
+        "blocks": [
+          "blk_80069",
+          "blk_80070",
+          "blk_80071",
+          "blk_80072",
+          "blk_80073",
+          "blk_80074"
+        ]
+      },
+      {
+        "id": "sec_80075",
+        "kind": "back",
+        "title": "致谢",
+        "level": 1,
+        "startOrder": 62,
+        "endOrder": 65,
+        "blocks": [
+          "blk_80076",
+          "blk_80077",
+          "blk_80078",
+          "blk_80079"
+        ]
+      },
+      {
+        "id": "sec_80080",
+        "kind": "back",
+        "title": "参考文献",
+        "level": 1,
+        "startOrder": 66,
+        "endOrder": 69,
+        "blocks": [
+          "blk_80081",
+          "blk_80082",
+          "blk_80083",
+          "blk_80084"
+        ]
+      },
+      {
+        "id": "sec_80085",
+        "kind": "back",
+        "title": "作者简介",
+        "level": 1,
+        "startOrder": 70,
+        "endOrder": 73,
+        "blocks": [
+          "blk_80086",
+          "blk_80087",
+          "blk_80088",
+          "blk_80089"
+        ]
+      }
+    ],
+    "blocks": [
+      {
+        "id": "blk_80003",
+        "order": 1,
+        "nodeType": "p",
+        "type": "front_title",
+        "level": 1,
+        "styleId": "36",
+        "text": "摘 要",
+        "owner": {
+          "sectionId": "sec_80002"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc172623054",
+          "_Toc172623884",
+          "_Toc172626574",
+          "_Toc172626464",
+          "_Toc172630733",
+          "_Toc172624554",
+          "_Toc172571368",
+          "_Toc172622932",
+          "_Toc172631361",
+          "_Toc172631518",
+          "_Toc9453"
+        ]
+      },
+      {
+        "id": "blk_80004",
+        "order": 2,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "在这里书写中文摘要。",
+        "owner": {
+          "sectionId": "sec_80002"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80005",
+        "order": 3,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80002"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80007",
+        "order": 4,
+        "nodeType": "p",
+        "type": "front_title",
+        "level": 1,
+        "styleId": "36",
+        "text": "Abstract",
+        "owner": {
+          "sectionId": "sec_80006"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc14834"
+        ]
+      },
+      {
+        "id": "blk_80008",
+        "order": 5,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "Write English version of abstract here.",
+        "owner": {
+          "sectionId": "sec_80006"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80009",
+        "order": 6,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80006"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80010",
+        "order": 7,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80006"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80012",
+        "order": 8,
+        "nodeType": "p",
+        "type": "front_title",
+        "level": 1,
+        "styleId": "36",
+        "text": "目 录",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc818"
+        ]
+      },
+      {
+        "id": "blk_80013",
+        "order": 9,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "10",
+        "text": "摘 要II",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "TOC \\o \"1-3\" \\h \\z \\u",
+          "HYPERLINK \\l _Toc9453",
+          "PAGEREF _Toc9453 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80014",
+        "order": 10,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "10",
+        "text": "AbstractIV",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc14834",
+          "PAGEREF _Toc14834 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80015",
+        "order": 11,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "10",
+        "text": "目 录VI",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc818",
+          "PAGEREF _Toc818 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80016",
+        "order": 12,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "10",
+        "text": "表格目录VIII",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc2036",
+          "PAGEREF _Toc2036 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80017",
+        "order": 13,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "10",
+        "text": "插图目录X",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc11228",
+          "PAGEREF _Toc11228 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80018",
+        "order": 14,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "10",
+        "text": "第一章 模板简介1",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc28301",
+          "PAGEREF _Toc28301 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80019",
+        "order": 15,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "11",
+        "text": "1.1 来源1",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc3179",
+          "PAGEREF _Toc3179 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80020",
+        "order": 16,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "11",
+        "text": "1.2 如何使用1",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc28015",
+          "PAGEREF _Toc28015 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80021",
+        "order": 17,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "11",
+        "text": "1.3 使用标题、正文样式1",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc5431",
+          "PAGEREF _Toc5431 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80022",
+        "order": 18,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "7",
+        "text": "1.3.1 表格1",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc3413",
+          "PAGEREF _Toc3413 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80023",
+        "order": 19,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "11",
+        "text": "1.4 交叉引用2",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc9927",
+          "PAGEREF _Toc9927 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80024",
+        "order": 20,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "7",
+        "text": "1.4.1 图片和表格2",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc9339",
+          "PAGEREF _Toc9339 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80025",
+        "order": 21,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "7",
+        "text": "1.4.2 参考文献2",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc7926",
+          "PAGEREF _Toc7926 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80026",
+        "order": 22,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "10",
+        "text": "致谢3",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc8114",
+          "PAGEREF _Toc8114 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80027",
+        "order": 23,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "10",
+        "text": "参考文献5",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc11299",
+          "PAGEREF _Toc11299 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80028",
+        "order": 24,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "10",
+        "text": "作者简介7",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc32079",
+          "PAGEREF _Toc32079 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80029",
+        "order": 25,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80030",
+        "order": 26,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80011"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80032",
+        "order": 27,
+        "nodeType": "p",
+        "type": "front_title",
+        "level": 1,
+        "styleId": "36",
+        "text": "表格目录",
+        "owner": {
+          "sectionId": "sec_80031"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc2036"
+        ]
+      },
+      {
+        "id": "blk_80033",
+        "order": 28,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "10",
+        "text": "表1-1 支持的自动化格式1",
+        "owner": {
+          "sectionId": "sec_80031"
+        },
+        "fields": [
+          "TOC \\h \\z \\t \"表格标签,1\"",
+          "HYPERLINK \\l _Toc22243",
+          "PAGEREF _Toc22243 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80034",
+        "order": 29,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80031"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80035",
+        "order": 30,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80031"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80037",
+        "order": 31,
+        "nodeType": "p",
+        "type": "front_title",
+        "level": 1,
+        "styleId": "36",
+        "text": "插图目录",
+        "owner": {
+          "sectionId": "sec_80036"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc11228"
+        ]
+      },
+      {
+        "id": "blk_80038",
+        "order": 32,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "10",
+        "text": "图1-2 对公式编号2",
+        "owner": {
+          "sectionId": "sec_80036"
+        },
+        "fields": [
+          "TOC \\h \\z \\t \"图片标签,1\"",
+          "HYPERLINK \\l _Toc24534",
+          "PAGEREF _Toc24534 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80039",
+        "order": 33,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "10",
+        "text": "图1-3 交叉引用2",
+        "owner": {
+          "sectionId": "sec_80036"
+        },
+        "fields": [
+          "HYPERLINK \\l _Toc3163",
+          "PAGEREF _Toc3163 \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80040",
+        "order": 34,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80036"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80041",
+        "order": 35,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": null,
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80036"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80043",
+        "order": 36,
+        "nodeType": "p",
+        "type": "heading",
+        "level": 1,
+        "styleId": "2",
+        "text": "模板简介",
+        "owner": {
+          "sectionId": "sec_80042"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc28301"
+        ]
+      },
+      {
+        "id": "blk_80045",
+        "order": 37,
+        "nodeType": "p",
+        "type": "heading",
+        "level": 2,
+        "styleId": "4",
+        "text": "来源",
+        "owner": {
+          "sectionId": "sec_80044"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc172622933",
+          "_Toc3179",
+          "_Toc172630734",
+          "_Toc172623055",
+          "_Toc172631362",
+          "_Toc172626465",
+          "_Toc172624555",
+          "_Toc172571369",
+          "_Toc172623885",
+          "_Toc172631519",
+          "_Toc172626575"
+        ]
+      },
+      {
+        "id": "blk_80046",
+        "order": 38,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "本模板基于https://www.bilibili.com/video/BV1se411U7Dy/创建，添加了东南大学硕博论文封面。模板支持以下自动化格式更新：",
+        "owner": {
+          "sectionId": "sec_80044"
+        },
+        "fields": [
+          "HYPERLINK \"https://www.bilibili.com/video/BV1se411U7Dy/\""
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80047",
+        "order": 39,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "21",
+        "text": "支持的自动化格式",
+        "owner": {
+          "sectionId": "sec_80044"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc22243"
+        ]
+      },
+      {
+        "id": "blk_80048",
+        "order": 40,
+        "nodeType": "tbl",
+        "type": "table",
+        "level": 0,
+        "styleId": null,
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80044"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80050",
+        "order": 41,
+        "nodeType": "p",
+        "type": "heading",
+        "level": 2,
+        "styleId": "4",
+        "text": "如何使用",
+        "owner": {
+          "sectionId": "sec_80049"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc172622934",
+          "_Toc172626576",
+          "_Toc172624556",
+          "_Toc28015",
+          "_Toc172623056",
+          "_Toc172631363",
+          "_Toc172623886",
+          "_Toc172571370",
+          "_Toc172626466",
+          "_Toc172631520",
+          "_Toc172630735"
+        ]
+      },
+      {
+        "id": "blk_80051",
+        "order": 42,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "模板已经配置了以下样式：",
+        "owner": {
+          "sectionId": "sec_80049"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80052",
+        "order": 43,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "特别的，标题1和无编号标题已经设置了段前分页，所以每章自动另起一页，无需额外设置。",
+        "owner": {
+          "sectionId": "sec_80049"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80054",
+        "order": 44,
+        "nodeType": "p",
+        "type": "heading",
+        "level": 2,
+        "styleId": "4",
+        "text": "使用标题、正文样式",
+        "owner": {
+          "sectionId": "sec_80053"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc172630736",
+          "_Toc172631521",
+          "_Toc172624557",
+          "_Toc172631364",
+          "_Toc172626577",
+          "_Toc5431",
+          "_Toc172622935",
+          "_Toc172626467",
+          "_Toc172571371",
+          "_Toc172623057",
+          "_Toc172623887"
+        ]
+      },
+      {
+        "id": "blk_80055",
+        "order": 45,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "标题样式使用比较简单，输入一段文字，在Office上方的样式框中点选标题样式即可应用，正文同理，需要注意正文样式的样式名称为“论文正文”。具体操作请看动图。",
+        "owner": {
+          "sectionId": "sec_80053"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80057",
+        "order": 46,
+        "nodeType": "p",
+        "type": "heading",
+        "level": 3,
+        "styleId": "5",
+        "text": "表格",
+        "owner": {
+          "sectionId": "sec_80056"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc172626470",
+          "_Toc172624560",
+          "_Toc172631367",
+          "_Toc172622938",
+          "_Toc172623890",
+          "_Toc172571374",
+          "_Toc172630739",
+          "_Toc172623060",
+          "_Toc3413",
+          "_Toc172631524",
+          "_Toc172626580"
+        ]
+      },
+      {
+        "id": "blk_80058",
+        "order": 47,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "和图片不同，表格标签位于表格上方，插入表格时，先点“表格标签”，输入标签后按回车，再用表格工具插入表格。本文档已经配置三线表为默认插入的表格样式，但是列宽需要手动调整。",
+        "owner": {
+          "sectionId": "sec_80056"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80059",
+        "order": 48,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "插入表格流程",
+        "owner": {
+          "sectionId": "sec_80056"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc172631623"
+        ]
+      },
+      {
+        "id": "blk_80060",
+        "order": 49,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "按Alt + =插入公式。",
+        "owner": {
+          "sectionId": "sec_80056"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80061",
+        "order": 50,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "在公式末尾按#。",
+        "owner": {
+          "sectionId": "sec_80056"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80062",
+        "order": 51,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "按Ctrl+F9插入域代码，在中括号内输入“ListNum equation \\l 6”（注意空格，以及\\后面是小写字母L），再按F9应用域代码。或者使用菜单中的插入域操作，具体见图。关于ListNum的具体原理，详见https://support.microsoft.com/en-us/office/field-codes-listnum-field-557541b1-abb2-4959-a9f2-401639c8ff82",
+        "owner": {
+          "sectionId": "sec_80056"
+        },
+        "fields": [
+          "HYPERLINK \"https://support.microsoft.com/en-us/office/field-codes-listnum-field-557541b1-abb2-4959-a9f2-401639c8ff82\""
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80063",
+        "order": 52,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "按回车，编号会自动右对齐，并去掉编号的斜体样式。",
+        "owner": {
+          "sectionId": "sec_80056"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80064",
+        "order": 53,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "29",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80056"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80065",
+        "order": 54,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "20",
+        "text": "对公式编号",
+        "owner": {
+          "sectionId": "sec_80056"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc172631624",
+          "_Toc24534"
+        ]
+      },
+      {
+        "id": "blk_80067",
+        "order": 55,
+        "nodeType": "p",
+        "type": "heading",
+        "level": 2,
+        "styleId": "4",
+        "text": "交叉引用",
+        "owner": {
+          "sectionId": "sec_80066"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc172624562",
+          "_Toc172631369",
+          "_Toc172626472",
+          "_Toc172631526",
+          "_Toc172630741",
+          "_Toc172623892",
+          "_Toc172623062",
+          "_Toc172622940",
+          "_Toc172626582",
+          "_Toc9927"
+        ]
+      },
+      {
+        "id": "blk_80069",
+        "order": 56,
+        "nodeType": "p",
+        "type": "heading",
+        "level": 3,
+        "styleId": "5",
+        "text": "图片和表格",
+        "owner": {
+          "sectionId": "sec_80068"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc9339"
+        ]
+      },
+      {
+        "id": "blk_80070",
+        "order": 57,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "因为图片、表格和公式编号本质上都是段落编号，直接使用交叉引用菜单插入即可，具体见图1-3。",
+        "owner": {
+          "sectionId": "sec_80068"
+        },
+        "fields": [
+          "REF _Ref172573083 \\r \\h"
+        ],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80071",
+        "order": 58,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "20",
+        "text": "交叉引用",
+        "owner": {
+          "sectionId": "sec_80068"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc172631626",
+          "_Ref172573083",
+          "_Toc3163"
+        ]
+      },
+      {
+        "id": "blk_80072",
+        "order": 59,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80068"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80073",
+        "order": 60,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80068"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80074",
+        "order": 61,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80068"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80076",
+        "order": 62,
+        "nodeType": "p",
+        "type": "back_title",
+        "level": 1,
+        "styleId": "36",
+        "text": "致谢",
+        "owner": {
+          "sectionId": "sec_80075"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc8114",
+          "_GoBack"
+        ]
+      },
+      {
+        "id": "blk_80077",
+        "order": 63,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "此章节应保持在奇数页，以保证页眉显示本章节标题。",
+        "owner": {
+          "sectionId": "sec_80075"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80078",
+        "order": 64,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80075"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80079",
+        "order": 65,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80075"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80081",
+        "order": 66,
+        "nodeType": "p",
+        "type": "back_title",
+        "level": 1,
+        "styleId": "36",
+        "text": "参考文献",
+        "owner": {
+          "sectionId": "sec_80080"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc11299"
+        ]
+      },
+      {
+        "id": "blk_80082",
+        "order": 67,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "41",
+        "text": "Mahesh M, Ansari A, Mettle F A. Erratum for: Patient Exposure from Radiologic and Nuclear Medicine Procedures in the United States and Worldwide: 2009-2018[J]. Radiology, 2023, 307 5: e239013.",
+        "owner": {
+          "sectionId": "sec_80080"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Ref12117"
+        ]
+      },
+      {
+        "id": "blk_80083",
+        "order": 68,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80080"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80084",
+        "order": 69,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80080"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80086",
+        "order": 70,
+        "nodeType": "p",
+        "type": "back_title",
+        "level": 1,
+        "styleId": "36",
+        "text": "作者简介",
+        "owner": {
+          "sectionId": "sec_80085"
+        },
+        "fields": [],
+        "bookmarks": [
+          "_Toc32079"
+        ]
+      },
+      {
+        "id": "blk_80087",
+        "order": 71,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "此章节应保持在奇数页，以保证页眉显示本章节标题。",
+        "owner": {
+          "sectionId": "sec_80085"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80088",
+        "order": 72,
+        "nodeType": "p",
+        "type": "paragraph",
+        "level": 0,
+        "styleId": "3",
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80085"
+        },
+        "fields": [],
+        "bookmarks": []
+      },
+      {
+        "id": "blk_80089",
+        "order": 73,
+        "nodeType": "sectPr",
+        "type": "other",
+        "level": 0,
+        "styleId": null,
+        "text": "",
+        "owner": {
+          "sectionId": "sec_80085"
+        },
+        "fields": [],
+        "bookmarks": []
+      }
+    ]
+  }
+}

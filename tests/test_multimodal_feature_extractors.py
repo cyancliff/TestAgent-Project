@@ -5,8 +5,10 @@ import json
 import numpy as np
 
 from multimodal_personality.feature_extractors.clip_extractor import ClipFeatureExtractor
+from multimodal_personality.feature_extractors.micro_expression_extractor import MOLMicroExpressionExtractor
 from multimodal_personality.feature_extractors.wav2clip_extractor import Wav2ClipFeatureExtractor
 from multimodal_personality.models import MultimodalFeatureBundle
+from multimodal_personality.models.feature_bundle import MICRO_EXPRESSION_DIM
 
 
 def test_clip_feature_extractor_writes_sentence_level_text_features(tmp_path, monkeypatch) -> None:
@@ -94,3 +96,72 @@ def test_feature_bundle_prefers_sentence_level_text_features() -> None:
     assert len(bundle.clip_text) == 2
     assert bundle.clip_text[0][0] == 0.2
     assert bundle.clip_text[1][0] == 0.3
+
+
+def test_mol_micro_expression_extractor_writes_normalized_feature_json(tmp_path, monkeypatch) -> None:
+    frames_dir = tmp_path / "frames"
+    frames_dir.mkdir()
+    for index in range(8):
+        (frames_dir / f"frame_{index:03d}.jpg").write_bytes(b"frame")
+    model_path = tmp_path / "mol.pth"
+    model_path.write_bytes(b"weights")
+
+    extractor = MOLMicroExpressionExtractor(
+        enabled=True,
+        mol_root_dir=tmp_path / "MOL",
+        mol_model_path=model_path,
+        python_path="python",
+    )
+
+    def fake_runner(*, frames_dir, output_path):
+        output_path.write_text(
+            json.dumps(
+                {
+                    "success": True,
+                    "model_version": "unit-mol",
+                    "probabilities": {"surprise": 0.2, "positive": 0.6, "negative": 0.2},
+                    "errors": [],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(extractor, "_run_mol_runner", fake_runner)
+
+    result = extractor.extract_sample(
+        video_name="demo.mp4",
+        video_path=tmp_path / "demo.mp4",
+        frames_dir=frames_dir,
+        output_dir=tmp_path / "micro",
+    )
+    payload = json.loads((tmp_path / "micro" / "micro_expression_feature.json").read_text(encoding="utf-8"))
+
+    assert result.success is True
+    assert result.output_path.endswith("micro_expression_feature.json")
+    assert payload["success"] is True
+    assert payload["class_order"] == ["surprise", "positive", "negative"]
+    assert payload["summary"]["dominant_expression"] == "positive"
+    assert payload["summary"]["dominant_label_zh"] == "积极"
+    assert payload["summary"]["confidence"] == 0.6
+    assert "积极" in payload["summary_text_zh"]
+    assert "置信度" in payload["summary_text_zh"]
+    assert "短时面部线索" in payload["interpretation_boundary_zh"]
+    assert len(payload["feature_vector"]) == MICRO_EXPRESSION_DIM
+
+
+def test_mol_micro_expression_extractor_disabled_still_writes_json(tmp_path) -> None:
+    extractor = MOLMicroExpressionExtractor(enabled=False)
+
+    result = extractor.extract_sample(
+        video_name="demo.mp4",
+        video_path=tmp_path / "demo.mp4",
+        frames_dir=tmp_path / "missing_frames",
+        output_dir=tmp_path / "micro",
+    )
+    payload = json.loads((tmp_path / "micro" / "micro_expression_feature.json").read_text(encoding="utf-8"))
+
+    assert result.success is False
+    assert payload["success"] is False
+    assert payload["feature_vector"] == [0.0] * MICRO_EXPRESSION_DIM
+    assert "disabled" in " ".join(payload["errors"])

@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import datetime, timezone
 from io import BytesIO
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from app.api import multimodal_personality
 from app.api.multimodal_personality import (
     _generate_interpretation_for_report,
+    _to_report_response,
     delete_report,
     get_report,
     upload_report_file,
@@ -21,6 +23,7 @@ from app.models.multimodal import BigFivePersonalityReport
 from app.models.user import User
 from app.schemas.multimodal_personality import BigFiveScores
 from app.services.big_five_report_service import _build_interpretation_prompt
+from app.services.micro_expression_summary_service import load_micro_expression_summary_from_artifacts
 
 
 def _build_test_session(tmp_path):
@@ -219,3 +222,129 @@ def test_big_five_interpretation_prompt_requires_compact_report_sections():
     assert "全文控制在 1200-1800 个中文字符左右" in prompt
     assert "开放性（O）: 72/100（偏高）" in prompt
     assert "视频结果受场景、情绪、拍摄状态影响" in prompt
+
+
+def test_big_five_interpretation_prompt_includes_micro_expression_summary(tmp_path):
+    micro_path = tmp_path / "micro_expression_feature.json"
+    micro_path.write_text(
+        json.dumps(
+            {
+                "success": True,
+                "summary": {
+                    "dominant_expression": "positive",
+                    "dominant_label_zh": "积极",
+                    "confidence": 0.63,
+                    "valence_hint": "positive",
+                },
+                "probabilities": {"surprise": 0.12, "positive": 0.63, "negative": 0.25},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    report = BigFivePersonalityReport(
+        id=8,
+        task_id="task-micro-prompt",
+        user_id=1,
+        title="视频人格报告",
+        status="completed",
+        message="done",
+        original_filename="demo.mp4",
+        video_path="demo.mp4",
+        model_version="agtn-mtl-best-lr1e4-drop02",
+        scores=BigFiveScores(
+            openness=0.72,
+            conscientiousness=0.68,
+            extraversion=0.42,
+            agreeableness=0.55,
+            neuroticism=0.61,
+        ).model_dump(),
+        artifacts={"micro_expression_feature_path": str(micro_path)},
+        is_real_result=True,
+    )
+
+    prompt = _build_interpretation_prompt(report, "")
+
+    assert "微表情线索" in prompt
+    assert "积极" in prompt
+    assert "63/100" in prompt
+    assert "短时面部线索" in prompt
+
+
+def test_load_micro_expression_summary_from_artifacts_returns_display_payload(tmp_path):
+    micro_path = tmp_path / "micro_expression_feature.json"
+    micro_path.write_text(
+        json.dumps(
+            {
+                "success": True,
+                "summary": {
+                    "dominant_expression": "positive",
+                    "dominant_label_zh": "积极",
+                    "confidence": 0.72,
+                },
+                "summary_text_zh": "主导微表情为积极，置信度约 72/100。",
+                "interpretation_boundary_zh": "微表情只作为短时面部线索，不能直接代表稳定人格标签。",
+                "probabilities": {"surprise": 0.1, "positive": 0.72, "negative": 0.18},
+                "errors": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    summary = load_micro_expression_summary_from_artifacts({"micro_expression_feature_path": str(micro_path)})
+
+    assert summary["available"] is True
+    assert summary["dominant_label_zh"] == "积极"
+    assert summary["confidence"] == 0.72
+    assert "短时面部线索" in summary["interpretation_boundary_zh"]
+
+
+def test_report_response_includes_micro_expression_summary(tmp_path):
+    micro_path = tmp_path / "micro_expression_feature.json"
+    micro_path.write_text(
+        json.dumps(
+            {
+                "success": True,
+                "summary": {
+                    "dominant_expression": "negative",
+                    "dominant_label_zh": "消极",
+                    "confidence": 0.51,
+                },
+                "summary_text_zh": "主导微表情为消极，置信度约 51/100。",
+                "interpretation_boundary_zh": "微表情只作为短时面部线索，不能直接代表稳定人格标签。",
+                "probabilities": {"surprise": 0.2, "positive": 0.29, "negative": 0.51},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    now = datetime.now(timezone.utc)
+    report = BigFivePersonalityReport(
+        id=9,
+        task_id="task-response-micro",
+        user_id=1,
+        title="视频大五人格报告",
+        status="completed",
+        message="done",
+        original_filename="demo.mp4",
+        video_path="demo.mp4",
+        model_version="agtn-mtl-best-lr1e4-drop02",
+        scores=BigFiveScores(
+            openness=0.72,
+            conscientiousness=0.68,
+            extraversion=0.42,
+            agreeableness=0.55,
+            neuroticism=0.61,
+        ).model_dump(),
+        artifacts={"micro_expression_feature_path": str(micro_path)},
+        is_real_result=True,
+        created_at=now,
+        updated_at=now,
+    )
+
+    response = _to_report_response(report)
+
+    assert response.micro_expression_summary is not None
+    assert response.micro_expression_summary["available"] is True
+    assert response.micro_expression_summary["dominant_label_zh"] == "消极"
