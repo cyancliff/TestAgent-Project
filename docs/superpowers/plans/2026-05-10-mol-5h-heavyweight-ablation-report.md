@@ -1074,7 +1074,7 @@ def render_report_markdown(*, batch_summary: dict, ablation_summary: dict) -> st
             "",
             "## 4. 初步结论",
             "",
-            "- 这次结果用于验证接入链路和消融入口，不作为最终论文结论。",
+            "- 这次结果用于验证接入链路和消融入口，不作为最终结论。",
             "- 若 with_micro 在 MAE/PCC 上优于 no_micro，可作为后续扩大样本实验的动机。",
             "- 若指标差异不明显，也可以说明微表情作为短时线索需要更强的数据对齐或更大样本。",
             "",

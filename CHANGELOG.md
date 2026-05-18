@@ -2,24 +2,39 @@
 
 本文档遵循 Keep a Changelog 风格，按北京时间记录关键变更。
 
-## [2026-04-27] - 论文指标、bg_features 与历史页体验收口
+## [2026-05-18] - 实验方法、结果表与项目口径收口
+
+### 变更
+
+- 补齐 ATMR-CAT 自适应选题变量定义、贝叶斯近似更新、综合评分公式、异常作答检测、可信度建模、MOL 微表情辅助线索和关键实现文件对应关系。
+- 整理 ATMR-CAT 校准实验、多随机种子稳定性实验、异常注入实验、可信度加权稳健性实验、多模态调参、单模态/多模态消融、`bg_features` 对照和 MOL 批量提取 smoke 表格。
+- 更新 [README.md](/D:/PythonCode/TestAgent/README.md) 与 [docs/DEPLOY.md](/D:/PythonCode/TestAgent/docs/DEPLOY.md)，把项目状态同步为 2026-05-18 口径：`bg_features` 重训、消融实验、MOL quick baseline、管理端和实验说明收口均已完成 V1。
+- 同步更新项目进度说明，明确当前重点从“继续证明能跑”转为“演示走查、本地产物和部署说明收口”。
+
+### 当前说明口径
+
+- ATMR-CAT 和可信度模型是项目主线，应描述为“面向 ATMR 的自适应题目选择与测评质量控制机制”。
+- 视频 Big Five 与 MOL 微表情均作为辅助证据链，不替代问卷、访谈或临床评估。
+- `bg_features` 与微表情结果应保守表达：`bg_features` 有有限正向补充，MOL quick baseline 证明链路可用，不宣称完整复现官方数据结果。
+
+## [2026-04-27] - 实验指标、bg_features 与历史页体验收口
 
 ### 新增
 
 - 新增 [multimodal_personality/training/metrics.py](/D:/PythonCode/TestAgent/multimodal_personality/training/metrics.py)，统一计算 `MSE / RMSE / MAE / ACC / PCC / CCC / R²` 及五维度分项指标。
 - 新增 [multimodal_personality/feature_extractors/bg_extractor.py](/D:/PythonCode/TestAgent/multimodal_personality/feature_extractors/bg_extractor.py)，实现工程版 256 维 `bg_features`，基于 CLIP 画面特征、文本特征、音频特征和转写统计构建场景关联描述。
-- 新增 [scripts/summarize_multimodal_experiments.py](/D:/PythonCode/TestAgent/scripts/summarize_multimodal_experiments.py)，可从评估 JSON 中补算论文指标并生成实验汇总表。
+- 新增 [scripts/summarize_multimodal_experiments.py](/D:/PythonCode/TestAgent/scripts/summarize_multimodal_experiments.py)，可从评估 JSON 中补算关键指标并生成实验汇总表。
 
 ### 变更
 
-- 扩展 [scripts/eval_agtn_mtl.py](/D:/PythonCode/TestAgent/scripts/eval_agtn_mtl.py)、[scripts/run_full_multimodal_pipeline.py](/D:/PythonCode/TestAgent/scripts/run_full_multimodal_pipeline.py) 和训练评估链路，使后续评估默认输出 `PCC / CCC / R²` 等论文指标。
+- 扩展 [scripts/eval_agtn_mtl.py](/D:/PythonCode/TestAgent/scripts/eval_agtn_mtl.py)、[scripts/run_full_multimodal_pipeline.py](/D:/PythonCode/TestAgent/scripts/run_full_multimodal_pipeline.py) 和训练评估链路，使后续评估默认输出 `PCC / CCC / R²` 等关键指标。
 - 将 `bg_features` 接入 bundle 构建和全量 pipeline；同时在线服务会根据 checkpoint 中的 feature contract 判断是否启用显式 `bg_features`，避免旧零填充 checkpoint 在未重训时被强行改变输入分布。
 - 历史页大五人格侧栏按 `进行中 / 已完成 / 需要处理` 分组，并在大五人格卡片上直接提供“查看报告”和“重新生成”操作。
-- 更新 [README.md](/D:/PythonCode/TestAgent/README.md)、[docs/DEPLOY.md](/D:/PythonCode/TestAgent/docs/DEPLOY.md)、[docs/待完成任务.md](/D:/PythonCode/TestAgent/docs/待完成任务.md)、[docs/毕设开发目标和进度.md](/D:/PythonCode/TestAgent/docs/毕设开发目标和进度.md)、[docs/开发者日志.md](/D:/PythonCode/TestAgent/docs/开发者日志.md)、[docs/多模态论文研究与复现成果汇报.md](/D:/PythonCode/TestAgent/docs/多模态论文研究与复现成果汇报.md) 和 [multimodal_personality/README.md](/D:/PythonCode/TestAgent/multimodal_personality/README.md)，把当前口径同步为“论文指标已补齐，bg_features 已有工程版实现，后续可重训做对照”。
+- 更新 [README.md](/D:/PythonCode/TestAgent/README.md)、[docs/DEPLOY.md](/D:/PythonCode/TestAgent/docs/DEPLOY.md)、[docs/开发者日志.md](/D:/PythonCode/TestAgent/docs/开发者日志.md) 和 [multimodal_personality/README.md](/D:/PythonCode/TestAgent/multimodal_personality/README.md)，把当前口径同步为“关键指标已补齐，bg_features 已有工程版实现，后续可重训做对照”。
 
 ### 实验结果
 
-- 已补齐当前主要多模态实验的论文指标：
+- 已补齐当前主要多模态实验的关键指标：
   - 初始全量 baseline：`MSE=0.0199`，`MAE=0.1136`，`ACC=0.8864`，`PCC=0.3422`，`CCC=0.1925`，`R²=0.1154`
   - `lr1e-4 / dropout 0.2`：`MSE=0.0115`，`MAE=0.0861`，`ACC=0.9139`，`PCC=0.7062`，`CCC=0.6327`，`R²=0.4881`
   - `lr1e-4 / dropout 0.3`：`MSE=0.0122`，`MAE=0.0885`，`ACC=0.9115`，`PCC=0.7062`，`CCC=0.5776`，`R²=0.4609`
@@ -80,7 +95,7 @@
 - 调整 [app/services/rag_service.py](/D:/PythonCode/TestAgent/app/services/rag_service.py) 的 PageIndex 模型映射逻辑，使检索和回答链路也同步跟随 DeepSeek V4 配置，不再出现“表面切换、底层仍旧模型”的不一致。
 - 更新 [.env.example](/D:/PythonCode/TestAgent/.env.example)，补齐 DeepSeek V4 的默认环境变量和说明，后续如需将报告/辩论单独切到 `deepseek-v4-pro`，仅需修改环境变量即可。
 - 调整 [multimodal_personality/feature_extractors/clip_extractor.py](/D:/PythonCode/TestAgent/multimodal_personality/feature_extractors/clip_extractor.py)，加载 CLIP 时优先使用本地 Hugging Face 缓存，缺缓存时再走正常下载，避免在线 smoke 因网络解析失败而回退到占位分数。
-- 同步更新 [README.md](/D:/PythonCode/TestAgent/README.md)、[docs/DEPLOY.md](/D:/PythonCode/TestAgent/docs/DEPLOY.md)、[docs/待完成任务.md](/D:/PythonCode/TestAgent/docs/待完成任务.md)、[docs/毕设开发目标和进度.md](/D:/PythonCode/TestAgent/docs/毕设开发目标和进度.md)、[docs/开发者日志.md](/D:/PythonCode/TestAgent/docs/开发者日志.md)、[docs/多模态论文研究与复现成果汇报.md](/D:/PythonCode/TestAgent/docs/多模态论文研究与复现成果汇报.md) 和 [multimodal_personality/README.md](/D:/PythonCode/TestAgent/multimodal_personality/README.md)，将当前口径统一为“真实 checkpoint 已接入并通过 smoke，下一步接报告页和补论文指标”。
+- 同步更新 [README.md](/D:/PythonCode/TestAgent/README.md)、[docs/DEPLOY.md](/D:/PythonCode/TestAgent/docs/DEPLOY.md)、[docs/开发者日志.md](/D:/PythonCode/TestAgent/docs/开发者日志.md) 和 [multimodal_personality/README.md](/D:/PythonCode/TestAgent/multimodal_personality/README.md)，将当前口径统一为“真实 checkpoint 已接入并通过 smoke，下一步接报告页和补完整指标”。
 
 ### 测试
 
@@ -125,7 +140,7 @@
 - 在 [app/core/config.py](/D:/PythonCode/TestAgent/app/core/config.py) 中新增 `MULTIMODAL_CHECKPOINT_PATH` 与 `MULTIMODAL_DEVICE` 配置项，使在线服务默认指向 `reports/full_multimodal_pipeline/agtn_mtl_full.pt`，同时支持 CPU/GPU 自适应切换。
 - 调整 `scripts/build_clip_feature_jobs.py`、`scripts/extract_clip_features.py` 和 `multimodal_personality/feature_extractors/clip_extractor.py`，让特征提取链路与当前 manifest、artifact 结构和句子级文本特征保持一致。
 - 更新 `.gitignore`，补充 `test_artifacts/` 与 `.ai/refs/` 等本地产物忽略规则，降低多轮实验对仓库状态的污染。
-- 重写 `README.md`、`docs/DEPLOY.md`、`docs/毕设开发目标和进度.md`、`docs/待完成任务.md`、`docs/开发者日志.md`、`Agent.md` 与 `multimodal_personality/README.md`，把项目口径统一到“在线 ATMR 主系统 + 离线/在线可接的多模态人格模块”。
+- 重写 `README.md`、`docs/DEPLOY.md`、`docs/开发者日志.md`、`Agent.md` 与 `multimodal_personality/README.md`，把项目口径统一到“在线 ATMR 主系统 + 离线/在线可接的多模态人格模块”。
 
 ### 修复
 
@@ -163,7 +178,7 @@
 
 - 修正 `multimodal_personality/models/agtn_mtl.py` 中融合维度与 `hidden_dim` 绑定不正确的问题，使模型不再只能在默认隐藏维度下工作。
 - 将多模态文档从“接口脚手架阶段”更新为“离线 baseline 已跑通、在线真实接入待完成”的口径。
-- 对齐 `README.md`、`docs/DEPLOY.md`、`docs/毕设开发目标和进度.md`、`docs/待完成任务.md`、`docs/开发者日志.md`、`Agent.md` 与 `requirements_multimodal.txt`。
+- 对齐 `README.md`、`docs/DEPLOY.md`、`docs/开发者日志.md`、`Agent.md` 与 `requirements_multimodal.txt`。
 
 ### 修复
 
@@ -241,7 +256,7 @@
 ### 变更
 
 - 重构历史页布局和测评档案展示。
-- 重写项目级开发文档与毕设进度文档。
+- 重写项目级开发文档与进度文档。
 
 ### 修复
 
@@ -299,4 +314,4 @@
 
 ### 新增
 
-- 初始化仓库与毕设项目基础文档。
+- 初始化仓库与项目基础文档。

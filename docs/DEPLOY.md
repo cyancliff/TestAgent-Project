@@ -1,6 +1,6 @@
 # TestAgent 部署与运行说明
 
-更新时间：2026-04-27
+更新时间：2026-05-18
 
 这份文档专门解决一件事：把“在线 Web 服务部署”和“离线多模态训练/推理”彻底分开讲清楚。
 
@@ -8,6 +8,7 @@
 
 1. 在线主系统：FastAPI + Vue + PostgreSQL，主要用于答题、ATMR 报告、大五人格报告、历史记录和 AI 咨询。
 2. 离线多模态：围绕 CFI-V2 数据集的本地预处理、特征提取、训练和评估，更适合在带 GPU 的 Windows 开发机上长期运行。
+3. MOL 微表情：围绕 TIM20/SAMM 风格帧目录的本地 quick baseline、批量提取和消融入口，属于研究/演示增强线，不建议并入轻量 Web 容器。
 
 ## 1. 先明确边界
 
@@ -26,12 +27,16 @@
 - 视频抽帧、音频提取、Whisper 转写
 - CLIP 和 wav2clip 特征提取
 - AGTN-MTL baseline 训练、评估、推理
+- `bg_features` 重训、单模态/多模态消融
+- MOL 微表情批量提取、结构化摘要和小样本消融入口
 - 全量长任务的可恢复执行
 
 ### 当前最重要的现实限制
 
 - 本地多模态环境已经可以使用真实 checkpoint 完成在线 service 推理，当前默认模型为 `agtn-mtl-best-lr1e4-drop02`。
 - 真实完成的视频结果会在主系统中保存为独立“大五人格”报告，失败或 fallback 结果不会作为聊天依据。
+- `bg_features` 全量重训和多模态消融已经完成，可用于实验分析表；但在线默认 checkpoint 仍以 `agtn-mtl-best-lr1e4-drop02` 为主，`bg_features` 对照用于实验分析，不强制替换线上默认模型。
+- MOL 微表情当前用于证明本地部署、批量提取和辅助线索接入可行，不应当写成官方授权数据严格复现或人格判断依据。
 - 大五人格 AI 解读依赖 DeepSeek 分析模型和本地 PageIndex 大五知识库；缺少模型密钥时报告仍可展示五维分数，但无法生成正式 AI 解读。
 - 真实推理依赖 `ffmpeg / whisper / torch / transformers / PIL / wav2clip / librosa` 和本地 checkpoint，不等同于轻量 Web 部署环境。
 - 如果在线部署环境没有安装多模态依赖或没有挂载 checkpoint，服务仍会通过回退机制返回占位分数；演示真实多模态结果时应使用已验证的本地 GPU 环境。
@@ -202,6 +207,12 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 
 - `reports/full_multimodal_pipeline/`
 - `reports/night_lr1e4_drop02/`
+- `reports/agtn_mtl_bg_v1_lr1e4_drop02_full/`
+- `reports/multimodal_ablation_experiments/`
+- `reports/atmr_cat_multi_seed_experiments/`
+- `reports/atmr_cat_anomaly_sweep_experiments/`
+- `reports/atmr_confidence_weighting_experiments/`
+- `reports/mol_micro_batch_samm_limit6/`
 - `reports/online_multimodal_smoke_20260425/`
 
 重点查看：
@@ -209,6 +220,12 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 - `reports/full_multimodal_pipeline/stderr.log`
 - `reports/full_multimodal_pipeline/stdout.log`
 - `reports/night_lr1e4_drop02/test_eval.json`
+- `reports/agtn_mtl_bg_v1_lr1e4_drop02_full/test_eval.json`
+- `reports/multimodal_ablation_experiments/ablation_summary.md`
+- `reports/atmr_cat_multi_seed_experiments/summary.md`
+- `reports/atmr_cat_anomaly_sweep_experiments/summary.md`
+- `reports/atmr_confidence_weighting_experiments/summary.md`
+- `reports/mol_micro_batch_samm_limit6/summary.json`
 - `reports/online_multimodal_smoke_20260425/smoke_result.json`
 
 不要在任务运行时删除这些目录：
@@ -241,18 +258,21 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 2. 用当前前后端主流程做演示
 3. 如果要演示真实多模态分数，使用本地已验证环境跑在线 service smoke 或展示 `reports/online_multimodal_smoke_20260425/smoke_result.json`
 
-### 如果你现在要做论文实验
+### 如果你现在要整理实验结果
 
 优先做：
 
 1. 基于 `reports/night_lr1e4_drop02/` 整理当前最优全量结果
-2. 使用 `reports/multimodal_experiment_metrics.md` 中已补齐的 `ACC / PCC / CCC / R²` 指标写论文实验表
+2. 使用 `reports/full_multimodal_pipeline/`、`reports/night_lr1e4_drop02/` 和各评估 JSON 中已补齐的 `ACC / PCC / CCC / R²` 指标整理实验汇总表
 3. 使用 `reports/agtn_mtl_bg_v1_lr1e4_drop02_full/` 整理 `bg_features` 重训对照结果
 4. 使用 `reports/multimodal_ablation_experiments/` 整理文本、视觉、音频、三模态和三模态+bg 消融结果
 5. 使用 `reports/atmr_cat_multi_seed_experiments/` 和 `reports/atmr_cat_anomaly_sweep_experiments/` 补充 ATMR-CAT 稳定性与异常注入实验表
+6. 使用 `reports/atmr_confidence_weighting_experiments/` 补充可信度加权稳健性实验表
+7. 使用 `reports/mol_micro_batch_samm_limit6/` 和相关 MOL 文档说明微表情 quick baseline 与系统接入边界
 
 ## 6. 仍需注意的事情
 
 - 在线部署成功不代表部署环境具备完整多模态依赖；真实推理要看 `health` 中的 `model_ready` 和 `system_tools`。
 - 当前仓库已完成本地在线真实推理 smoke，归档为 `reports/online_multimodal_smoke_20260425/smoke_result.json`。
 - 真正的多模态研究结果，应以 `reports/` 目录中的训练、评估和推理产物为准。
+- ATMR-CAT、可信度加权和 MOL quick baseline 都应在实验说明中标明边界：它们分别验证选题策略、异常干扰鲁棒性和模块接入可行性，不替代真实心理量表效度验证。

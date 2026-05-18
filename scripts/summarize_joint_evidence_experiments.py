@@ -44,7 +44,7 @@ def main() -> None:
     lines.extend(
         [
             "",
-            "写作建议：论文主贡献放在 ATMR；多模态部分表述为辅助证据链与可信度增强，不作为主测评结论来源。",
+            "写作建议：项目主线放在 ATMR；多模态部分表述为辅助证据链与可信度增强，不作为主测评结论来源。",
         ]
     )
     output = PROJECT_ROOT / args.output

@@ -79,7 +79,7 @@ reports/micro_expression_ablation_smoke/no_micro/checkpoint.pt
 reports/micro_expression_ablation_smoke/with_micro/checkpoint.pt
 ```
 
-注意：这一步只是验证消融训练入口可以跑通，不作为论文结论。
+注意：这一步只是验证消融训练入口可以跑通，不作为最终结论。
 
 ## 5. 中文组会总结生成
 

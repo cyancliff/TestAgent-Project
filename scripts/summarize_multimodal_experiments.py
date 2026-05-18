@@ -165,7 +165,7 @@ def build_summary_rows(eval_specs: list[tuple[str, Path]], *, write_back: bool) 
 
 def build_markdown(rows: list[dict[str, object]]) -> str:
     lines = [
-        "# 多模态实验论文指标汇总",
+        "# 多模态实验关键指标汇总",
         "",
         (
             "说明：`ACC` 按人格回归任务常用的 `1 - MAE` 计算；`PCC` 衡量预测与标签的"
@@ -218,19 +218,19 @@ def build_markdown(rows: list[dict[str, object]]) -> str:
                     f"当前表中 MAE 最低的是 `{best_row['label']}`，测试集 MAE 为 "
                     f"`{format_metric(metric_value(metrics, 'mae'))}`，对应 ACC 为 "
                     f"`{format_metric(metric_value(metrics, 'acc'))}`。这说明当前调参 checkpoint "
-                    "在平均绝对误差上优于旧全量 baseline，适合作为系统演示和论文 baseline 结果。"
+                    "在平均绝对误差上优于旧全量 baseline，适合作为系统演示和 baseline 结果。"
                 ),
                 "",
                 (
                     f"同时，`PCC={format_metric(metric_value(metrics, 'pcc'))}`、"
                     f"`CCC={format_metric(metric_value(metrics, 'ccc'))}`、"
                     f"`R²={format_metric(metric_value(metrics, 'r2'))}` 说明当前模型已经能捕捉一部分"
-                    "人格分数变化趋势，但与参考论文公开结果仍有差距。因此论文中应表述为"
-                    "“工程化 baseline 复现与系统接入”，不要直接声称完全复现原论文最优性能。"
+                    "人格分数变化趋势，但与参考研究公开结果仍有差距。因此应表述为"
+                    "“工程化 baseline 复现与系统接入”，不要直接声称完全复现原方法最优性能。"
                 ),
                 "",
                 (
-                    "后续若要继续提升论文指标，可继续考虑更多随机种子、单模态/多模态消融和更完整的多任务损失。"
+                    "后续若要继续提升关键指标，可继续考虑更多随机种子、单模态/多模态消融和更完整的多任务损失。"
                 ),
             ]
         )
