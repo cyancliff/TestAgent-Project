@@ -24,3 +24,9 @@
   - `README.md`
   - `docs/开发者日志.md`
   - `multimodal_personality/README.md`
+
+## 文档边界
+
+- GitHub 可见文档只写项目能力、实验记录、部署说明和维护约定。
+- 本地产物、临时稿、导出文件和一次性生成脚本不要写回 `README.md`、`CHANGELOG.md` 或 `docs/`。
+- 需要忽略的本地目录和产物放在 `.gitignore` 中管理。
