@@ -84,3 +84,6 @@ third_party/MOL/data_processed/*/*.pth
 third_party/MOL/logs/*.txt
 third_party/MOL/saved_models/
 third_party/MOL/output/*.pth
+
+# Local experiment outputs
+Result/

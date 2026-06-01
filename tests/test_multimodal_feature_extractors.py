@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 
 import numpy as np
 
@@ -9,6 +11,50 @@ from multimodal_personality.feature_extractors.micro_expression_extractor import
 from multimodal_personality.feature_extractors.wav2clip_extractor import Wav2ClipFeatureExtractor
 from multimodal_personality.models import MultimodalFeatureBundle
 from multimodal_personality.models.feature_bundle import MICRO_EXPRESSION_DIM
+
+
+class _InvalidStream:
+    def write(self, value):
+        raise OSError(22, "Invalid argument")
+
+    def flush(self):
+        return None
+
+
+def test_clip_model_loading_ignores_invalid_stdio(monkeypatch) -> None:
+    fake_transformers = types.ModuleType("transformers")
+
+    class FakeProcessor:
+        @classmethod
+        def from_pretrained(cls, model_name, *, local_files_only):
+            print(f"loading processor {model_name} {local_files_only}")
+            return cls()
+
+    class FakeModel:
+        @classmethod
+        def from_pretrained(cls, model_name, *, local_files_only):
+            sys.stderr.write(f"loading model {model_name} {local_files_only}")
+            return cls()
+
+        def to(self, device):
+            print(f"moving model to {device}")
+            return self
+
+        def eval(self):
+            sys.stderr.write("eval model")
+            return self
+
+    fake_transformers.CLIPProcessor = FakeProcessor
+    fake_transformers.CLIPModel = FakeModel
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+    monkeypatch.setattr(sys, "stdout", _InvalidStream())
+    monkeypatch.setattr(sys, "stderr", _InvalidStream())
+
+    extractor = ClipFeatureExtractor(device="cpu")
+    extractor._load_model()
+
+    assert isinstance(extractor._processor, FakeProcessor)
+    assert isinstance(extractor._model, FakeModel)
 
 
 def test_clip_feature_extractor_writes_sentence_level_text_features(tmp_path, monkeypatch) -> None:

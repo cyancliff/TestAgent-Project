@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import os
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,6 +38,13 @@ class ClipFeatureExtractor:
         self._processor = None
         self._model = None
 
+    @contextmanager
+    def _suppress_model_loading_output(self):
+        """Silence third-party progress output that can fail in detached servers."""
+        with open(os.devnull, "w", encoding="utf-8") as sink:
+            with redirect_stdout(sink), redirect_stderr(sink):
+                yield
+
     def availability(self) -> dict[str, bool]:
         """Report whether the local environment can run CLIP extraction."""
         return {
@@ -53,15 +62,18 @@ class ClipFeatureExtractor:
         last_error: Exception | None = None
         for local_files_only in (True, False):
             try:
-                self._processor = CLIPProcessor.from_pretrained(
-                    self.model_name,
-                    local_files_only=local_files_only,
-                )
-                self._model = CLIPModel.from_pretrained(
-                    self.model_name,
-                    local_files_only=local_files_only,
-                )
-                break
+                with self._suppress_model_loading_output():
+                    self._processor = CLIPProcessor.from_pretrained(
+                        self.model_name,
+                        local_files_only=local_files_only,
+                    )
+                    self._model = CLIPModel.from_pretrained(
+                        self.model_name,
+                        local_files_only=local_files_only,
+                    )
+                    self._model.to(self.device)
+                    self._model.eval()
+                return
             except Exception as exc:
                 last_error = exc
                 self._processor = None
@@ -69,9 +81,6 @@ class ClipFeatureExtractor:
         else:
             if last_error is not None:
                 raise last_error
-
-        self._model.to(self.device)
-        self._model.eval()
 
     @staticmethod
     def _feature_tensor_to_list(features: Any) -> list[list[float]]:
