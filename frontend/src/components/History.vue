@@ -968,9 +968,7 @@ const handleBigFiveUpload = async (event) => {
   try {
     const formData = new FormData()
     formData.append('file', file)
-    await api.post('/multimodal-personality/reports/upload-file', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
+    await api.post('/multimodal-personality/reports/upload-file', formData)
     await fetchHistory()
   } catch (err) {
     console.error('上传视频失败:', err)

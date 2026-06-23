@@ -106,7 +106,7 @@ def build_secret_key(app_env: str) -> str:
     if secret_key:
         return secret_key
     if app_env == "production":
-        return ""
+        raise RuntimeError("生产环境必须配置 SECRET_KEY。")
     return f"dev-only-{secrets.token_urlsafe(32)}"
 
 

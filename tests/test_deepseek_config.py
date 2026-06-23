@@ -50,3 +50,24 @@ def test_invalid_thinking_mode_falls_back_to_disabled(monkeypatch):
 
     assert config.get_deepseek_chat_thinking_mode() == "disabled"
     assert config.build_deepseek_thinking_payload("maybe") == {"thinking": {"type": "disabled"}}
+
+
+def test_production_secret_key_must_be_explicit(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+
+    try:
+        config.build_secret_key("production")
+    except RuntimeError as exc:
+        assert "SECRET_KEY" in str(exc)
+    else:
+        raise AssertionError("production without SECRET_KEY must fail")
+
+
+def test_development_secret_key_uses_process_local_random_value(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+
+    secret_key = config.build_secret_key("development")
+
+    assert secret_key.startswith("dev-only-")

@@ -1,6 +1,7 @@
 import os
 import re
 import time
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -24,6 +25,7 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 2MB
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{3,20}$")
 MIN_PASSWORD_LENGTH = 8
+INVALID_LOGIN_DETAIL = "用户名或密码错误"
 
 router = APIRouter()
 
@@ -119,9 +121,9 @@ async def login(
 
     user = db.query(User).filter(User.username == username).first()
     if not user:
-        raise HTTPException(status_code=404, detail="用户名不存在")
+        raise HTTPException(status_code=401, detail=INVALID_LOGIN_DETAIL)
     if not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="密码错误")
+        raise HTTPException(status_code=401, detail=INVALID_LOGIN_DETAIL)
 
     password_upgraded = is_legacy_hash(user.password_hash)
     nickname_missing = not (user.nickname or "").strip()
@@ -212,10 +214,13 @@ def _remove_old_avatar(avatar_url: Optional[str]):
     relative_path = _normalize_avatar_relative_path(avatar_url)
     if not relative_path or not relative_path.startswith("avatars/"):
         return
-    filepath = os.path.join(UPLOAD_DIR, relative_path.removeprefix("avatars/"))
-    if os.path.exists(filepath):
+    upload_root = Path(UPLOAD_DIR).resolve()
+    filepath = (upload_root / relative_path.removeprefix("avatars/")).resolve()
+    if filepath.parent != upload_root:
+        return
+    if filepath.exists():
         try:
-            os.remove(filepath)
+            filepath.unlink()
         except OSError:
             pass
 

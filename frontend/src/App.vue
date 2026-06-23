@@ -227,9 +227,7 @@ const handleAvatarUpload = async (e) => {
   const formData = new FormData()
   formData.append('file', file)
   try {
-    const res = await api.post('/auth/avatar', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
+    const res = await api.post('/auth/avatar', formData)
     persistUserProfile({ avatar_url: res.data.avatar_url })
     emitUserProfileUpdated()
   } catch (err) {
