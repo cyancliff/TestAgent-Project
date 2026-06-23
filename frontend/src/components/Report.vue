@@ -55,6 +55,52 @@
         </div>
       </div>
 
+      <div v-if="agentWorkflow" class="report-card agent-workflow-card">
+        <div class="agent-workflow-header">
+          <div>
+            <h2 class="section-title">智能分析过程</h2>
+            <p class="section-desc">证据约束型多 Agent 工作流运行摘要</p>
+          </div>
+          <span :class="['workflow-policy-badge', `policy-${agentState.report_policy || 'pending'}`]">
+            {{ workflowPolicyLabel }}
+          </span>
+        </div>
+
+        <div class="workflow-state-grid">
+          <div class="workflow-state-item">
+            <span>测评可信度</span>
+            <strong>{{ percent(agentState.assessment_confidence || 0) }}%</strong>
+          </div>
+          <div class="workflow-state-item">
+            <span>证据状态</span>
+            <strong>{{ evidenceStatusLabel }}</strong>
+          </div>
+          <div class="workflow-state-item">
+            <span>模块分析</span>
+            <strong>{{ agentState.module_debate_count || 0 }}/4</strong>
+          </div>
+          <div class="workflow-state-item">
+            <span>安全审查</span>
+            <strong>{{ criticStatusLabel }}</strong>
+          </div>
+        </div>
+
+        <div class="workflow-steps">
+          <div v-for="step in agentTraceSteps" :key="step.key" :class="['workflow-step', `step-${step.status}`]">
+            <span class="workflow-step-dot"></span>
+            <div>
+              <strong>{{ step.label }}</strong>
+              <p>{{ step.detail }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="reportCritic.notes?.length" class="critic-notes">
+          <strong>审查提示</strong>
+          <p v-for="note in reportCritic.notes" :key="note">{{ note }}</p>
+        </div>
+      </div>
+
       <!-- 综合心理画像报告（Markdown 渲染） -->
       <div v-if="hasReport" class="report-card">
         <h2 class="section-title">综合心理画像</h2>
@@ -274,6 +320,33 @@ const hasDebateResults = computed(() => {
 const formattedReport = computed(() => renderMarkdown(reportData.value.report))
 const trustSummary = computed(() => reportData.value.trust_summary || {})
 const adaptiveMetrics = computed(() => reportData.value.adaptive_metrics || {})
+const agentWorkflow = computed(() => reportData.value.agent_workflow || null)
+const agentState = computed(() => reportData.value.agent_state || agentWorkflow.value?.state || {})
+const agentTrace = computed(() => reportData.value.agent_trace || agentWorkflow.value?.trace || {})
+const reportCritic = computed(() => reportData.value.report_critic || agentWorkflow.value?.critic || {})
+const agentTraceSteps = computed(() => agentTrace.value.steps || [])
+
+const workflowPolicyLabel = computed(() => {
+  const policy = agentState.value.report_policy
+  if (policy === 'normal') return '正常策略'
+  if (policy === 'conservative') return '保守策略'
+  return '生成中'
+})
+
+const evidenceStatusLabel = computed(() => {
+  const status = agentState.value.evidence_status
+  if (status === 'available') return '充分'
+  if (status === 'partial') return '部分'
+  if (status === 'missing') return '缺失'
+  return '未知'
+})
+
+const criticStatusLabel = computed(() => {
+  const status = reportCritic.value.status || agentState.value.critic_status
+  if (status === 'passed') return '通过'
+  if (status === 'warning') return '需关注'
+  return '待审查'
+})
 const reportTitle = computed(() => {
   const title = (reportData.value.title || '').trim()
   return title || formatTime(reportData.value.started_at) || '未命名测评'
@@ -561,6 +634,103 @@ onBeforeUnmount(() => {
 .trust-copy { color: var(--text-secondary); line-height: 1.7; }
 .trust-copy p { margin: 0 0 8px; }
 
+.agent-workflow-card {
+  border-left: 4px solid #0f766e;
+}
+.agent-workflow-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+.workflow-policy-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.policy-normal { background: #059669; }
+.policy-conservative { background: #d97706; }
+.policy-pending { background: #64748b; }
+.workflow-state-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.workflow-state-item {
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+}
+.workflow-state-item span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.workflow-state-item strong {
+  color: var(--text-primary);
+  font-size: 20px;
+}
+.workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.workflow-step {
+  display: flex;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+}
+.workflow-step-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: #059669;
+  flex: 0 0 auto;
+}
+.step-warning .workflow-step-dot { background: #d97706; }
+.step-pending .workflow-step-dot { background: #64748b; }
+.workflow-step strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-primary);
+}
+.workflow-step p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.critic-notes {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--text-secondary);
+}
+.critic-notes strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+.critic-notes p {
+  margin: 0 0 6px;
+  line-height: 1.6;
+}
+
 /* === Markdown 报告渲染 === */
 .report-body { padding-top: 12px; text-align: left; }
 .markdown-body { line-height: 1.8; font-size: 16px; color: var(--text-secondary); text-align: left; }
@@ -739,6 +909,9 @@ onBeforeUnmount(() => {
   .dim-detail { line-height: 1.6; }
   .ev-module-header { align-items: flex-start; }
   .trust-overview { grid-template-columns: 1fr; }
+  .agent-workflow-header { flex-direction: column; }
+  .workflow-state-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workflow-steps { grid-template-columns: 1fr; }
   .ev-module-stat { flex-basis: 100%; }
   .markdown-body { font-size: 15px; } /* 通过调整基础 font-size 自动控制里面的em字体大小 */
 }
@@ -759,6 +932,7 @@ onBeforeUnmount(() => {
   .ev-module-header { padding: 12px; }
   .ev-module-name { font-size: 15px; }
   .ev-module-stat { font-size: 13px; line-height: 1.5; }
+  .workflow-state-grid { grid-template-columns: 1fr; }
   .ev-record { padding: 12px; }
   .ev-q { font-size: 15px; }
   .ev-a,
