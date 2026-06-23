@@ -133,12 +133,17 @@ def _evidence_status(evidence_count: int, module_debate_count: int) -> str:
 
 def build_agent_state(
     *,
-    trust_summary: dict[str, Any],
-    adaptive_metrics: dict[str, Any],
-    evidence_chain: dict[str, Any],
-    module_debates: dict[str, Any],
+    trust_summary: dict[str, Any] | None,
+    adaptive_metrics: dict[str, Any] | None,
+    evidence_chain: dict[str, Any] | None,
+    module_debates: dict[str, Any] | None,
     report_content: str | None,
 ) -> dict[str, Any]:
+    trust_summary = trust_summary or {}
+    adaptive_metrics = adaptive_metrics or {}
+    evidence_chain = evidence_chain or {}
+    module_debates = module_debates or {}
+
     assessment_confidence = _safe_float(trust_summary.get("assessment_confidence"))
     anomaly_count = _safe_int(trust_summary.get("anomaly_count"))
     adaptive_coverage = _safe_float(adaptive_metrics.get("coverage_ratio"))
@@ -170,6 +175,8 @@ def build_agent_state(
 
     return {
         "workflow": WORKFLOW_NAME,
+        "mode": "static_workflow",
+        "rag_status": "available" if evidence_count > 0 else "unknown",
         "assessment_confidence": assessment_confidence,
         "assessment_trust_level": _assessment_trust_level(assessment_confidence, trust_summary.get("label")),
         "anomaly_count": anomaly_count,
@@ -229,10 +236,10 @@ def build_agent_trace(state: dict[str, Any]) -> dict[str, Any]:
 
 def build_agent_workflow_payload(
     *,
-    trust_summary: dict[str, Any],
-    adaptive_metrics: dict[str, Any],
-    evidence_chain: dict[str, Any],
-    module_debates: dict[str, Any],
+    trust_summary: dict[str, Any] | None,
+    adaptive_metrics: dict[str, Any] | None,
+    evidence_chain: dict[str, Any] | None,
+    module_debates: dict[str, Any] | None,
     report_content: str | None,
 ) -> dict[str, Any]:
     state = build_agent_state(

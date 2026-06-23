@@ -79,3 +79,19 @@ def test_agent_workflow_payload_is_graceful_without_report():
     assert payload["state"]["report_policy"] == "pending"
     assert payload["critic"]["status"] == "pending"
     assert payload["trace"]["steps"][-1]["status"] == "pending"
+
+
+def test_agent_state_accepts_none_inputs_as_empty_context():
+    state = build_agent_state(
+        trust_summary=None,
+        adaptive_metrics=None,
+        evidence_chain=None,
+        module_debates=None,
+        report_content=None,
+    )
+
+    assert state["mode"] == "static_workflow"
+    assert state["rag_status"] == "unknown"
+    assert state["assessment_trust_level"] == "unknown"
+    assert state["evidence_status"] == "missing"
+    assert state["report_policy"] == "pending"
