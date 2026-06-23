@@ -13,7 +13,7 @@
       </div>
 
       <button v-if="isAtmrHistory" class="history-new-button" type="button" @click="startNewSession">{{ historyStartLabel }}</button>
-      <button v-else class="history-new-button" type="button" @click="openBigFiveUpload">上传大五视频</button>
+      <button v-else class="history-new-button" type="button" @click="openBigFiveUpload">上传视频</button>
 
       <div class="history-sidebar-section">
         <div class="history-sidebar-label">{{ currentSidebarLabel }}</div>
@@ -208,7 +208,7 @@
             <div class="history-header-actions">
               <button v-if="isBigFiveHistory" class="btn-new" type="button" @click="openBigFiveUpload">
                 <span class="btn-icon">+</span>
-                <span>上传大五视频</span>
+                <span>上传视频</span>
               </button>
               <button v-else class="btn-new" type="button" @click="startNewSession">
                 <span class="btn-icon">+</span>
@@ -273,7 +273,7 @@
           </button>
           <button v-else class="btn-new btn-new-big" type="button" @click="openBigFiveUpload">
             <span class="btn-icon">+</span>
-            <span>上传大五视频</span>
+            <span>上传视频</span>
           </button>
         </div>
 
@@ -403,6 +403,10 @@
                     <span class="session-time-label">测评时间</span>
                     <span class="session-time">{{ formatFullDate(session.started_at) }}</span>
                   </div>
+                  <div class="card-actions">
+                    <button v-if="session.has_report" class="btn-view" type="button" @click="viewReport(session.session_id)">查看报告</button>
+                    <span v-else-if="session.report_generating" class="btn-generating">报告生成中</span>
+                  </div>
                 </div>
                 </article>
               </div>
@@ -488,7 +492,7 @@
               <p>上传一段视频后，系统会在后台生成独立的大五人格报告。</p>
               <button class="btn-new btn-new-big" type="button" @click="openBigFiveUpload">
                 <span class="btn-icon">+</span>
-                <span>上传大五视频</span>
+                <span>上传视频</span>
               </button>
             </div>
           </section>
@@ -969,7 +973,7 @@ const handleBigFiveUpload = async (event) => {
     })
     await fetchHistory()
   } catch (err) {
-    console.error('上传大五视频失败:', err)
+    console.error('上传视频失败:', err)
     await showAlertDialog(err.response?.data?.detail || '上传失败，请稍后再试', {
       title: '上传失败',
       destructive: true,

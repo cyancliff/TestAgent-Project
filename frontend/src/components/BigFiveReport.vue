@@ -91,10 +91,6 @@
             <span>预测置信度</span>
             <strong>{{ percent(confidenceSummary.overall_confidence) }}% · {{ confidenceSummary.label || '中等' }}</strong>
           </div>
-          <div class="source-item">
-            <span>ATMR 一致性</span>
-            <strong>{{ percent(consistencySummary.overall_score) }}% · {{ consistencySummary.overall_status || '中性不足' }}</strong>
-          </div>
         </div>
         <div class="quality-bars">
           <div v-for="item in modalityItems" :key="item.key" class="quality-row">
@@ -105,26 +101,6 @@
             <strong>{{ percent(item.value) }}%</strong>
           </div>
         </div>
-      </div>
-
-      <div v-if="consistencyItems.length" class="report-card">
-        <h2 class="section-title">ATMR 辅助证据链</h2>
-        <div class="consistency-list">
-          <div v-for="item in consistencyItems" :key="`${item.atmr_module}-${item.big_five_trait}`" class="consistency-item">
-            <div class="consistency-top">
-              <strong>{{ item.atmr_label }} × {{ item.big_five_label }}</strong>
-              <span>{{ item.status }} · {{ percent(item.consistency) }}%</span>
-            </div>
-            <p>{{ item.rationale }}</p>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="report.errors?.length" class="report-card">
-        <h2 class="section-title">处理记录</h2>
-        <ul class="error-list">
-          <li v-for="error in report.errors" :key="error">{{ error }}</li>
-        </ul>
       </div>
 
       <div v-if="hasInterpretation" class="interpretation-stack">
@@ -295,8 +271,6 @@ const reportTitle = computed(() => (report.value.title || '').trim() || `大五�
 const hasScores = computed(() => !!report.value.scores)
 const qualitySummary = computed(() => report.value.quality_summary || {})
 const confidenceSummary = computed(() => report.value.confidence_summary || {})
-const consistencySummary = computed(() => report.value.consistency_summary || {})
-const consistencyItems = computed(() => consistencySummary.value.items || [])
 const modalityItems = computed(() => {
   const modalities = qualitySummary.value.modalities || {}
   return [
@@ -1021,45 +995,6 @@ onBeforeUnmount(() => {
   background: var(--primary);
 }
 
-.consistency-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.consistency-item {
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-hover);
-}
-
-.consistency-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--text-primary);
-  font-weight: 700;
-}
-
-.consistency-top span {
-  color: var(--primary);
-  white-space: nowrap;
-}
-
-.consistency-item p {
-  margin: 8px 0 0;
-  color: var(--text-secondary);
-  line-height: 1.6;
-}
-
-.error-list {
-  margin: 0;
-  padding-left: 20px;
-  color: var(--error);
-  line-height: 1.7;
-}
-
 .report-body {
   padding-top: 12px;
   text-align: left;
@@ -1427,10 +1362,6 @@ onBeforeUnmount(() => {
 
   .quality-row {
     grid-template-columns: 92px 1fr 48px;
-  }
-
-  .consistency-top {
-    flex-direction: column;
   }
 
   .dim-name {

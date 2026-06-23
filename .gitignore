@@ -38,6 +38,7 @@ frontend/.vite/
 # 本地数据库和生成文件
 *.db
 .claude/
+.codex_tmp/
 reports/
 test_artifacts/
 
