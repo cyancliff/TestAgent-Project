@@ -48,6 +48,7 @@ def test_agent_trace_contains_fixed_static_workflow_steps():
         "finalize_report",
     ]
     assert trace["steps"][0]["status"] == "done"
+    assert all(step["label"] and step["detail"] for step in trace["steps"])
     assert trace["mode"] == "static_workflow"
 
 

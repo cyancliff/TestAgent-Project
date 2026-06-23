@@ -208,28 +208,62 @@ def build_agent_trace(state: dict[str, Any]) -> dict[str, Any]:
     evidence_status = state.get("evidence_status")
     report_policy = state.get("report_policy")
     module_debate_count = _safe_int(state.get("module_debate_count"), 0)
+    critic_status = state.get("critic_status")
+
+    evidence_step_status = "warning" if evidence_status == "missing" else "done"
+    analysis_step_status = "warning" if module_debate_count < 4 else "done"
+    policy_step_status = "pending" if report_policy == "pending" else "done"
+    critic_step_status = _critic_step_status(critic_status)
+    final_step_status = "pending" if report_policy == "pending" else "done"
 
     steps = [
-        {"key": "observe_assessment", "status": "done"},
+        {
+            "key": "observe_assessment",
+            "label": "读取测评结果",
+            "status": "done",
+            "detail": "已读取测评置信度、异常作答和自适应覆盖率等基础状态。",
+        },
         {
             "key": "build_evidence_state",
-            "status": "warning" if evidence_status == "missing" else "done",
+            "label": "构建证据状态",
+            "status": evidence_step_status,
+            "detail": "证据链状态为缺失，后续报告会采用更谨慎表述。"
+            if evidence_step_status == "warning"
+            else "已汇总证据链状态，可用于支撑后续分析。",
         },
         {
             "key": "multi_agent_analysis",
-            "status": "warning" if module_debate_count < 4 else "done",
+            "label": "多角色分析",
+            "status": analysis_step_status,
+            "detail": f"当前有效角色分析 {module_debate_count} 项，少于完整分析所需数量。"
+            if analysis_step_status == "warning"
+            else f"已完成 {module_debate_count} 项有效角色分析。",
         },
         {
             "key": "policy_selection",
-            "status": "pending" if report_policy == "pending" else "done",
+            "label": "选择报告策略",
+            "status": policy_step_status,
+            "detail": "报告尚未生成，策略选择暂待最终内容。"
+            if policy_step_status == "pending"
+            else f"已选择 {report_policy or 'normal'} 报告策略。",
         },
         {
             "key": "safety_critic",
-            "status": _critic_step_status(state.get("critic_status")),
+            "label": "安全边界审查",
+            "status": critic_step_status,
+            "detail": "安全边界审查尚未执行，等待报告内容生成。"
+            if critic_step_status == "pending"
+            else "审查发现边界风险，报告需要保持非临床和保守表达。"
+            if critic_step_status == "warning"
+            else "安全边界审查通过，未发现明显越界表达。",
         },
         {
             "key": "finalize_report",
-            "status": "pending" if report_policy == "pending" else "done",
+            "label": "生成最终报告",
+            "status": final_step_status,
+            "detail": "最终报告尚未生成，等待前序信息齐备。"
+            if final_step_status == "pending"
+            else "最终报告已按当前策略生成。",
         },
     ]
 
