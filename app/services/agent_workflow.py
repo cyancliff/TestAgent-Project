@@ -131,6 +131,12 @@ def _evidence_status(evidence_count: int, module_debate_count: int) -> str:
     return "missing"
 
 
+def _module_debate_count(module_debates: dict[str, Any]) -> int:
+    if not isinstance(module_debates, dict):
+        return 0
+    return sum(1 for content in module_debates.values() if isinstance(content, str) and content.strip())
+
+
 def build_agent_state(
     *,
     trust_summary: dict[str, Any] | None,
@@ -148,7 +154,7 @@ def build_agent_state(
     anomaly_count = _safe_int(trust_summary.get("anomaly_count"))
     adaptive_coverage = _safe_float(adaptive_metrics.get("coverage_ratio"))
     evidence_count = _evidence_count(evidence_chain)
-    module_debate_count = len(module_debates) if isinstance(module_debates, dict) else 0
+    module_debate_count = _module_debate_count(module_debates)
     evidence_status = _evidence_status(evidence_count, module_debate_count)
     critic = build_report_critic(report_content)
 

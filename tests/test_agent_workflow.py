@@ -95,3 +95,16 @@ def test_agent_state_accepts_none_inputs_as_empty_context():
     assert state["assessment_trust_level"] == "unknown"
     assert state["evidence_status"] == "missing"
     assert state["report_policy"] == "pending"
+
+
+def test_agent_state_counts_only_non_empty_module_debate_content():
+    state = build_agent_state(
+        trust_summary={},
+        adaptive_metrics={},
+        evidence_chain={"modules": {"A": {"evidence": [1]}}},
+        module_debates={"A": "有效", "T": "", "M": None, "R": "   "},
+        report_content=None,
+    )
+
+    assert state["module_debate_count"] == 1
+    assert "incomplete_module_debate" in state["risk_flags"]
