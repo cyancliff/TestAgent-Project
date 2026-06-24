@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import types
 
@@ -32,7 +33,8 @@ def test_clip_model_loading_ignores_invalid_stdio(monkeypatch) -> None:
 
     class FakeModel:
         @classmethod
-        def from_pretrained(cls, model_name, *, local_files_only):
+        def from_pretrained(cls, model_name, **kwargs):
+            local_files_only = kwargs["local_files_only"]
             sys.stderr.write(f"loading model {model_name} {local_files_only}")
             return cls()
 
@@ -87,6 +89,92 @@ def test_clip_model_loading_does_not_fallback_to_network(monkeypatch) -> None:
         raise AssertionError("CLIP loading should fail when local files are missing")
 
     assert calls == [("processor", True)]
+
+
+def test_clip_model_loading_uses_bin_weights_when_safetensors_absent(tmp_path, monkeypatch) -> None:
+    fake_transformers = types.ModuleType("transformers")
+    model_calls: list[dict[str, object]] = []
+    model_dir = tmp_path / "clip"
+    model_dir.mkdir()
+    for filename in [
+        "config.json",
+        "preprocessor_config.json",
+        "tokenizer_config.json",
+        "vocab.json",
+        "merges.txt",
+        "pytorch_model.bin",
+    ]:
+        (model_dir / filename).write_text("{}", encoding="utf-8")
+
+    class FakeProcessor:
+        @classmethod
+        def from_pretrained(cls, model_name, *, local_files_only):
+            return cls()
+
+    class FakeModel:
+        @classmethod
+        def from_pretrained(cls, model_name, **kwargs):
+            model_calls.append(kwargs)
+            return cls()
+
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return self
+
+    fake_transformers.CLIPProcessor = FakeProcessor
+    fake_transformers.CLIPModel = FakeModel
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+
+    extractor = ClipFeatureExtractor(model_name=str(model_dir), device="cpu")
+    extractor._load_model()
+
+    assert model_calls == [{"local_files_only": True, "use_safetensors": False}]
+
+
+def test_clip_model_loading_disables_safetensors_auto_conversion(tmp_path, monkeypatch) -> None:
+    fake_transformers = types.ModuleType("transformers")
+    observed_env: list[str | None] = []
+    model_dir = tmp_path / "clip"
+    model_dir.mkdir()
+    for filename in [
+        "config.json",
+        "preprocessor_config.json",
+        "tokenizer_config.json",
+        "vocab.json",
+        "merges.txt",
+        "pytorch_model.bin",
+    ]:
+        (model_dir / filename).write_text("{}", encoding="utf-8")
+
+    class FakeProcessor:
+        @classmethod
+        def from_pretrained(cls, model_name, *, local_files_only):
+            return cls()
+
+    class FakeModel:
+        @classmethod
+        def from_pretrained(cls, model_name, **kwargs):
+            observed_env.append(os.environ.get("DISABLE_SAFETENSORS_CONVERSION"))
+            return cls()
+
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return self
+
+    fake_transformers.CLIPProcessor = FakeProcessor
+    fake_transformers.CLIPModel = FakeModel
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+    monkeypatch.delenv("DISABLE_SAFETENSORS_CONVERSION", raising=False)
+
+    extractor = ClipFeatureExtractor(model_name=str(model_dir), device="cpu")
+    extractor._load_model()
+
+    assert observed_env == ["1"]
+    assert "DISABLE_SAFETENSORS_CONVERSION" not in os.environ
 
 
 def test_clip_feature_extractor_writes_sentence_level_text_features(tmp_path, monkeypatch) -> None:

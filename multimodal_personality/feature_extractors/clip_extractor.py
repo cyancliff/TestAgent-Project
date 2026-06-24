@@ -59,6 +59,18 @@ class ClipFeatureExtractor:
             with redirect_stdout(sink), redirect_stderr(sink):
                 yield
 
+    @contextmanager
+    def _disable_safetensors_auto_conversion(self):
+        previous = os.environ.get("DISABLE_SAFETENSORS_CONVERSION")
+        os.environ["DISABLE_SAFETENSORS_CONVERSION"] = "1"
+        try:
+            yield
+        finally:
+            if previous is None:
+                os.environ.pop("DISABLE_SAFETENSORS_CONVERSION", None)
+            else:
+                os.environ["DISABLE_SAFETENSORS_CONVERSION"] = previous
+
     def availability(self) -> dict[str, bool]:
         """Report whether the local environment can run CLIP extraction."""
         return {
@@ -70,6 +82,33 @@ class ClipFeatureExtractor:
     @staticmethod
     def _path_exists(path: str | Path | None) -> bool:
         return bool(path and Path(path).exists())
+
+    def _local_model_file_available(self, filename: str) -> bool:
+        model_path = Path(self.model_name).expanduser()
+        return model_path.is_dir() and (model_path / filename).exists()
+
+    def _huggingface_cache_file_available(self, filename: str) -> bool:
+        try:
+            from huggingface_hub import try_to_load_from_cache
+        except Exception:
+            return False
+
+        try:
+            return self._path_exists(try_to_load_from_cache(self.model_name, filename))
+        except Exception:
+            return False
+
+    def _model_file_available(self, filename: str) -> bool:
+        return self._local_model_file_available(filename) or self._huggingface_cache_file_available(filename)
+
+    def _should_disable_safetensors(self) -> bool:
+        has_safetensors = self._model_file_available("model.safetensors") or self._model_file_available(
+            "model.safetensors.index.json"
+        )
+        has_bin_weights = self._model_file_available("pytorch_model.bin") or self._model_file_available(
+            "pytorch_model.bin.index.json"
+        )
+        return has_bin_weights and not has_safetensors
 
     def _local_directory_model_available(self) -> bool:
         model_path = Path(self.model_name).expanduser()
@@ -110,14 +149,18 @@ class ClipFeatureExtractor:
 
         try:
             with self._suppress_model_loading_output():
-                self._processor = CLIPProcessor.from_pretrained(
-                    self.model_name,
-                    local_files_only=True,
-                )
-                self._model = CLIPModel.from_pretrained(
-                    self.model_name,
-                    local_files_only=True,
-                )
+                with self._disable_safetensors_auto_conversion():
+                    self._processor = CLIPProcessor.from_pretrained(
+                        self.model_name,
+                        local_files_only=True,
+                    )
+                    model_kwargs: dict[str, object] = {"local_files_only": True}
+                    if self._should_disable_safetensors():
+                        model_kwargs["use_safetensors"] = False
+                    self._model = CLIPModel.from_pretrained(
+                        self.model_name,
+                        **model_kwargs,
+                    )
                 self._model.to(self.device)
                 self._model.eval()
         except Exception:

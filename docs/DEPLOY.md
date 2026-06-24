@@ -274,6 +274,7 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 
 - 在线部署成功不代表部署环境具备完整多模态依赖；真实推理要看 `health` 中的 `model_ready` 和 `system_tools`。
 - 部署环境不得依赖运行时联网下载 CLIP。`system_tools.clip_model=true` 才表示 `openai/clip-vit-large-patch14-336` 已在本地 Hugging Face cache 或本地目录中可用；否则 `model_ready=false`，视频报告只会保留为非正式回退结果，前端不会展示占位人格分数。
+- 如果部署机只缓存了 `pytorch_model.bin` 而没有 `model.safetensors`，当前 CLIP 加载器会禁用 Transformers 的 safetensors 自动转换探测，避免后台线程再次访问 Hugging Face。仍建议部署前固定缓存目录，并通过 health 接口确认 `system_tools.clip_model=true`。
 - PowerShell smoke 检查示例：
   ```powershell
   $headers = @{ Authorization = "Bearer <token>" }
