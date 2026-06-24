@@ -16,6 +16,8 @@
 - 在线多模态服务会保存 `micro_expression_feature.json`，并在 task/report artifacts 中记录 `micro_expression_feature_path`。
 - 大五报告 prompt 会读取微表情摘要，把它作为“短时面部线索”写入报告上下文。
 - 训练脚本支持 `--use-micro-expression-features`，后续可以直接做“不开微表情 / 开微表情”的消融对照。
+- 在线推理默认读取 `third_party/MOL/saved_models/MOL_HF_TIM20_SAMM3_26subj_fullquick_SAMM_006_3cls.pth`。该权重是本地模型产物，被 `.gitignore` 排除，部署机需要单独复制或用 `MOL_MODEL_PATH` 指向实际文件。
+- 如果视频抽帧少于 8 张，MOL runner 会重复最后一帧补齐 8 帧输入；没有任何帧时仍返回失败态 JSON。
 
 ## 在线产物
 

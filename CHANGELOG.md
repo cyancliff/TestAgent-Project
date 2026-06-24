@@ -10,10 +10,11 @@
 - CLIP 本地缓存仅包含 `pytorch_model.bin` 时，加载过程会显式禁用 safetensors 自动转换探测，避免 Transformers 后台线程再次访问 Hugging Face 并打印连接超时。
 - 多模态 `health` 增加 `system_tools.clip_model`，并将本地 CLIP 权重可用性纳入 `model_ready` 判断。
 - 大五人格报告详情页仅在 `is_real_result=true` 时展示雷达图、质量证据和维度简析；fallback 占位分数不再被当作正式人格报告展示。
+- MOL 微表情推理支持少于 8 张抽帧的短视频场景，会重复最后一帧补齐模型输入，避免因抽帧不足导致微表情证据链失败。
 
 ### 文档
 
-- 更新部署说明，明确真实视频人格推理必须满足 `model_ready=true` 且 `system_tools.clip_model=true`，并提醒部署机提前缓存 CLIP 权重。
+- 更新部署说明，明确真实视频人格推理必须满足 `model_ready=true` 且 `system_tools.clip_model=true`，并提醒部署机提前缓存 CLIP 权重和按需同步 MOL 权重产物。
 
 ## [2026-05-18] - 仓库可见内容与本地产物治理
 

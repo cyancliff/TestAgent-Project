@@ -44,8 +44,8 @@ def _build_video_tensor(frame_paths: list[Path]):
     import torch
     import dataset as mol_dataset
 
-    if len(frame_paths) < CLIP_LENGTH:
-        raise RuntimeError(f"MOL needs at least {CLIP_LENGTH} frames, received {len(frame_paths)}")
+    if not frame_paths:
+        raise RuntimeError("MOL needs at least 1 frame, received 0")
 
     sample_interval = max(len(frame_paths) // CLIP_LENGTH, 1)
     sample_count = max(min(sample_interval, len(frame_paths) - CLIP_LENGTH + 1), 1)
