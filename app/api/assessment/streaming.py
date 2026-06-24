@@ -31,6 +31,7 @@ from app.models.user import User
 from app.services.report_service import build_debate_context, save_report_to_file
 from app.services.scoring import get_dimension_level, clamp_score, calculate_weight_bonus
 from app.services.debate_manager import run_debate_streaming
+from app.services.agent_workflow import build_agent_workflow_payload
 from app.services.assessment_trust import (
     build_adaptive_metrics,
     build_answer_insight,
@@ -713,6 +714,13 @@ async def get_report(
         ModuleDebateResult.session_id == session_id,
     ).all()
     debate_results = {md.module: md.result_content for md in module_debates}
+    agent_workflow = build_agent_workflow_payload(
+        trust_summary=trust_summary,
+        adaptive_metrics=adaptive_metrics,
+        evidence_chain=evidence_chain,
+        module_debates=debate_results,
+        report_content=session.report_content,
+    )
 
     return {
         "session_id": session.id,
@@ -728,4 +736,8 @@ async def get_report(
         "trust_summary": trust_summary,
         "adaptive_metrics": adaptive_metrics,
         "evidence_chain": evidence_chain,
+        "agent_workflow": agent_workflow,
+        "agent_state": agent_workflow["state"],
+        "agent_trace": agent_workflow["trace"],
+        "report_critic": agent_workflow["critic"],
     }

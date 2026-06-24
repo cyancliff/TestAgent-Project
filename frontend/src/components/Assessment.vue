@@ -680,20 +680,22 @@ const selectOption = async (option) => {
     const isAnomaly = res.data.status === 'anomaly'
 
     // 实时保存到后端（fire-and-forget）
-    api.post('/assessment/save-answer', {
-      session_id: sessionId.value,
-      exam_no: currentQuestion.value.id,
-      selected_option: option,
-      time_spent: timeSpentSeconds,
-      score: res.data.score,
-      is_anomaly: isAnomaly ? 1 : 0,
-      ai_follow_up: null,
-      user_explanation: null,
-      risk_score: res.data.risk_score || 0,
-      risk_reasons: res.data.risk_reasons || [],
-      answer_confidence: res.data.answer_confidence ?? 1,
-      behavior_metrics: res.data.behavior_metrics || behaviorMetrics,
-    }).catch(err => console.warn('草稿保存失败:', err))
+    if (sessionId.value) {
+      api.post('/assessment/save-answer', {
+        session_id: sessionId.value,
+        exam_no: currentQuestion.value.id,
+        selected_option: option,
+        time_spent: timeSpentSeconds,
+        score: res.data.score,
+        is_anomaly: isAnomaly ? 1 : 0,
+        ai_follow_up: null,
+        user_explanation: null,
+        risk_score: res.data.risk_score || 0,
+        risk_reasons: res.data.risk_reasons || [],
+        answer_confidence: res.data.answer_confidence ?? 1,
+        behavior_metrics: res.data.behavior_metrics || behaviorMetrics,
+      }).catch(err => console.warn('草稿保存失败:', err))
+    }
 
     // 后台无感知评估风险，前台不打断作答流程。
     if (currentIndex.value + 1 < stageQuestionCount.value && !canSubmitStage.value) {
