@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import json
 import re
-import os
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +25,20 @@ class FeatureExtractionResult:
 
 class ClipFeatureExtractor:
     """Feature extraction wrapper using Hugging Face CLIP components."""
+
+    _REQUIRED_CACHE_FILES = (
+        "config.json",
+        "preprocessor_config.json",
+        "tokenizer_config.json",
+        "vocab.json",
+        "merges.txt",
+    )
+    _WEIGHT_CACHE_FILES = (
+        "model.safetensors",
+        "model.safetensors.index.json",
+        "pytorch_model.bin",
+        "pytorch_model.bin.index.json",
+    )
 
     def __init__(
         self,
@@ -53,34 +67,63 @@ class ClipFeatureExtractor:
             "pil": importlib.util.find_spec("PIL") is not None,
         }
 
+    @staticmethod
+    def _path_exists(path: str | Path | None) -> bool:
+        return bool(path and Path(path).exists())
+
+    def _local_directory_model_available(self) -> bool:
+        model_path = Path(self.model_name).expanduser()
+        if not model_path.is_dir():
+            return False
+
+        has_required_files = all((model_path / filename).exists() for filename in self._REQUIRED_CACHE_FILES)
+        has_weight_file = any((model_path / filename).exists() for filename in self._WEIGHT_CACHE_FILES)
+        return has_required_files and has_weight_file
+
+    def _huggingface_cache_model_available(self) -> bool:
+        try:
+            from huggingface_hub import try_to_load_from_cache
+        except Exception:
+            return False
+
+        def cached(filename: str) -> bool:
+            try:
+                return self._path_exists(try_to_load_from_cache(self.model_name, filename))
+            except Exception:
+                return False
+
+        return all(cached(filename) for filename in self._REQUIRED_CACHE_FILES) and any(
+            cached(filename) for filename in self._WEIGHT_CACHE_FILES
+        )
+
+    def local_model_available(self) -> bool:
+        """Return whether all required CLIP files are already available offline."""
+        if not all(self.availability().values()):
+            return False
+        return self._local_directory_model_available() or self._huggingface_cache_model_available()
+
     def _load_model(self) -> None:
         """Lazy-load the processor and model."""
         if self._processor is not None and self._model is not None:
             return
         from transformers import CLIPModel, CLIPProcessor
 
-        last_error: Exception | None = None
-        for local_files_only in (True, False):
-            try:
-                with self._suppress_model_loading_output():
-                    self._processor = CLIPProcessor.from_pretrained(
-                        self.model_name,
-                        local_files_only=local_files_only,
-                    )
-                    self._model = CLIPModel.from_pretrained(
-                        self.model_name,
-                        local_files_only=local_files_only,
-                    )
-                    self._model.to(self.device)
-                    self._model.eval()
-                return
-            except Exception as exc:
-                last_error = exc
-                self._processor = None
-                self._model = None
-        else:
-            if last_error is not None:
-                raise last_error
+        try:
+            with self._suppress_model_loading_output():
+                self._processor = CLIPProcessor.from_pretrained(
+                    self.model_name,
+                    local_files_only=True,
+                )
+                self._model = CLIPModel.from_pretrained(
+                    self.model_name,
+                    local_files_only=True,
+                )
+                self._model.to(self.device)
+                self._model.eval()
+        except Exception:
+            self._processor = None
+            self._model = None
+            raise
 
     @staticmethod
     def _feature_tensor_to_list(features: Any) -> list[list[float]]:

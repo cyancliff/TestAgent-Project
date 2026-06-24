@@ -273,6 +273,13 @@ python scripts/run_full_multimodal_pipeline.py --train-device cuda --clip-device
 ## 6. 仍需注意的事情
 
 - 在线部署成功不代表部署环境具备完整多模态依赖；真实推理要看 `health` 中的 `model_ready` 和 `system_tools`。
+- 部署环境不得依赖运行时联网下载 CLIP。`system_tools.clip_model=true` 才表示 `openai/clip-vit-large-patch14-336` 已在本地 Hugging Face cache 或本地目录中可用；否则 `model_ready=false`，视频报告只会保留为非正式回退结果，前端不会展示占位人格分数。
+- PowerShell smoke 检查示例：
+  ```powershell
+  $headers = @{ Authorization = "Bearer <token>" }
+  Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8000/api/v1/multimodal-personality/health" -Headers $headers |
+    ConvertTo-Json -Depth 8
+  ```
 - 当前仓库已完成本地在线真实推理 smoke，归档为 `reports/online_multimodal_smoke_20260425/smoke_result.json`。
 - 真正的多模态研究结果，应以 `reports/` 目录中的训练、评估和推理产物为准。
 - ATMR-CAT、可信度加权和 MOL quick baseline 都应在实验说明中标明边界：它们分别验证选题策略、异常干扰鲁棒性和模块接入可行性，不替代真实心理量表效度验证。

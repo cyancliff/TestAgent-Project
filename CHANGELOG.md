@@ -2,6 +2,18 @@
 
 本文档遵循 Keep a Changelog 风格，按北京时间记录关键变更。
 
+## [2026-06-24] - 多模态部署健康检查与 fallback 展示收口
+
+### 修复
+
+- CLIP 特征提取不再在运行时自动联网下载 `openai/clip-vit-large-patch14-336`，避免公司部署环境因外网超时导致后台任务长时间卡住后回退。
+- 多模态 `health` 增加 `system_tools.clip_model`，并将本地 CLIP 权重可用性纳入 `model_ready` 判断。
+- 大五人格报告详情页仅在 `is_real_result=true` 时展示雷达图、质量证据和维度简析；fallback 占位分数不再被当作正式人格报告展示。
+
+### 文档
+
+- 更新部署说明，明确真实视频人格推理必须满足 `model_ready=true` 且 `system_tools.clip_model=true`。
+
 ## [2026-05-18] - 仓库可见内容与本地产物治理
 
 ### 变更

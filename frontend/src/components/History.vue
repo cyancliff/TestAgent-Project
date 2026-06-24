@@ -718,6 +718,7 @@ const bigFiveStatusClass = (report) => {
   return 'active'
 }
 const getBigFiveScore = (report, key) => {
+  if (!isBigFiveReady(report)) return '--'
   const value = Number(report.scores?.[key])
   if (!Number.isFinite(value)) return '--'
   return Math.round(Math.max(0, Math.min(1, value)) * 100)

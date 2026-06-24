@@ -180,6 +180,9 @@ class MultimodalPersonalityService:
     def _checkpoint_exists(self) -> bool:
         return self._checkpoint_path.exists()
 
+    def _clip_model_available(self) -> bool:
+        return self._get_clip_extractor().local_model_available()
+
     def _get_clip_extractor(self) -> ClipFeatureExtractor:
         if self._clip_extractor is None:
             self._clip_extractor = ClipFeatureExtractor(
@@ -307,6 +310,13 @@ class MultimodalPersonalityService:
 
         if not self._checkpoint_exists():
             errors.append(f"checkpoint not found: {self._checkpoint_path}")
+            return self._fallback_prediction(errors=errors, artifacts=artifacts)
+
+        if not self._clip_model_available():
+            errors.append(
+                "local CLIP model files not found; pre-download openai/clip-vit-large-patch14-336 "
+                "or set the local Hugging Face cache before running real multimodal inference"
+            )
             return self._fallback_prediction(errors=errors, artifacts=artifacts)
 
         artifact_dir = Path(artifacts["artifact_dir"])
@@ -478,6 +488,7 @@ class MultimodalPersonalityService:
             "torch": self._dependency_available("torch"),
             "transformers": self._dependency_available("transformers"),
             "pil": self._dependency_available("PIL"),
+            "clip_model": self._clip_model_available(),
             "wav2clip": self._dependency_available("wav2clip"),
             "librosa": self._dependency_available("librosa"),
             "checkpoint": self._checkpoint_exists(),
@@ -493,6 +504,7 @@ class MultimodalPersonalityService:
                 system_tools["torch"],
                 system_tools["transformers"],
                 system_tools["pil"],
+                system_tools["clip_model"],
                 system_tools["checkpoint"],
             ),
         )

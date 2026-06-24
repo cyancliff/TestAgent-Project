@@ -140,6 +140,9 @@ def test_real_inference_saves_micro_expression_artifact_and_bundle(tmp_path, mon
     task.errors = []
 
     class FakeClipExtractor:
+        def local_model_available(self):
+            return True
+
         def extract_sample(self, *, sample, frames_dir, output_dir):
             output_dir.mkdir(parents=True, exist_ok=True)
             output_path = output_dir / f"{sample['video_name']}.json"
@@ -255,6 +258,9 @@ def test_real_inference_keeps_real_prediction_when_micro_expression_fails(tmp_pa
     task.errors = []
 
     class FakeClipExtractor:
+        def local_model_available(self):
+            return True
+
         def extract_sample(self, *, sample, frames_dir, output_dir):
             output_dir.mkdir(parents=True, exist_ok=True)
             output_path = output_dir / f"{sample['video_name']}.json"
@@ -360,3 +366,20 @@ def test_health_exposes_micro_expression_system_tools(tmp_path, monkeypatch) -> 
     assert "micro_expression_enabled" in health["system_tools"]
     assert "mol_root" in health["system_tools"]
     assert "mol_model" in health["system_tools"]
+
+
+def test_health_requires_local_clip_model_for_model_ready(tmp_path, monkeypatch) -> None:
+    service = _build_service(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        service._pipeline,
+        "get_system_tools",
+        lambda: {"ffmpeg": True, "ffprobe": True, "whisper": True},
+    )
+    monkeypatch.setattr(service, "_dependency_available", lambda module_name: True)
+    monkeypatch.setattr(service, "_checkpoint_exists", lambda: True)
+    monkeypatch.setattr(service, "_clip_model_available", lambda: False)
+
+    health = service.health()
+
+    assert health["system_tools"]["clip_model"] is False
+    assert health["model_ready"] is False

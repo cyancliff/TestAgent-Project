@@ -57,6 +57,38 @@ def test_clip_model_loading_ignores_invalid_stdio(monkeypatch) -> None:
     assert isinstance(extractor._model, FakeModel)
 
 
+def test_clip_model_loading_does_not_fallback_to_network(monkeypatch) -> None:
+    fake_transformers = types.ModuleType("transformers")
+    calls: list[tuple[str, bool]] = []
+
+    class FakeProcessor:
+        @classmethod
+        def from_pretrained(cls, model_name, *, local_files_only):
+            calls.append(("processor", local_files_only))
+            raise OSError("local CLIP files missing")
+
+    class FakeModel:
+        @classmethod
+        def from_pretrained(cls, model_name, *, local_files_only):
+            calls.append(("model", local_files_only))
+            return cls()
+
+    fake_transformers.CLIPProcessor = FakeProcessor
+    fake_transformers.CLIPModel = FakeModel
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+
+    extractor = ClipFeatureExtractor(device="cpu")
+
+    try:
+        extractor._load_model()
+    except OSError as exc:
+        assert "local CLIP files missing" in str(exc)
+    else:
+        raise AssertionError("CLIP loading should fail when local files are missing")
+
+    assert calls == [("processor", True)]
+
+
 def test_clip_feature_extractor_writes_sentence_level_text_features(tmp_path, monkeypatch) -> None:
     frames_dir = tmp_path / "frames"
     frames_dir.mkdir()

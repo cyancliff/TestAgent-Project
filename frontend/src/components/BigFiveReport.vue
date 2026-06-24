@@ -24,7 +24,7 @@
         </p>
       </div>
 
-      <div v-if="hasScores" class="report-card radar-section">
+      <div v-if="hasUsableScores" class="report-card radar-section">
         <h2 class="section-title">大五人格画像</h2>
         <div class="radar-layout">
           <div class="radar-chart-wrapper">
@@ -80,7 +80,7 @@
         </div>
       </div>
 
-      <div v-if="hasScores" class="report-card evidence-card">
+      <div v-if="hasUsableScores" class="report-card evidence-card">
         <h2 class="section-title">质量与置信度</h2>
         <div class="source-grid evidence-grid">
           <div class="source-item">
@@ -123,7 +123,7 @@
         </div>
       </div>
 
-      <div v-if="hasScores" class="report-card">
+      <div v-if="hasUsableScores" class="report-card">
         <h2 class="section-title">维度简析</h2>
         <p class="section-desc">每个维度保留分数、水平、Facet 线索和一条可执行建议，避免正文里重复堆表格。</p>
 
@@ -269,6 +269,7 @@ const dimensions = [
 
 const reportTitle = computed(() => (report.value.title || '').trim() || `大五人格报告 #${props.reportId}`)
 const hasScores = computed(() => !!report.value.scores)
+const hasUsableScores = computed(() => report.value.status === 'completed' && report.value.is_real_result && hasScores.value)
 const qualitySummary = computed(() => report.value.quality_summary || {})
 const confidenceSummary = computed(() => report.value.confidence_summary || {})
 const modalityItems = computed(() => {
@@ -280,7 +281,7 @@ const modalityItems = computed(() => {
     { key: 'background', label: '背景关联特征', value: modalities.background || 0 },
   ]
 })
-const canUseInChat = computed(() => report.value.status === 'completed' && report.value.is_real_result && hasScores.value)
+const canUseInChat = computed(() => hasUsableScores.value)
 const canRetry = computed(() => ['failed', 'completed'].includes(report.value.status) && !report.value.is_real_result)
 const interpretationStatus = computed(() => report.value.interpretation_status || 'pending')
 const hasInterpretation = computed(() => interpretationStatus.value === 'completed' && !!report.value.interpretation_content)
@@ -296,9 +297,14 @@ const statusLabel = computed(() => {
   if (report.value.status === 'running') return '生成中'
   return '等待处理'
 })
-const emptyTitle = computed(() => (report.value.status === 'failed' ? '报告生成失败' : '报告还在生成中'))
+const emptyTitle = computed(() => {
+  if (report.value.status === 'completed' && !report.value.is_real_result) return '未生成正式视频人格报告'
+  return report.value.status === 'failed' ? '报告生成失败' : '报告还在生成中'
+})
 const emptyNote = computed(() => (
-  report.value.status === 'failed'
+  report.value.status === 'completed' && !report.value.is_real_result
+    ? report.value.message || '当前结果为系统回退占位结果，不展示人格分数。请确认本地 CLIP 模型、checkpoint 与依赖后重新生成。'
+    : report.value.status === 'failed'
     ? '可以稍后重试，或换一段视频重新上传。'
     : '页面会自动刷新，完成后显示五维得分。'
 ))
